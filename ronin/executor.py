@@ -6,7 +6,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from ronin.engagement import Engagement, pending_path
+from ronin.engagement import Engagement
 from ronin.journal import Journal, Step, journal_path
 from ronin.prompts import build_step_prompt, parse_step
 from ronin.spine import submit_action
@@ -72,14 +72,18 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
 def resume_task(eng: Engagement, journal: Journal, *, client, runner, now: datetime,
                 result_store: ResultStore, model: str = DEFAULT_MODEL) -> TaskResult:
     """Continue a paused task. The awaited (approved) action's full output is read from the
-    results store; if it isn't there yet, the task stays awaiting_approval, unchanged."""
+    results store; if it isn't there yet, the task stays awaiting_approval, unchanged.
+    Resuming a journal that isn't awaiting approval (already completed / budget-exhausted)
+    is a no-op — it must not issue new actions on a task the operator considers finished."""
     pid = journal.awaiting_pending_id
-    if pid:
-        rec = result_store.get(pid)
-        if rec is None:
-            return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid)
-        journal.update_pending_result(pid, rec.get("output", ""), rec.get("exit_code"))
-        journal.save()
+    if not pid:
+        status = "completed" if journal.findings else "budget_exhausted"
+        return TaskResult(status, journal.findings, journal)
+    rec = result_store.get(pid)
+    if rec is None:
+        return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid)
+    journal.update_pending_result(pid, rec.get("output", ""), rec.get("exit_code"))
+    journal.save()
     return execute_task(eng, objective=journal.objective, target=journal.target,
                         client=client, runner=runner, now=now, model=model,
                         journal=journal)

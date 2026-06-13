@@ -3,7 +3,7 @@ each turn (render_history) and saved to disk so a paused task can resume. Distin
 SP1 audit log (tamper-evident evidence); the journal is mutable agent state."""
 import json
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from ronin.finding import Finding

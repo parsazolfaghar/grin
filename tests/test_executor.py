@@ -129,3 +129,23 @@ def test_resume_before_approval_stays_awaiting(tmp_path):
     res = resume_task(eng, paused.journal, client=FakeClient(_done([])), runner=FakeRunner(),
                       now=NOW, result_store=ResultStore(results_path(eng)))
     assert res.status == "awaiting_approval"
+
+
+def test_resume_on_completed_journal_is_noop(tmp_path):
+    eng = make_eng(tmp_path)
+    client = FakeClient([
+        _action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _done([{"title": "x", "severity": "info", "evidence": "e",
+                "tool": "nmap", "command": "c"}]),
+    ])
+    runner = FakeRunner({"nmap -sV 203.0.113.7": ExecResult("ok", 0, 0.1, False)})
+    done = execute_task(eng, objective="o", target="203.0.113.7", client=client,
+                        runner=runner, now=NOW, max_steps=12)
+    assert done.status == "completed"
+    n_steps = len(done.journal.steps)
+    # resuming a NON-awaiting (completed) journal must not run any new actions
+    res = resume_task(eng, done.journal,
+                      client=FakeClient(_action("nmap", "nmap x", "203.0.113.7", "active-scan")),
+                      runner=runner, now=NOW, result_store=ResultStore(results_path(eng)))
+    assert res.status == "completed"
+    assert len(res.journal.steps) == n_steps     # unchanged — no new actions

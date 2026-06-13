@@ -62,3 +62,33 @@ def test_main_dispatches_execute(tmp_path, monkeypatch):
                         lambda eng: FakeClient(json.dumps({"done": True, "findings": []})))
     monkeypatch.setattr(cli, "_runner_for", lambda eng: FakeRunner())
     assert main(["execute", path, "--task", "o", "--target", "203.0.113.7"]) == 0
+
+
+def test_gate_approve_persists_full_output(tmp_path, monkeypatch):
+    from datetime import datetime
+    from ronin.spine import submit_action
+    audit = str(tmp_path / "audit" / "g1.jsonl")
+    p = tmp_path / "g1.yaml"
+    p.write_text(
+        "id: g1\nname: n\nmode: client\n"
+        "scope:\n  in: [\"*.acme.test\"]\n"
+        "roe:\n  allowed_actions: [passive, active-scan, exploit]\n"
+        "autonomy: action-gated\nenv: {kind: local}\n"
+        f"audit_log: {audit}\nstate: active\n")
+    eng = load_engagement(str(p))
+    runner = FakeRunner({"sqlmap -u http://www.acme.test":
+                         ExecResult("1 injectable param", 0, 0.2, False)})
+    # enqueue a pending exploit via the spine
+    out = submit_action(eng, target="www.acme.test", tool="sqlmap",
+                        command="sqlmap -u http://www.acme.test", declared_class="exploit",
+                        runner=runner, now=datetime(2026, 1, 1))
+    assert out.status == "pending"
+    pid = out.pending_id
+    # approve through cmd_gate (input -> 'a'); cmd_gate should persist the full output
+    monkeypatch.setattr(cli, "_runner_for", lambda eng: runner)
+    monkeypatch.setattr("builtins.input", lambda *a, **k: "a")
+    rc = cli.cmd_gate(str(p))
+    assert rc == 0
+    rec = ResultStore(results_path(eng)).get(pid)
+    assert rec is not None
+    assert rec["output"] == "1 injectable param"
