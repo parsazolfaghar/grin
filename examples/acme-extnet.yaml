@@ -1,0 +1,21 @@
+# examples/acme-extnet.yaml — a sample client engagement (action-gated)
+id: acme-extnet-2026-06
+name: "ACME external network"
+mode: client
+scope:
+  in:
+    - "*.acme.test"
+    - "203.0.113.0/24"
+  exclude:
+    - "vpn.acme.test"
+    - "203.0.113.5"
+roe:
+  allowed_actions: [passive, active-scan, exploit]
+  windows:
+    - { start: "2026-06-13T18:00", end: "2026-06-14T06:00" }
+autonomy: action-gated
+env:
+  kind: ssh
+  ssh_host: "kali@10.0.0.50"
+audit_log: ./audit/acme-extnet-2026-06.jsonl
+state: active
