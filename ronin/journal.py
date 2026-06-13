@@ -1,0 +1,92 @@
+"""The Executor's working memory + resume artifact. The journal is fed back to the model
+each turn (render_history) and saved to disk so a paused task can resume. Distinct from the
+SP1 audit log (tamper-evident evidence); the journal is mutable agent state."""
+import json
+import os
+from dataclasses import dataclass, asdict
+from pathlib import Path
+
+from ronin.finding import Finding
+
+
+def journal_path(engagement, task_id: str) -> str:
+    base, _ext = os.path.splitext(engagement.audit_log)
+    return f"{base}.{task_id}.journal.json"
+
+
+@dataclass
+class Step:
+    action: dict                      # {tool, command, target, declared_class, why}
+    decision: str                     # executed | refused | pending | parse_miss
+    output: str = ""
+    exit_code: int | None = None
+    reason: str = ""
+    pending_id: str | None = None
+
+
+class Journal:
+    def __init__(self, *, task_id: str, objective: str, target: str, engagement_path: str,
+                 path: str, max_steps: int = 12):
+        self.task_id = task_id
+        self.objective = objective
+        self.target = target
+        self.engagement_path = engagement_path
+        self.path = path
+        self.max_steps = max_steps
+        self.steps: list[Step] = []
+        self.findings: list[Finding] = []
+        self.awaiting_pending_id: str | None = None
+
+    def add_step(self, step: Step) -> None:
+        self.steps.append(step)
+
+    def set_findings(self, findings) -> None:
+        self.findings = list(findings)
+
+    def update_pending_result(self, pending_id: str, output: str, exit_code) -> None:
+        for s in self.steps:
+            if s.decision == "pending" and s.pending_id == pending_id:
+                s.decision = "executed"
+                s.output = output
+                s.exit_code = exit_code
+        self.awaiting_pending_id = None
+
+    def render_history(self) -> str:
+        if not self.steps:
+            return "(no actions taken yet)"
+        lines = []
+        for s in self.steps:
+            cmd = s.action.get("command", "") if isinstance(s.action, dict) else ""
+            if s.decision == "executed":
+                lines.append(f"- [executed] {cmd} -> {s.output[:300]}")
+            elif s.decision == "refused":
+                lines.append(f"- [refused] {cmd} ({s.reason})")
+            elif s.decision == "pending":
+                lines.append(f"- [awaiting approval] {cmd}")
+            else:
+                lines.append("- [unparseable model reply, retried]")
+        return "\n".join(lines)
+
+    def to_dict(self) -> dict:
+        return {
+            "task_id": self.task_id, "objective": self.objective, "target": self.target,
+            "engagement_path": self.engagement_path, "path": self.path,
+            "max_steps": self.max_steps, "awaiting_pending_id": self.awaiting_pending_id,
+            "steps": [asdict(s) for s in self.steps],
+            "findings": [asdict(f) for f in self.findings],
+        }
+
+    def save(self) -> None:
+        Path(self.path).parent.mkdir(parents=True, exist_ok=True)
+        Path(self.path).write_text(json.dumps(self.to_dict(), indent=2))
+
+    @classmethod
+    def load(cls, path: str) -> "Journal":
+        data = json.loads(Path(path).read_text())
+        j = cls(task_id=data["task_id"], objective=data["objective"], target=data["target"],
+                engagement_path=data["engagement_path"], path=data["path"],
+                max_steps=data.get("max_steps", 12))
+        j.awaiting_pending_id = data.get("awaiting_pending_id")
+        j.steps = [Step(**s) for s in data.get("steps", [])]
+        j.findings = [Finding(**f) for f in data.get("findings", [])]
+        return j

@@ -1,0 +1,15 @@
+# examples/lab-recon.yaml — an own-lab autonomous engagement for the Executor
+id: home-lab-recon
+name: "Home lab recon"
+mode: own-lab
+scope:
+  in:
+    - "10.0.0.0/24"
+roe:
+  allowed_actions: [passive, active-scan]
+autonomy: autonomous
+env:
+  kind: ssh
+  ssh_host: "kali@10.0.0.50"
+audit_log: ./audit/home-lab-recon.jsonl
+state: active
