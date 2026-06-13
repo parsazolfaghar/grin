@@ -1,0 +1,66 @@
+from ronin.prompts import build_step_prompt, parse_step, StepDecision
+from ronin.finding import Finding
+from ronin.journal import Journal, Step
+
+
+def _journal():
+    j = Journal(task_id="t", objective="find web services", target="203.0.113.7",
+                engagement_path="e.yaml", path="/tmp/j.json")
+    j.add_step(Step(action={"tool": "nmap", "command": "nmap -sV 203.0.113.7"},
+                    decision="executed", output="80/tcp open http"))
+    return j
+
+
+def test_build_step_prompt_includes_objective_target_history_and_classes():
+    sys, usr = build_step_prompt("find web services", "203.0.113.7", _journal(),
+                                 ["passive", "active-scan"])
+    assert isinstance(sys, str) and sys
+    assert "find web services" in usr
+    assert "203.0.113.7" in usr
+    assert "active-scan" in usr
+    assert "nmap -sV 203.0.113.7" in usr      # the history is fed back
+
+
+def test_parse_step_json_action():
+    raw = '{"action": {"tool": "nmap", "command": "nmap -sV 203.0.113.7", ' \
+          '"declared_class": "active-scan", "why": "port scan"}}'
+    d = parse_step(raw, "203.0.113.7")
+    assert d.kind == "action"
+    assert d.action["tool"] == "nmap"
+    assert d.action["command"] == "nmap -sV 203.0.113.7"
+    assert d.action["target"] == "203.0.113.7"     # defaults to task target
+    assert d.action["declared_class"] == "active-scan"
+
+
+def test_parse_step_json_done_with_findings():
+    raw = '{"done": true, "findings": [{"title": "WordPress 5.2", "severity": "MEDIUM", ' \
+          '"evidence": "x-powered-by", "tool": "whatweb", "command": "whatweb x", ' \
+          '"recommendation": "update"}]}'
+    d = parse_step(raw, "203.0.113.7")
+    assert d.kind == "done"
+    assert len(d.findings) == 1
+    f = d.findings[0]
+    assert isinstance(f, Finding)
+    assert f.severity == "medium"               # normalized
+    assert f.target == "203.0.113.7"            # defaults to task target
+    assert f.title == "WordPress 5.2"
+
+
+def test_parse_step_done_with_no_findings():
+    d = parse_step('{"done": true, "findings": []}', "h")
+    assert d.kind == "done"
+    assert d.findings == []
+
+
+def test_parse_step_markdown_action_fallback():
+    raw = "Thinking...\nCommand: nmap -sV 203.0.113.7\nWhy: find services"
+    d = parse_step(raw, "203.0.113.7")
+    assert d.kind == "action"
+    assert d.action["command"] == "nmap -sV 203.0.113.7"
+    assert d.action["tool"] == "nmap"           # first token of the command
+    assert d.action["declared_class"] is None
+
+
+def test_parse_step_garbage_is_parse_miss():
+    d = parse_step("I'm not sure what to do here, sorry!", "h")
+    assert d.kind == "parse_miss"
