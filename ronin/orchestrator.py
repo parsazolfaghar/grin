@@ -60,5 +60,6 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
         for o in decision.next_objectives:
             queue.append(o)
 
-    status = "budget_exhausted" if len(objectives_run) >= max_objectives and queue else "completed"
+    # queue is non-empty here only if the objective budget stopped the loop.
+    status = "budget_exhausted" if queue else "completed"
     return EngagementResult(status, findings, objectives_run, paused, plan_log)
