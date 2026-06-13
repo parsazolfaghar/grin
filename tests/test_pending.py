@@ -37,3 +37,12 @@ def test_missing_file_is_empty(tmp_path):
     s = PendingStore(str(tmp_path / "nope.state.json"))
     assert s.list() == []
     assert s.approved_phases() == set()
+
+
+def test_peek_finds_without_removing(tmp_path):
+    path = str(tmp_path / "e.state.json")
+    s = PendingStore(path)
+    pid = s.add(target="t", tool="nmap", command="c", resolved_class="active-scan")
+    assert s.peek(pid)["id"] == pid
+    assert len(s.list()) == 1     # peek does NOT remove
+    assert s.peek("nope") is None

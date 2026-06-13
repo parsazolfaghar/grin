@@ -132,3 +132,38 @@ def test_phase_gated_approval_opens_phase(tmp_path):
     p2 = submit_action(eng, target="www.acme.test", tool="sqlmap", command="sqlmap b",
                        declared_class="exploit", runner=runner, now=IN_WINDOW)
     assert p2.status == "executed"
+
+
+def test_approve_out_of_window_keeps_action_pending(tmp_path):
+    eng = make_eng(tmp_path)
+    runner = FakeRunner()
+    pend = submit_action(eng, target="www.acme.test", tool="sqlmap", command="sqlmap x",
+                         declared_class="exploit", runner=runner, now=IN_WINDOW)
+    out_window = datetime(2026, 6, 20, 12, 0)
+    out = approve_action(eng, pend.pending_id, approver="operator", runner=runner, now=out_window)
+    assert out.status == "refused"
+    assert "window" in out.reason.lower()
+    # I1: not silently lost — still queued for a later in-window approval
+    assert PendingStore(pending_path(eng)).list()[0]["id"] == pend.pending_id
+    rec = _audit_lines(eng)[0]
+    assert rec["decision"] == "refuse"
+    assert rec["approved_by"] == "operator"
+
+
+def test_approve_unknown_id_is_audited(tmp_path):
+    eng = make_eng(tmp_path)
+    out = approve_action(eng, "deadbeef", approver="operator", runner=FakeRunner(), now=IN_WINDOW)
+    assert out.status == "refused"
+    rec = _audit_lines(eng)[0]
+    assert rec["decision"] == "refuse"
+    assert "unknown pending id" in rec["reason"]
+    assert rec["approved_by"] == "operator"
+
+
+def test_deny_unknown_id_is_audited(tmp_path):
+    eng = make_eng(tmp_path)
+    out = deny_action(eng, "deadbeef", approver="operator")
+    assert out.status == "refused"
+    rec = _audit_lines(eng)[0]
+    assert rec["decision"] == "refuse"
+    assert "unknown pending id" in rec["reason"]

@@ -39,6 +39,13 @@ class PendingStore:
     def list(self) -> list:
         return self._load()["pending"]
 
+    def peek(self, pid: str):
+        """Find a pending entry by id WITHOUT removing it. None if not found."""
+        for e in self._load()["pending"]:
+            if e["id"] == pid:
+                return e
+        return None
+
     def pop(self, pid: str):
         data = self._load()
         for i, e in enumerate(data["pending"]):

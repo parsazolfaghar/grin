@@ -40,6 +40,13 @@ def _audit_refuse(eng: Engagement, *, target, tool, command, action_class,
     return Outcome(status="refused", reason=reason, record=rec)
 
 
+def _audit_unknown(eng: Engagement, *, pending_id: str, approver: str, verb: str) -> Outcome:
+    rec = audit(eng.audit_log, engagement=eng.id, target="", tool="", command="",
+                action_class="", decision="refuse", gated=True, approved_by=approver,
+                reason=f"{verb} attempted for unknown pending id {pending_id!r}")
+    return Outcome(status="refused", reason=f"no pending action {pending_id!r}", record=rec)
+
+
 def submit_action(eng: Engagement, *, target: str, tool: str, command: str,
                   declared_class: str | None, runner: Runner, now: datetime) -> Outcome:
     action_class = resolve_class(tool, declared_class)
@@ -62,16 +69,21 @@ def submit_action(eng: Engagement, *, target: str, tool: str, command: str,
 def approve_action(eng: Engagement, pending_id: str, *, approver: str,
                    runner: Runner, now: datetime) -> Outcome:
     store = PendingStore(pending_path(eng))
-    entry = store.pop(pending_id)
+    entry = store.peek(pending_id)
     if entry is None:
-        return Outcome(status="refused", reason=f"no pending action {pending_id!r}")
+        return _audit_unknown(eng, pending_id=pending_id, approver=approver, verb="approve")
 
+    # Re-authorize: time/state/scope may have changed since the action was queued.
     decision = authorize(entry["target"], entry["resolved_class"], eng, now)
     if not decision.allowed:
+        # Leave the action in the pending queue — the block may be transient (e.g. an
+        # out-of-window approval) — and audit the refused attempt. Not silently discarded.
         return _audit_refuse(eng, target=entry["target"], tool=entry["tool"],
                              command=entry["command"], action_class=entry["resolved_class"],
                              gated=True, reason=decision.reason, approved_by=approver)
 
+    store.pop(pending_id)
+    # phase-gated: approving an action opens that class's phase for the rest of the engagement.
     if eng.autonomy == "phase-gated":
         store.approve_phase(entry["resolved_class"])
 
@@ -84,7 +96,7 @@ def deny_action(eng: Engagement, pending_id: str, *, approver: str) -> Outcome:
     store = PendingStore(pending_path(eng))
     entry = store.pop(pending_id)
     if entry is None:
-        return Outcome(status="refused", reason=f"no pending action {pending_id!r}")
+        return _audit_unknown(eng, pending_id=pending_id, approver=approver, verb="deny")
     return _audit_refuse(eng, target=entry["target"], tool=entry["tool"],
                          command=entry["command"], action_class=entry["resolved_class"],
                          gated=True, reason="operator denied", approved_by=approver)
