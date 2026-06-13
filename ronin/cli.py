@@ -9,6 +9,7 @@ from pathlib import Path
 from ronin.engagement import load_engagement, EngagementError, pending_path
 from ronin.executor import execute_task, resume_task, DEFAULT_MODEL
 from ronin.inference import OllamaClient
+from ronin.orchestrator import orchestrate
 from ronin.journal import Journal
 from ronin.pending import PendingStore
 from ronin.results import ResultStore, results_path
@@ -173,6 +174,29 @@ def cmd_execute_resume(journal_file: str) -> int:
     return 0
 
 
+def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
+               max_steps: int) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
+    res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
+                      executor_client=_make_executor_client(eng), runner=_runner_for(eng),
+                      now=datetime.now(), model=model, max_objectives=max_objectives,
+                      max_steps=max_steps, seeds=seed_list, engagement_path=path)
+    print(f"status: {res.status}")
+    print(f"objectives run: {len(res.objectives_run)}")
+    for f in res.findings:
+        print(f"  [{f.severity}] {f.title} ({f.target}) — {f.tool}")
+    for p in res.paused:
+        o = p["objective"]
+        print(f"  BLOCKED (awaiting approval): {o.objective} on {o.target} "
+              f"— pending {p['pending_id']} (run `ronin gate`)")
+    return 0
+
+
 def _runner_for(eng):
     """Live runner from the engagement env; fall back to FakeRunner if the env
     cannot be built (e.g. docker extra missing) so the spine is still exercisable."""
@@ -185,6 +209,12 @@ def _runner_for(eng):
 
 def _make_client(eng):
     """The local model client. Separate function so tests can inject a FakeClient."""
+    return OllamaClient()
+
+
+def _make_executor_client(eng):
+    """The Executor's model client. Separate factory so tests can inject a FakeClient and so a
+    future SP can pin a different per-role model."""
     return OllamaClient()
 
 
@@ -220,6 +250,14 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--max-steps", type=int, default=12, dest="max_steps")
     e.add_argument("--resume", metavar="JOURNAL", help="resume a paused task from its journal")
 
+    g2 = sub.add_parser("engage", help="run the Orchestrator on a high-level goal")
+    g2.add_argument("file")
+    g2.add_argument("--goal", required=True, help="the engagement goal, in plain language")
+    g2.add_argument("--seeds", default="", help="optional comma-separated seed targets")
+    g2.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
+    g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
+    g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
+
     return parser
 
 
@@ -242,6 +280,9 @@ def main(argv=None) -> int:
             return 2
         return cmd_execute(args.file, task=args.task, target=args.target,
                            model=args.model, max_steps=args.max_steps)
+    if args.group == "engage":
+        return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
+                          max_objectives=args.max_objectives, max_steps=args.max_steps)
     return 2
 
 

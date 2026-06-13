@@ -1,0 +1,15 @@
+# examples/external-net.yaml — an own-lab autonomous engagement for the Orchestrator
+id: external-net
+name: "External network assessment"
+mode: own-lab
+scope:
+  in:
+    - "10.0.0.0/24"
+roe:
+  allowed_actions: [passive, active-scan]
+autonomy: autonomous
+env:
+  kind: ssh
+  ssh_host: "kali@10.0.0.50"
+audit_log: ./audit/external-net.jsonl
+state: active
