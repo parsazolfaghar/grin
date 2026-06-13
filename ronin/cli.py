@@ -7,7 +7,11 @@ from datetime import datetime
 from pathlib import Path
 
 from ronin.engagement import load_engagement, EngagementError, pending_path
+from ronin.executor import execute_task, resume_task, DEFAULT_MODEL
+from ronin.inference import OllamaClient
+from ronin.journal import Journal
 from ronin.pending import PendingStore
+from ronin.results import ResultStore, results_path
 from ronin.runner import build_runner, FakeRunner
 from ronin.spine import submit_action, approve_action, deny_action
 
@@ -99,6 +103,11 @@ def cmd_gate(path: str) -> int:
         if choice == "a":
             out = approve_action(eng, entry["id"], approver=_who(), runner=runner,
                                  now=datetime.now())
+            if out.status == "executed" and out.result is not None:
+                # bridge for the Executor's --resume: persist the full approved output
+                ResultStore(results_path(eng)).put(
+                    id=entry["id"], command=entry["command"],
+                    output=out.result.output, exit_code=out.result.exit_code)
             print(f"    -> {out.status}" + (f": {out.reason}" if out.reason else ""))
         elif choice == "d":
             out = deny_action(eng, entry["id"], approver=_who())
@@ -127,6 +136,43 @@ def cmd_audit(path: str) -> int:
     return 0
 
 
+def _print_task_result(res) -> None:
+    print(f"status: {res.status}")
+    if res.pending_id:
+        print(f"awaiting approval — pending id {res.pending_id} (run `ronin gate`, "
+              f"then `ronin execute --resume {res.journal.path}`)")
+    for f in res.findings:
+        print(f"  [{f.severity}] {f.title} ({f.target}) — {f.tool}")
+    print(f"journal: {res.journal.path}")
+
+
+def cmd_execute(path: str, *, task: str, target: str, model: str, max_steps: int) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    res = execute_task(eng, objective=task, target=target, client=_make_client(eng),
+                       runner=_runner_for(eng), now=datetime.now(), model=model,
+                       max_steps=max_steps, engagement_path=path)
+    _print_task_result(res)
+    return 0
+
+
+def cmd_execute_resume(journal_file: str) -> int:
+    journal = Journal.load(journal_file)
+    try:
+        eng = load_engagement(journal.engagement_path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    res = resume_task(eng, journal, client=_make_client(eng), runner=_runner_for(eng),
+                      now=datetime.now(), result_store=ResultStore(results_path(eng)),
+                      model=DEFAULT_MODEL)
+    _print_task_result(res)
+    return 0
+
+
 def _runner_for(eng):
     """Live runner from the engagement env; fall back to FakeRunner if the env
     cannot be built (e.g. docker extra missing) so the spine is still exercisable."""
@@ -135,6 +181,11 @@ def _runner_for(eng):
     except Exception as e:        # noqa: BLE001 - operator-facing fallback
         print(f"  (env runner unavailable: {e}; using FakeRunner)", file=sys.stderr)
         return FakeRunner()
+
+
+def _make_client(eng):
+    """The local model client. Separate function so tests can inject a FakeClient."""
+    return OllamaClient()
 
 
 def _who() -> str:
@@ -160,6 +211,15 @@ def build_parser() -> argparse.ArgumentParser:
     g.add_argument("file")
     a = sub.add_parser("audit", help="print the audit trail")
     a.add_argument("file")
+
+    e = sub.add_parser("execute", help="run the AI Executor on one objective")
+    e.add_argument("file", nargs="?", help="engagement file (omit with --resume)")
+    e.add_argument("--task", help="the objective, in plain language")
+    e.add_argument("--target", help="the authorized target host/URL")
+    e.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
+    e.add_argument("--max-steps", type=int, default=12, dest="max_steps")
+    e.add_argument("--resume", metavar="JOURNAL", help="resume a paused task from its journal")
+
     return parser
 
 
@@ -173,6 +233,15 @@ def main(argv=None) -> int:
         return cmd_gate(args.file)
     if args.group == "audit":
         return cmd_audit(args.file)
+    if args.group == "execute":
+        if args.resume:
+            return cmd_execute_resume(args.resume)
+        if not args.file or not args.task or not args.target:
+            print("execute needs <file> --task ... --target ... (or --resume <journal>)",
+                  file=sys.stderr)
+            return 2
+        return cmd_execute(args.file, task=args.task, target=args.target,
+                           model=args.model, max_steps=args.max_steps)
     return 2
 
 
