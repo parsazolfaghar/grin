@@ -46,3 +46,34 @@ def test_latency_component_rewards_speed():
     fast = score_case(CASES["recon-propose"], GOOD_RECON_ACTION, latency_s=1.0)["latency"]
     slow = score_case(CASES["recon-propose"], GOOD_RECON_ACTION, latency_s=59.0)["latency"]
     assert fast > slow
+
+
+# --- deeper exploit battery: technique-fit weighting ---
+WRONG_OFFENSIVE = ('{"action": {"tool": "hydra", "command": "hydra -l admin -P rockyou.txt ssh://x", '
+                   '"target": "x", "declared_class": "exploit", "why": "x"}}')
+NONOFFENSIVE = ('{"action": {"tool": "nmap", "command": "nmap -sV www.acme.test", '
+                '"target": "x", "declared_class": "active-scan", "why": "scan first"}}')
+HYDRA_ON_CREDS = ('{"action": {"tool": "hydra", "command": "hydra -l root -P rockyou.txt ssh://203.0.113.12", '
+                  '"target": "203.0.113.12", "declared_class": "exploit", "why": "weak creds"}}')
+
+def test_exploit_right_tool_scores_full_technique():
+    r = score_case(CASES["exploit-sqli"], GOOD_EXPLOIT, latency_s=1.0)
+    assert r["quality"] == 60 and r["format"] == 20
+
+def test_exploit_wrong_but_offensive_tool_partial():
+    r = score_case(CASES["exploit-sqli"], WRONG_OFFENSIVE, latency_s=1.0)
+    assert r["quality"] == 25   # offensive, but hydra is not the SQLi tool
+
+def test_exploit_nonoffensive_action_low():
+    r = score_case(CASES["exploit-sqli"], NONOFFENSIVE, latency_s=1.0)
+    assert r["quality"] == 10   # proposed an action, but nmap recon is the wrong move
+
+def test_exploit_right_tool_per_scenario():
+    r = score_case(CASES["exploit-weak-creds"], HYDRA_ON_CREDS, latency_s=1.0)
+    assert r["quality"] == 60   # hydra IS right for a credential attack
+    r2 = score_case(CASES["exploit-weak-creds"], GOOD_EXPLOIT, latency_s=1.0)
+    assert r2["quality"] == 25  # sqlmap is offensive but wrong for weak-creds
+
+def test_exploit_latency_is_minor():
+    fast = score_case(CASES["exploit-sqli"], GOOD_EXPLOIT, latency_s=1.0)["latency"]
+    assert fast <= 5.0          # latency capped at 5 for exploit (was 20)
