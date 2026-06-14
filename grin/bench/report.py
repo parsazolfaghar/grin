@@ -20,6 +20,9 @@ def to_json(report) -> str:
 
 def to_text(report) -> str:
     lines = ["GRIN MODEL BENCHMARK", "=" * 60, ""]
+    if any(">>" in m for m in report.models):
+        lines += ["(rows shown as advisor>>driver are two-model strategies — BENCH-ONLY, "
+                  "not yet a valid --exploit-model value)", ""]
     for role in report.roles:
         lines.append(f"[ {role.upper()} ]")
         ranked = sorted([r for r in report.role_results if r.role == role],

@@ -65,17 +65,24 @@ def run_bench(client, models, roles, cases, repeats: int = 3,
     so close calls aren't decided by single-shot sampling/scheduling noise. A refusal in ANY
     sample flags the case."""
     from statistics import median
+    from grin.bench.strategies import split_pair, run_pair
     sel = [c for c in cases if c.role in roles]
     case_results = []
     for model in models:
+        pair = split_pair(model)   # ('advisor','driver') or None
         for case in sel:
             system, user = case.build()
             scores, lats, refusals, last_bd, err = [], [], [], None, ""
             for _ in range(max(1, repeats)):
                 t0 = time.monotonic()
                 try:
-                    raw = client.generate(model=model, system=system, prompt=user,
-                                          temperature=temperature)
+                    if pair:
+                        if case.exec_inputs is None:
+                            raise ValueError("pair candidate needs executor inputs (not this case)")
+                        raw = run_pair(client, pair[0], pair[1], case.exec_inputs, temperature)
+                    else:
+                        raw = client.generate(model=model, system=system, prompt=user,
+                                              temperature=temperature)
                 except Exception as e:  # noqa: BLE001 - a dead model scores 0, run continues
                     raw, err = "", str(e)
                 dt = time.monotonic() - t0
