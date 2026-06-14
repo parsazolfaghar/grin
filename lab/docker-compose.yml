@@ -1,0 +1,29 @@
+# lab/docker-compose.yml — isolated graded flag-lab. NEVER expose these ports to a public host.
+networks:
+  grin-lab:
+    name: grin-lab
+    driver: bridge
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.30.0.0/24
+
+services:
+  t1-ssh:
+    build: {context: ., dockerfile: Dockerfile.t1-ssh}
+    image: grin-lab-ssh
+    container_name: grin-lab-ssh
+    networks: {grin-lab: {ipv4_address: 172.30.0.11}}
+    restart: "no"
+  t2-web:
+    build: {context: ., dockerfile: Dockerfile.t2-web}
+    image: grin-lab-web
+    container_name: grin-lab-web
+    networks: {grin-lab: {ipv4_address: 172.30.0.12}}
+    restart: "no"
+  t3-chain:
+    build: {context: ., dockerfile: Dockerfile.t3-chain}
+    image: grin-lab-chain
+    container_name: grin-lab-chain
+    networks: {grin-lab: {ipv4_address: 172.30.0.13}}
+    restart: "no"

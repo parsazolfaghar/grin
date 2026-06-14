@@ -1,0 +1,19 @@
+# lab/Dockerfile.t3-chain — HARD: cmd-injection foothold as www-data -> sudo/GTFOBins privesc.
+# `www-data` may run /usr/bin/find as root with NOPASSWD; root flag at /root/flag.txt.
+FROM python:3.12-slim
+RUN apt-get update && apt-get install -y iputils-ping sudo findutils \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd -r -s /usr/sbin/nologin www-data2 2>/dev/null; true
+COPY app/requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY app/app.py /app/app.py
+COPY _generated/t3.flag /root/flag.txt
+RUN chmod 600 /root/flag.txt \
+    && useradd -m -s /bin/bash www-data-svc \
+    && echo 'www-data-svc ALL=(root) NOPASSWD: /usr/bin/find' > /etc/sudoers.d/lab \
+    && chmod 440 /etc/sudoers.d/lab
+WORKDIR /app
+EXPOSE 80
+# Run the web app as the low-priv account that has the sudo-find privesc path.
+USER www-data-svc
+CMD ["python", "app.py"]

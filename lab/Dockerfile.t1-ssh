@@ -1,0 +1,10 @@
+# lab/Dockerfile.t1-ssh — EASY: weak SSH credentials. Flag baked from generated file.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && useradd -m -s /bin/bash operator \
+    && echo 'operator:operator123' | chpasswd
+COPY _generated/t1.flag /home/operator/flag.txt
+RUN chown operator:operator /home/operator/flag.txt && chmod 644 /home/operator/flag.txt
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D", "-e"]
