@@ -165,3 +165,20 @@ def test_refresh_boot_renders_engagements_without_waiting_on_doctor(win):
     w, _ = win
     w.refresh_boot()
     assert len(w.boot._rows) == 1   # engagements painted immediately; doctor runs off-thread
+
+
+def test_resize_geometry_math():
+    from grin.app.qt_app import _resized
+    from PyQt6.QtCore import QRect
+    geo = QRect(100, 100, 800, 600)
+    assert _resized({"right"}, geo, 50, 0).width() == 850            # right edge widens
+    g = _resized({"left"}, geo, 30, 0); assert g.left() == 130 and g.width() == 770
+    g = _resized({"right", "bottom"}, geo, 40, 20)
+    assert g.width() == 840 and g.height() == 620                    # br corner
+    g = _resized({"top"}, geo, 0, 25); assert g.top() == 125 and g.height() == 575
+
+
+def test_window_has_edge_and_corner_handles(win):
+    w, _ = win
+    assert set(w._handles) == {"top", "bottom", "left", "right",
+                               "lefttop", "righttop", "leftbottom", "rightbottom"}

@@ -8,11 +8,11 @@ tested and screenshot-verified headlessly.
 """
 import os
 
-from PyQt6.QtCore import Qt, QTimer, QSettings, QObject, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSettings, QObject, QRect, pyqtSignal
 from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSizeGrip,
+    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
 )
 
 HERE = os.path.dirname(__file__)
@@ -509,6 +509,61 @@ class _Async(QObject):
     done = pyqtSignal(object)
 
 
+# resize affordance for the frameless window: thin invisible handles on each edge/corner
+_CURSORS = {
+    frozenset({"top"}): Qt.CursorShape.SizeVerCursor,
+    frozenset({"bottom"}): Qt.CursorShape.SizeVerCursor,
+    frozenset({"left"}): Qt.CursorShape.SizeHorCursor,
+    frozenset({"right"}): Qt.CursorShape.SizeHorCursor,
+    frozenset({"left", "top"}): Qt.CursorShape.SizeFDiagCursor,
+    frozenset({"right", "bottom"}): Qt.CursorShape.SizeFDiagCursor,
+    frozenset({"right", "top"}): Qt.CursorShape.SizeBDiagCursor,
+    frozenset({"left", "bottom"}): Qt.CursorShape.SizeBDiagCursor,
+}
+RESIZE_MARGIN = 8
+MIN_W, MIN_H = 760, 520
+
+
+def _resized(edges: set, geo: QRect, dx: int, dy: int) -> QRect:
+    """New window rect when dragging the given edges by (dx, dy) from the start geometry."""
+    g = QRect(geo)
+    if "left" in edges:
+        g.setLeft(geo.left() + dx)
+    if "right" in edges:
+        g.setRight(geo.right() + dx)
+    if "top" in edges:
+        g.setTop(geo.top() + dy)
+    if "bottom" in edges:
+        g.setBottom(geo.bottom() + dy)
+    return g
+
+
+class _ResizeHandle(QWidget):
+    """A transparent edge/corner strip that drag-resizes the top-level frameless window."""
+
+    def __init__(self, parent, edges: set):
+        super().__init__(parent)
+        self._edges = edges
+        self.setCursor(_CURSORS[frozenset(edges)])
+        self._drag = None
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.MouseButton.LeftButton:
+            self._drag = (e.globalPosition().toPoint(), QRect(self.window().geometry()))
+
+    def mouseMoveEvent(self, e):
+        if not self._drag:
+            return
+        start, geo = self._drag
+        d = e.globalPosition().toPoint() - start
+        g = _resized(self._edges, geo, d.x(), d.y())
+        if g.width() >= MIN_W and g.height() >= MIN_H:
+            self.window().setGeometry(g)
+
+    def mouseReleaseEvent(self, _e):
+        self._drag = None
+
+
 def _snap_sig(snap):
     """A cheap signature of a live snapshot — used to skip pane rebuilds when nothing changed."""
     snap = snap or {}
@@ -569,8 +624,15 @@ class GrinWindow(QWidget):
         root.addWidget(self.status)
 
         self.overlay = ScanlineOverlay(self); self.overlay.resize(self.size())
-        self._grip = QSizeGrip(self)   # drag bottom-right to resize the frameless window
-        self._grip.resize(16, 16)
+        # edge + corner resize handles (frameless window has no native edges)
+        self._handles = {
+            "top": _ResizeHandle(self, {"top"}), "bottom": _ResizeHandle(self, {"bottom"}),
+            "left": _ResizeHandle(self, {"left"}), "right": _ResizeHandle(self, {"right"}),
+            "lefttop": _ResizeHandle(self, {"left", "top"}),
+            "righttop": _ResizeHandle(self, {"right", "top"}),
+            "leftbottom": _ResizeHandle(self, {"left", "bottom"}),
+            "rightbottom": _ResizeHandle(self, {"right", "bottom"}),
+        }
 
         self._poll = QTimer(self); self._poll.setInterval(1500); self._poll.timeout.connect(self._tick)
 
@@ -634,8 +696,15 @@ class GrinWindow(QWidget):
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
-        self._grip.move(self.width() - self._grip.width(), self.height() - self._grip.height())
-        self._grip.raise_()   # above the scanline overlay so it stays draggable
+        w, h, m = self.width(), self.height(), RESIZE_MARGIN
+        rects = {
+            "top": QRect(m, 0, w - 2 * m, m), "bottom": QRect(m, h - m, w - 2 * m, m),
+            "left": QRect(0, m, m, h - 2 * m), "right": QRect(w - m, m, m, h - 2 * m),
+            "lefttop": QRect(0, 0, m, m), "righttop": QRect(w - m, 0, m, m),
+            "leftbottom": QRect(0, h - m, m, m), "rightbottom": QRect(w - m, h - m, m, m),
+        }
+        for name, hd in self._handles.items():
+            hd.setGeometry(rects[name]); hd.raise_()   # above the scanline overlay
         super().resizeEvent(e)
 
     def _async(self, fn, on_done):
