@@ -108,3 +108,23 @@ other — rare.
 **If/when built:** the engagement `env` becomes a *set* of environments; a dispatcher routes each tool
 command to the distro that has it (a tool→distro catalog, or "prefer Kali, fall back to BlackArch").
 Cost: two containers resident + routing logic + version skew. Power gain: coverage, not strength.
+
+---
+
+## R6 — Hardware/RF tooling via Flipper Zero — FUTURE IDEA (no hardware yet)
+**Status: parked — operator does not own a Flipper Zero yet. Capture only; revisit when hardware exists.**
+
+**Idea:** drive a Flipper Zero as a Grin tool over its serial CLI (`/dev/ttyACM0`; libs `pyflipper`,
+`flipperzero-cli`), executed by the runner on the host the device is physically attached to (the rig
+in split mode). Opens a physical/RF attack surface — sub-GHz, NFC/RFID, IR, iButton, BadUSB.
+
+**Why it's a deliberate sub-project, not a bolt-on (carry these constraints forward):**
+1. **Doesn't fit the IP scope model** — needs a new notion of *physical/RF targets* (a badge, a 433MHz
+   remote, a USB port) and new action classes (`rf-transmit`, `nfc-clone`, `badusb`, `ir`) in the spine.
+2. **High-risk + physically intrusive + legally sensitive** — RF tx / RFID cloning / BadUSB can't be
+   undone like a scan. Must be **ALWAYS human-gated** (never autonomous), even in own-lab. Hard spine rule.
+3. **Physical presence required** — device attached to the runner host + control lib installed (the
+   doctor/SP9 would check for it).
+
+**Value:** physical/proximity authorized engagements (badge cloning, RF replay, BadUSB drops) —
+orthogonal to Grin's current network strength. Only worth building once a device is on hand.
