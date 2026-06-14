@@ -89,10 +89,11 @@ def resume_task(eng: Engagement, journal: Journal, *, client, runner, now: datet
     pid = journal.awaiting_pending_id
     if not pid:
         status = "completed" if journal.findings else "budget_exhausted"
-        return TaskResult(status, journal.findings, journal)
+        return TaskResult(status, journal.findings, journal, secrets=journal.secrets)
     rec = result_store.get(pid)
     if rec is None:
-        return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid)
+        return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid,
+                          secrets=journal.secrets)
     journal.update_pending_result(pid, rec.get("output", ""), rec.get("exit_code"))
     journal.save()
     return execute_task(eng, objective=journal.objective, target=journal.target,

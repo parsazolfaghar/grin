@@ -93,3 +93,12 @@ def test_parse_step_no_secrets_key():
     from grin.prompts import parse_step
     d = parse_step(json.dumps({"done": True, "findings": []}), "h")
     assert d.secrets == []
+
+
+def test_build_step_prompt_documents_secrets_format():
+    from grin.prompts import build_step_prompt
+    from grin.journal import Journal
+    j = Journal(task_id="t", objective="o", target="127.0.0.1", engagement_path="e", path="/tmp/j.json")
+    sys, usr = build_step_prompt("o", "127.0.0.1", j, ["passive", "active-scan"])
+    assert "secrets" in usr.lower()        # the model is told how to report captured secrets
+    assert "value" in usr.lower()

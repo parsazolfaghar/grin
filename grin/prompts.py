@@ -30,7 +30,11 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         '"why": "short reason"}}\n'
         'To finish, reply EXACTLY: {"done": true, "findings": [{"title": "...", '
         '"severity": "info|low|medium|high|critical", "evidence": "...", "tool": "...", '
-        '"command": "...", "recommendation": "..."}]}\n'
+        '"command": "...", "recommendation": "..."}], '
+        '"secrets": [{"label": "...", "value": "...", "target": "...", "tool": "...", '
+        '"command": "...", "context": "..."}]} '
+        "(include any credentials/keys/tokens you actually obtained in `secrets`, with full values; "
+        "omit the secrets array or leave it empty if none were captured)\n"
         "Return ONLY the JSON object."
     )
     return SYSTEM, user
