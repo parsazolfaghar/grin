@@ -7,6 +7,7 @@ from datetime import datetime
 from pathlib import Path
 
 from grin.engagement import load_engagement, EngagementError, pending_path
+from grin.loot import LootStore, loot_dir
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.inference import OllamaClient
 from grin.orchestrator import orchestrate, resume_engagement
@@ -263,6 +264,21 @@ def cmd_report(path: str, *, out, model: str) -> int:
     return 0
 
 
+def cmd_loot(path: str) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    rows = LootStore(loot_dir(eng)).all()
+    if not rows:
+        print("no secrets captured.")
+        return 0
+    for r in rows:
+        print(f"[{r['label']}] {r['target']} :: {r['value']}  ({r['tool']} // {r['objective']})")
+    return 0
+
+
 def _runner_for(eng):
     """Live runner from the engagement env; fall back to FakeRunner if the env
     cannot be built (e.g. docker extra missing) so the spine is still exercisable."""
@@ -347,6 +363,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("-o", "--out", default=None, help="output file (default: stdout)")
     rp.add_argument("--model", default=DEFAULT_MODEL, help="local model for the optional summary")
 
+    lt = sub.add_parser("loot", help="print captured secrets for an engagement")
+    lt.add_argument("file")
+
     return parser
 
 
@@ -384,6 +403,8 @@ def main(argv=None) -> int:
                           exploit_model=args.exploit_model)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model)
+    if args.group == "loot":
+        return cmd_loot(args.file)
     return 2
 
 
