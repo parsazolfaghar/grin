@@ -49,3 +49,31 @@ _Captured as a stub; the operator has additional requirements to add before this
   hardened JSON parsing.
 
 **STATUS: do not spec yet — pending the operator's added requirements ("the secure section needs touches").**
+
+---
+
+## R4 — Control plane (Mac) / compute plane (rig) — PLANNED (partly already works)
+**Goal:** the app + engine **run on the Mac** (the daily machine), but offload the heavy lifting to the
+rig: **GPU inference** (Ollama on the RTX 3060) and the **Kali/BlackArch arsenal**. Mac = UI +
+Orchestrator/Analyst brain; rig = compute + tool execution.
+
+**Already works today:**
+- **Tool offload** — the engagement `env` binding already points tools at the rig:
+  `env: {kind: ssh, ssh_host: "root@your-rig"}` (or docker into the rig's `grin-kali`/`grin-blackarch`).
+  The ssh + docker runners are live-validated; the Mac drives, the rig runs the tools.
+- **App on Mac** — the PyQt6 app is cross-platform; it already runs natively on macOS.
+
+**Still needed (small):**
+- **Inference offload** — `engage`/`execute` currently hardcode `OllamaClient()` (localhost). Add a
+  configurable Ollama endpoint engine-wide (env var `GRIN_OLLAMA_URL` and/or a flag), so the Mac talks
+  to the rig's Ollama. `bench` already has `--base-url`; generalize it to `_make_client`/
+  `_make_executor_client`.
+- **Secure transport (ties to R3)** — prefer an **SSH tunnel** (`ssh -L 11434:localhost:11434
+  root@rig`) over exposing Ollama on the LAN (`OLLAMA_HOST=0.0.0.0`); then point Grin at
+  `http://127.0.0.1:11434` which tunnels to the rig. Document both; recommend the tunnel.
+- **Doctor (SP9) awareness** — `grin doctor` should check the *configured* (possibly remote) Ollama
+  endpoint + rig reachability, not just localhost.
+
+**Net:** once the configurable Ollama endpoint lands, `grin app` on the Mac + `GRIN_OLLAMA_URL`=rig
+(via tunnel) + an `env: ssh→rig` engagement = full Mac-control / rig-compute split. Latency is fine
+(GPU compute dominates, not LAN).
