@@ -9,7 +9,7 @@ from pathlib import Path
 from ronin.engagement import load_engagement, EngagementError, pending_path
 from ronin.executor import execute_task, resume_task, DEFAULT_MODEL
 from ronin.inference import OllamaClient
-from ronin.orchestrator import orchestrate
+from ronin.orchestrator import orchestrate, resume_engagement
 from ronin.journal import Journal
 from ronin.pending import PendingStore
 from ronin.report_store import save_result, load_result, result_path
@@ -176,6 +176,17 @@ def cmd_execute_resume(journal_file: str) -> int:
     return 0
 
 
+def _print_engagement_result(res) -> None:
+    print(f"status: {res.status}")
+    print(f"objectives run: {len(res.objectives_run)}")
+    for f in res.findings:
+        print(f"  [{f.severity}] {f.title} ({f.target}) — {f.tool}")
+    for p in res.paused:
+        o = p["objective"]
+        print(f"  BLOCKED (awaiting approval): {o.objective} on {o.target} "
+              f"— pending {p['pending_id']} (run `ronin gate`)")
+
+
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
                max_steps: int) -> int:
     try:
@@ -189,14 +200,34 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
                       now=datetime.now(), model=model, max_objectives=max_objectives,
                       max_steps=max_steps, seeds=seed_list, engagement_path=path)
     save_result(result_path(eng), res)
-    print(f"status: {res.status}")
-    print(f"objectives run: {len(res.objectives_run)}")
-    for f in res.findings:
-        print(f"  [{f.severity}] {f.title} ({f.target}) — {f.tool}")
-    for p in res.paused:
-        o = p["objective"]
-        print(f"  BLOCKED (awaiting approval): {o.objective} on {o.target} "
-              f"— pending {p['pending_id']} (run `ronin gate`)")
+    _print_engagement_result(res)
+    return 0
+
+
+def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: int) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    try:
+        prior = load_result(result_path(eng))
+    except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
+        print(f"no saved engagement result to resume ({e}); run `ronin engage` first",
+              file=sys.stderr)
+        return 1
+    store = ResultStore(results_path(eng))
+    approved = [p for p in prior.paused if store.get(p["pending_id"]) is not None]
+    if not approved:
+        print("no approved blocked actions to resume; approve with `ronin gate` first "
+              "(nothing to resume)")
+        return 0
+    res = resume_engagement(eng, prior, planner_client=_make_client(eng),
+                            executor_client=_make_executor_client(eng), runner=_runner_for(eng),
+                            now=datetime.now(), model=model, max_objectives=max_objectives,
+                            max_steps=max_steps, engagement_path=path)
+    save_result(result_path(eng), res)
+    _print_engagement_result(res)
     return 0
 
 
@@ -282,11 +313,12 @@ def build_parser() -> argparse.ArgumentParser:
 
     g2 = sub.add_parser("engage", help="run the Orchestrator on a high-level goal")
     g2.add_argument("file")
-    g2.add_argument("--goal", required=True, help="the engagement goal, in plain language")
+    g2.add_argument("--goal", help="the engagement goal, in plain language")
     g2.add_argument("--seeds", default="", help="optional comma-separated seed targets")
     g2.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
     g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
     g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
+    g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `ronin gate` approvals")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
     rp.add_argument("file")
@@ -316,6 +348,12 @@ def main(argv=None) -> int:
         return cmd_execute(args.file, task=args.task, target=args.target,
                            model=args.model, max_steps=args.max_steps)
     if args.group == "engage":
+        if args.resume:
+            return cmd_engage_resume(args.file, model=args.model,
+                                     max_objectives=args.max_objectives, max_steps=args.max_steps)
+        if not args.goal:
+            print("engage needs --goal (or --resume)", file=sys.stderr)
+            return 2
         return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
                           max_objectives=args.max_objectives, max_steps=args.max_steps)
     if args.group == "report":

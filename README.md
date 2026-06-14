@@ -46,6 +46,19 @@ until the goal is met or the objective budget (`--max-objectives`, default 10) i
 (client) engagement, intrusive objectives pause for `ronin gate` approval and are reported at the
 end. Models are local-only.
 
+### Resuming a gated engagement (SP5)
+
+For client (gated) engagements, intrusive objectives pause for approval. Approve, then resume:
+```bash
+ronin engage examples/external-net.yaml --goal "assess the external network"   # pauses intrusive objectives
+ronin gate examples/external-net.yaml                                          # approve/deny
+ronin engage examples/external-net.yaml --resume                               # continue the approved ones
+ronin report examples/external-net.yaml -o report.md
+```
+`--resume` resumes every approved blocked objective (detected via the results store), merges their
+findings, keeps the adaptive loop going, and re-saves the result. Denied / not-yet-approved
+objectives stay blocked; if nothing is approved yet it reports "nothing to resume."
+
 ## The Reporter (SP4)
 
 Turn a finished engagement into a Markdown report:
