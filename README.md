@@ -46,6 +46,18 @@ until the goal is met or the objective budget (`--max-objectives`, default 10) i
 (client) engagement, intrusive objectives pause for `ronin gate` approval and are reported at the
 end. Models are local-only.
 
+## The Reporter (SP4)
+
+Turn a finished engagement into a Markdown report:
+```bash
+ronin engage examples/external-net.yaml --goal "assess the external network"   # saves the result
+ronin report examples/external-net.yaml -o report.md                            # renders it
+```
+The report groups findings by severity (with evidence, the exact command, and remediation), lists
+the methodology the Orchestrator followed, and appends an audit-trail + blocked-actions summary.
+The executive summary is deterministic by default; if a local model is up it writes a short
+narrative instead (and falls back to deterministic if the model is unavailable).
+
 ## Test
 ```bash
 python3 -m pytest -v
