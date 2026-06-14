@@ -1,5 +1,5 @@
 import json
-from ronin.audit import audit, result_digest
+from grin.audit import audit, result_digest
 
 
 def test_audit_appends_one_line_with_schema(tmp_path):

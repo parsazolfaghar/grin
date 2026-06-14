@@ -4,10 +4,10 @@ import json
 import re
 from dataclasses import dataclass
 
-from ronin.finding import Finding, normalize_severity
+from grin.finding import Finding, normalize_severity
 
 SYSTEM = (
-    "You are Ronin's Executor, an autonomous penetration-testing agent operating under an "
+    "You are Grin's Executor, an autonomous penetration-testing agent operating under an "
     "explicit, human-authorized, scope-bound engagement. You accomplish ONE objective by "
     "driving Kali/BlackArch tools. Every action you propose is checked by a scope/ROE "
     "gatekeeper before it runs; out-of-scope or disallowed actions are refused and you must "

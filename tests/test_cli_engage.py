@@ -1,8 +1,8 @@
 import json
-from ronin.cli import cmd_engage, build_parser, main
-import ronin.cli as cli
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner, ExecResult
+from grin.cli import cmd_engage, build_parser, main
+import grin.cli as cli
+from grin.inference import FakeClient
+from grin.runner import FakeRunner, ExecResult
 
 ENG_YAML = """
 id: e1

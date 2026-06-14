@@ -3,8 +3,8 @@ the gate decision (run vs pending) is a separate stage (see gate.py)."""
 from dataclasses import dataclass
 from datetime import datetime
 
-from ronin.engagement import Engagement
-from ronin.scope import in_scope
+from grin.engagement import Engagement
+from grin.scope import in_scope
 
 
 @dataclass(frozen=True)

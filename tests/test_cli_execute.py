@@ -1,10 +1,10 @@
 import json
-from ronin.cli import cmd_execute, build_parser, main
-from ronin.results import ResultStore, results_path
-from ronin.engagement import load_engagement
-import ronin.cli as cli
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner, ExecResult
+from grin.cli import cmd_execute, build_parser, main
+from grin.results import ResultStore, results_path
+from grin.engagement import load_engagement
+import grin.cli as cli
+from grin.inference import FakeClient
+from grin.runner import FakeRunner, ExecResult
 
 ENG_YAML = """
 id: e1
@@ -66,7 +66,7 @@ def test_main_dispatches_execute(tmp_path, monkeypatch):
 
 def test_gate_approve_persists_full_output(tmp_path, monkeypatch):
     from datetime import datetime
-    from ronin.spine import submit_action
+    from grin.spine import submit_action
     audit = str(tmp_path / "audit" / "g1.jsonl")
     p = tmp_path / "g1.yaml"
     p.write_text(

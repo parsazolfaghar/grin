@@ -1,8 +1,8 @@
 import json
-from ronin.analyst import initial_plan, replan, AnalystDecision
-from ronin.objective import Objective
-from ronin.inference import FakeClient
-from ronin.finding import Finding
+from grin.analyst import initial_plan, replan, AnalystDecision
+from grin.objective import Objective
+from grin.inference import FakeClient
+from grin.finding import Finding
 
 
 def test_initial_plan_parses_objectives():
@@ -61,9 +61,9 @@ def test_replan_parse_miss_is_fail_soft():
 
 def test_initial_plan_parses_action_class():
     import json
-    from ronin.analyst import initial_plan
-    from ronin.objective import Objective
-    from ronin.inference import FakeClient
+    from grin.analyst import initial_plan
+    from grin.objective import Objective
+    from grin.inference import FakeClient
     reply = json.dumps({"objectives": [
         {"objective": "enumerate", "target": "h", "action_class": "active-scan"},
         {"objective": "exploit it", "target": "h", "action_class": "exploit"},
@@ -75,8 +75,8 @@ def test_initial_plan_parses_action_class():
 
 def test_initial_plan_invalid_or_absent_action_class_defaults_empty():
     import json
-    from ronin.analyst import initial_plan
-    from ronin.inference import FakeClient
+    from grin.analyst import initial_plan
+    from grin.inference import FakeClient
     reply = json.dumps({"objectives": [
         {"objective": "a", "target": "h", "action_class": "bogus"},
         {"objective": "b", "target": "h"},
@@ -88,8 +88,8 @@ def test_initial_plan_invalid_or_absent_action_class_defaults_empty():
 
 def test_replan_parses_action_class():
     import json
-    from ronin.analyst import replan
-    from ronin.inference import FakeClient
+    from grin.analyst import replan
+    from grin.inference import FakeClient
     reply = json.dumps({"done": False, "reason": "r",
                         "next_objectives": [{"objective": "x", "target": "h",
                                              "action_class": "exploit"}]})

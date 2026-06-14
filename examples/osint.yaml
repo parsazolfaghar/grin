@@ -1,7 +1,7 @@
 # osint.yaml — a passive-only (OSINT) own-lab engagement using the docker runner.
 # allowed_actions is just [passive], so the spine permits OSINT tools (whois/dig/host/
 # theHarvester/amass) and refuses anything more intrusive. Tools run inside the named
-# container (install them with e.g. `docker exec ronin-kali apt-get install -y whois dnsutils`).
+# container (install them with e.g. `docker exec grin-kali apt-get install -y whois dnsutils`).
 id: osint-validate
 name: "OSINT validation"
 mode: own-lab
@@ -13,6 +13,6 @@ roe:
 autonomy: autonomous
 env:
   kind: docker
-  container: ronin-kali
+  container: grin-kali
 audit_log: ./audit/osint.jsonl
 state: active

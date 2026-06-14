@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
-from ronin.cli import cmd_engage, build_parser
-import ronin.cli as cli
-from ronin.engagement import load_engagement
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner
+from grin.cli import cmd_engage, build_parser
+import grin.cli as cli
+from grin.engagement import load_engagement
+from grin.inference import FakeClient
+from grin.runner import FakeRunner
 
 ENG_YAML = """
 id: e1

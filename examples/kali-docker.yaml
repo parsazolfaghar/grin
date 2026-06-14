@@ -1,5 +1,5 @@
 # kali-docker.yaml — own-lab engagement using the `docker` runner against a Kali container.
-# Commands execute INSIDE the named container (e.g. `docker run -d --name ronin-kali
+# Commands execute INSIDE the named container (e.g. `docker run -d --name grin-kali
 # --network host kalilinux/kali-rolling sleep infinity`, then install tools with apt).
 id: kali-docker-validate
 name: "Kali container validation"
@@ -12,6 +12,6 @@ roe:
 autonomy: autonomous
 env:
   kind: docker
-  container: ronin-kali
+  container: grin-kali
 audit_log: ./audit/kali.jsonl
 state: active

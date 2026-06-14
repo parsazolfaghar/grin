@@ -1,13 +1,13 @@
 import json
-from ronin.cli import cmd_report, cmd_engage, build_parser, main
-import ronin.cli as cli
-from ronin.report_store import save_result, result_path
-from ronin.orchestrator import EngagementResult
-from ronin.objective import Objective
-from ronin.finding import Finding
-from ronin.engagement import load_engagement
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner
+from grin.cli import cmd_report, cmd_engage, build_parser, main
+import grin.cli as cli
+from grin.report_store import save_result, result_path
+from grin.orchestrator import EngagementResult
+from grin.objective import Objective
+from grin.finding import Finding
+from grin.engagement import load_engagement
+from grin.inference import FakeClient
+from grin.runner import FakeRunner
 
 ENG_YAML = """
 id: e1
@@ -51,7 +51,7 @@ def test_cmd_report_writes_markdown(tmp_path, monkeypatch):
     rc = cmd_report(path, out=out_file, model="m")
     assert rc == 0
     md = open(out_file).read()
-    assert "# Ronin Engagement Report" in md
+    assert "# Grin Engagement Report" in md
     assert "Open port" in md
 
 

@@ -6,7 +6,7 @@ from datetime import datetime
 from pathlib import Path
 import yaml
 
-from ronin.classes import ACTION_CLASSES
+from grin.classes import ACTION_CLASSES
 
 MODES = ("own-lab", "client")
 AUTONOMY = ("autonomous", "action-gated", "phase-gated")

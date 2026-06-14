@@ -1,4 +1,4 @@
-from ronin.scope import in_scope
+from grin.scope import in_scope
 
 
 INC = ["*.acme.test", "203.0.113.0/24", "10.0.0.5"]

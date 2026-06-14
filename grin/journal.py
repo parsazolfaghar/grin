@@ -6,7 +6,7 @@ import os
 from dataclasses import dataclass, asdict
 from pathlib import Path
 
-from ronin.finding import Finding
+from grin.finding import Finding
 
 
 def journal_path(engagement, task_id: str) -> str:

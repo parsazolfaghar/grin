@@ -1,4 +1,4 @@
-from ronin.runner import ExecResult, FakeRunner, LocalRunner, SSHRunner, build_runner
+from grin.runner import ExecResult, FakeRunner, LocalRunner, SSHRunner, build_runner
 
 
 def test_fake_runner_returns_configured_result():
@@ -13,8 +13,8 @@ def test_fake_runner_returns_configured_result():
 
 
 def test_local_runner_executes_and_captures_exit_code():
-    res = LocalRunner().run("localhost", "echo ronin-ok")
-    assert "ronin-ok" in res.output
+    res = LocalRunner().run("localhost", "echo grin-ok")
+    assert "grin-ok" in res.output
     assert res.exit_code == 0
     assert res.duration_s >= 0
     assert res.timed_out is False
@@ -52,7 +52,7 @@ def test_ssh_runner_builds_expected_argv(monkeypatch):
         captured["argv"] = argv
         return _P()
 
-    monkeypatch.setattr("ronin.runner.subprocess.run", fake_run)
+    monkeypatch.setattr("grin.runner.subprocess.run", fake_run)
     res = SSHRunner("kali@10.0.0.50").run("10.0.0.7", "nmap -sV 10.0.0.7")
     assert res.output == "remote-out"
     assert res.exit_code == 0

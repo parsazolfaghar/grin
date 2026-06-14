@@ -1,4 +1,4 @@
-from ronin.gate import gate, INTRUSIVE
+from grin.gate import gate, INTRUSIVE
 
 
 def test_intrusive_set():

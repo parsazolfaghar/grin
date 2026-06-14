@@ -1,4 +1,4 @@
-from ronin.objective import Objective
+from grin.objective import Objective
 
 
 def test_objective_holds_goal_and_target():

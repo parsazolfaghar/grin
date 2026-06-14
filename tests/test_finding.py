@@ -1,4 +1,4 @@
-from ronin.finding import Finding, normalize_severity, SEVERITIES
+from grin.finding import Finding, normalize_severity, SEVERITIES
 
 
 def test_severities_ordered():

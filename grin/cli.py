@@ -1,4 +1,4 @@
-"""The `ronin` CLI — SP1 deliverable. A human stand-in for the future agents, so the
+"""The `grin` CLI — SP1 deliverable. A human stand-in for the future agents, so the
 whole spine is exercisable now. Subcommands: engagement validate / run / gate / audit."""
 import argparse
 import json
@@ -6,17 +6,17 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from ronin.engagement import load_engagement, EngagementError, pending_path
-from ronin.executor import execute_task, resume_task, DEFAULT_MODEL
-from ronin.inference import OllamaClient
-from ronin.orchestrator import orchestrate, resume_engagement
-from ronin.journal import Journal
-from ronin.pending import PendingStore
-from ronin.report_store import save_result, load_result, result_path
-from ronin.report import render_report, summarize_audit, llm_summary
-from ronin.results import ResultStore, results_path
-from ronin.runner import build_runner, FakeRunner
-from ronin.spine import submit_action, approve_action, deny_action
+from grin.engagement import load_engagement, EngagementError, pending_path
+from grin.executor import execute_task, resume_task, DEFAULT_MODEL
+from grin.inference import OllamaClient
+from grin.orchestrator import orchestrate, resume_engagement
+from grin.journal import Journal
+from grin.pending import PendingStore
+from grin.report_store import save_result, load_result, result_path
+from grin.report import render_report, summarize_audit, llm_summary
+from grin.results import ResultStore, results_path
+from grin.runner import build_runner, FakeRunner
+from grin.spine import submit_action, approve_action, deny_action
 
 
 def cmd_validate(path: str) -> int:
@@ -60,7 +60,7 @@ def run_loop(eng, *, runner, now: datetime, lines) -> int:
             print(f"  [allow] executed (exit={code}) {out.record['result_digest']}")
         elif out.status == "pending":
             print(f"  [gate] held for approval — pending id {out.pending_id} "
-                  f"(run `ronin gate`)")
+                  f"(run `grin gate`)")
         else:
             print(f"  [refuse] {out.reason}")
     return 0
@@ -142,8 +142,8 @@ def cmd_audit(path: str) -> int:
 def _print_task_result(res) -> None:
     print(f"status: {res.status}")
     if res.pending_id:
-        print(f"awaiting approval — pending id {res.pending_id} (run `ronin gate`, "
-              f"then `ronin execute --resume {res.journal.path}`)")
+        print(f"awaiting approval — pending id {res.pending_id} (run `grin gate`, "
+              f"then `grin execute --resume {res.journal.path}`)")
     for f in res.findings:
         print(f"  [{f.severity}] {f.title} ({f.target}) — {f.tool}")
     print(f"journal: {res.journal.path}")
@@ -184,7 +184,7 @@ def _print_engagement_result(res) -> None:
     for p in res.paused:
         o = p["objective"]
         print(f"  BLOCKED (awaiting approval): {o.objective} on {o.target} "
-              f"— pending {p['pending_id']} (run `ronin gate`)")
+              f"— pending {p['pending_id']} (run `grin gate`)")
 
 
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
@@ -216,13 +216,13 @@ def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: 
     try:
         prior = load_result(result_path(eng))
     except (FileNotFoundError, json.JSONDecodeError, KeyError) as e:
-        print(f"no saved engagement result to resume ({e}); run `ronin engage` first",
+        print(f"no saved engagement result to resume ({e}); run `grin engage` first",
               file=sys.stderr)
         return 1
     store = ResultStore(results_path(eng))
     approved = [p for p in prior.paused if store.get(p["pending_id"]) is not None]
     if not approved:
-        print("no approved blocked actions to resume; approve with `ronin gate` first "
+        print("no approved blocked actions to resume; approve with `grin gate` first "
               "(nothing to resume)")
         return 0
     res = resume_engagement(eng, prior, planner_client=_make_client(eng),
@@ -245,10 +245,10 @@ def cmd_report(path: str, *, out, model: str) -> int:
     try:
         result = load_result(result_path(eng))
     except FileNotFoundError:
-        print("no saved engagement result; run `ronin engage` first", file=sys.stderr)
+        print("no saved engagement result; run `grin engage` first", file=sys.stderr)
         return 1
     except (json.JSONDecodeError, KeyError) as e:
-        print(f"cannot read saved engagement result ({e}); re-run `ronin engage`",
+        print(f"cannot read saved engagement result ({e}); re-run `grin engage`",
               file=sys.stderr)
         return 1
     summary = llm_summary(_make_client(eng), model, result)
@@ -304,7 +304,7 @@ def _who() -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="ronin", description="Ronin engagement spine (SP1)")
+    parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     sub = parser.add_subparsers(dest="group", required=True)
 
     eng = sub.add_parser("engagement", help="engagement operations")
@@ -340,7 +340,7 @@ def build_parser() -> argparse.ArgumentParser:
                     help="model for passive/active-scan objectives (default: --model)")
     g2.add_argument("--exploit-model", default=None, dest="exploit_model",
                     help="model for exploit/post-exploit objectives (default: --model)")
-    g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `ronin gate` approvals")
+    g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
     rp.add_argument("file")

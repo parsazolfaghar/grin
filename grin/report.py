@@ -75,7 +75,7 @@ def _finding_block(f) -> str:
 def render_report(engagement, result, *, audit_summary: str, summary_text: str) -> str:
     eng = engagement
     out = []
-    out.append(f"# Ronin Engagement Report — {eng.name}")
+    out.append(f"# Grin Engagement Report — {eng.name}")
     out.append("")
     out.append(f"- Engagement: `{eng.id}`")
     out.append(f"- Mode: {eng.mode}")

@@ -1,4 +1,4 @@
-# Ronin — SP1: the engagement spine
+# Grin — SP1: the engagement spine
 
 Local-only multi-agent autonomous red-team orchestrator. SP1 is the fail-closed
 authorization + scoped-execution spine: the sole path to executing any action.
@@ -10,10 +10,10 @@ pip install -e ".[dev]"        # add ",docker" for the docker runner
 
 ## Use
 ```bash
-ronin engagement validate examples/acme-extnet.yaml
-ronin run examples/acme-extnet.yaml      # submit: tool | command | target [| class]
-ronin gate examples/acme-extnet.yaml     # approve/deny pending intrusive actions
-ronin audit examples/acme-extnet.yaml    # print the evidence trail
+grin engagement validate examples/acme-extnet.yaml
+grin run examples/acme-extnet.yaml      # submit: tool | command | target [| class]
+grin gate examples/acme-extnet.yaml     # approve/deny pending intrusive actions
+grin audit examples/acme-extnet.yaml    # print the evidence trail
 ```
 
 Every action runs `resolve_class -> authorize -> gate -> execute -> audit`,
@@ -25,12 +25,12 @@ logged. See `docs/superpowers/specs/2026-06-13-engagement-spine-design.md`.
 
 Run the AI agent on one objective (drives Kali/BlackArch tools through the spine):
 ```bash
-ronin execute examples/lab-recon.yaml --task "find web services" --target 10.0.0.5
-ronin execute --resume ./audit/home-lab-recon.<task-id>.journal.json   # after `ronin gate`
+grin execute examples/lab-recon.yaml --task "find web services" --target 10.0.0.5
+grin execute --resume ./audit/home-lab-recon.<task-id>.journal.json   # after `grin gate`
 ```
 The Executor asks a local model (Ollama on the rig) for the next action, the spine
 authorizes/gates/runs it on the bound Kali/BlackArch box, and the loop continues until the
-objective is met, the step budget runs out, or a gated action needs `ronin gate` approval
+objective is met, the step budget runs out, or a gated action needs `grin gate` approval
 (then `--resume`). Models are local-only; set the model with `--model` (default `qwen3:14b`).
 
 ### Evidence-gated findings (SP7)
@@ -44,23 +44,23 @@ runs nothing simply reports no findings).
 
 Run a whole engagement from one high-level goal (adaptive, lead-chasing):
 ```bash
-ronin engage examples/external-net.yaml --goal "assess the external network"
-ronin engage examples/external-net.yaml --goal "find and verify web vulns" --seeds 10.0.0.5
+grin engage examples/external-net.yaml --goal "assess the external network"
+grin engage examples/external-net.yaml --goal "find and verify web vulns" --seeds 10.0.0.5
 ```
 The Orchestrator plans objectives, runs each through an SP2 Executor (which drives Kali/BlackArch
 tools via the spine), an Analyst reads the findings and proposes follow-ups, and the loop runs
 until the goal is met or the objective budget (`--max-objectives`, default 10) is hit. In a gated
-(client) engagement, intrusive objectives pause for `ronin gate` approval and are reported at the
+(client) engagement, intrusive objectives pause for `grin gate` approval and are reported at the
 end. Models are local-only.
 
 ### Resuming a gated engagement (SP5)
 
 For client (gated) engagements, intrusive objectives pause for approval. Approve, then resume:
 ```bash
-ronin engage examples/external-net.yaml --goal "assess the external network"   # pauses intrusive objectives
-ronin gate examples/external-net.yaml                                          # approve/deny
-ronin engage examples/external-net.yaml --resume                               # continue the approved ones
-ronin report examples/external-net.yaml -o report.md
+grin engage examples/external-net.yaml --goal "assess the external network"   # pauses intrusive objectives
+grin gate examples/external-net.yaml                                          # approve/deny
+grin engage examples/external-net.yaml --resume                               # continue the approved ones
+grin report examples/external-net.yaml -o report.md
 ```
 `--resume` resumes every approved blocked objective (detected via the results store), merges their
 findings, keeps the adaptive loop going, and re-saves the result. Denied / not-yet-approved
@@ -70,7 +70,7 @@ objectives stay blocked; if nothing is approved yet it reports "nothing to resum
 
 Route models by objective type (all local Ollama; default is one `--model` for everything):
 ```bash
-ronin engage examples/external-net.yaml --goal "assess the external network" \
+grin engage examples/external-net.yaml --goal "assess the external network" \
   --recon-model qwen3:8b --exploit-model hermes3:8b --planner-model qwen3:14b
 ```
 Recon/passive objectives run on `--recon-model`, exploit/post-exploit objectives on
@@ -81,8 +81,8 @@ tag drives model choice only; the spine still resolves and authorizes every comm
 
 Turn a finished engagement into a Markdown report:
 ```bash
-ronin engage examples/external-net.yaml --goal "assess the external network"   # saves the result
-ronin report examples/external-net.yaml -o report.md                            # renders it
+grin engage examples/external-net.yaml --goal "assess the external network"   # saves the result
+grin report examples/external-net.yaml -o report.md                            # renders it
 ```
 The report groups findings by severity (with evidence, the exact command, and remediation), lists
 the methodology the Orchestrator followed, and appends an audit-trail + blocked-actions summary.

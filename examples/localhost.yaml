@@ -1,5 +1,5 @@
 # localhost.yaml — minimal own-lab engagement using the `local` runner.
-# Tools run directly on the host Ronin runs on. Used to live-validate the pipeline.
+# Tools run directly on the host Grin runs on. Used to live-validate the pipeline.
 id: localhost-validate
 name: "Localhost validation"
 mode: own-lab

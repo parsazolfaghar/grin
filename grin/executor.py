@@ -1,4 +1,4 @@
-"""The Executor — Ronin's first AI agent. A bounded observe-act loop: ask a local model for
+"""The Executor — Grin's first AI agent. A bounded observe-act loop: ask a local model for
 the next action, submit it to the SP1 spine (authorize/gate/execute/audit), feed the result
 back, repeat until done / budget / a gated pause. The spine is still the sole execution path;
 the Executor never runs a command itself."""
@@ -6,11 +6,11 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime
 
-from ronin.engagement import Engagement
-from ronin.journal import Journal, Step, journal_path
-from ronin.prompts import build_step_prompt, parse_step
-from ronin.spine import submit_action
-from ronin.results import ResultStore
+from grin.engagement import Engagement
+from grin.journal import Journal, Step, journal_path
+from grin.prompts import build_step_prompt, parse_step
+from grin.spine import submit_action
+from grin.results import ResultStore
 
 DEFAULT_MODEL = "qwen3:14b"   # config default; the real pin is set on the rig, not in code
 

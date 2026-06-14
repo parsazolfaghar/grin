@@ -1,8 +1,8 @@
-from ronin.report_store import result_path, save_result, load_result
-from ronin.orchestrator import EngagementResult
-from ronin.objective import Objective
-from ronin.finding import Finding
-from ronin.engagement import validate_engagement
+from grin.report_store import result_path, save_result, load_result
+from grin.orchestrator import EngagementResult
+from grin.objective import Objective
+from grin.finding import Finding
+from grin.engagement import validate_engagement
 
 ENG = {
     "id": "e1", "name": "n", "mode": "client",
@@ -59,8 +59,8 @@ def test_load_missing_file_raises(tmp_path):
 
 
 def test_goal_roundtrips(tmp_path):
-    from ronin.report_store import result_path, save_result, load_result
-    from ronin.orchestrator import EngagementResult
+    from grin.report_store import result_path, save_result, load_result
+    from grin.orchestrator import EngagementResult
     path = str(tmp_path / "e.engagement.json")
     save_result(path, EngagementResult(status="completed", goal="assess the network"))
     assert load_result(path).goal == "assess the network"
@@ -69,7 +69,7 @@ def test_goal_roundtrips(tmp_path):
 def test_load_defaults_goal_when_absent(tmp_path):
     import json
     from pathlib import Path
-    from ronin.report_store import load_result
+    from grin.report_store import load_result
     path = str(tmp_path / "old.engagement.json")
     Path(path).write_text(json.dumps({"status": "completed", "findings": [],
                                       "objectives_run": [], "paused": [], "plan_log": []}))

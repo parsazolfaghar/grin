@@ -1,14 +1,14 @@
 import json
 from datetime import datetime
-from ronin.cli import cmd_engage_resume, build_parser, main
-import ronin.cli as cli
-from ronin.orchestrator import orchestrate, EngagementResult
-from ronin.objective import Objective
-from ronin.engagement import load_engagement
-from ronin.report_store import save_result, load_result, result_path
-from ronin.results import ResultStore, results_path
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner
+from grin.cli import cmd_engage_resume, build_parser, main
+import grin.cli as cli
+from grin.orchestrator import orchestrate, EngagementResult
+from grin.objective import Objective
+from grin.engagement import load_engagement
+from grin.report_store import save_result, load_result, result_path
+from grin.results import ResultStore, results_path
+from grin.inference import FakeClient
+from grin.runner import FakeRunner
 
 ENG_YAML = """
 id: e1

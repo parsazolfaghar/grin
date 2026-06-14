@@ -1,4 +1,4 @@
-from ronin.inference import FakeClient, InferenceClient, OllamaClient
+from grin.inference import FakeClient, InferenceClient, OllamaClient
 
 
 def test_fake_client_single_reply_repeats():
@@ -32,7 +32,7 @@ def test_ollama_client_disables_thinking(monkeypatch):
         captured["body"] = json
         return _Resp()
 
-    monkeypatch.setattr("ronin.inference.httpx.post", fake_post)
+    monkeypatch.setattr("grin.inference.httpx.post", fake_post)
     out = OllamaClient().generate(model="qwen3:8b", system="s", prompt="p")
     assert out == "ok"
     assert captured["body"]["think"] is False        # thinking disabled for speed

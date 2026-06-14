@@ -1,6 +1,6 @@
 """Execution layer — runs a command INSIDE the engagement's bound Kali/BlackArch
 environment and captures output + exit code + duration. Adapted from the Sensei
-sandbox.py runners; the env is operator-provided (Ronin drives it, never provisions
+sandbox.py runners; the env is operator-provided (Grin drives it, never provisions
 it). Every run has a hard timeout."""
 import shlex
 import subprocess

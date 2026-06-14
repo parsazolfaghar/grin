@@ -1,6 +1,6 @@
-from ronin.prompts import build_step_prompt, parse_step, StepDecision
-from ronin.finding import Finding
-from ronin.journal import Journal, Step
+from grin.prompts import build_step_prompt, parse_step, StepDecision
+from grin.finding import Finding
+from grin.journal import Journal, Step
 
 
 def _journal():

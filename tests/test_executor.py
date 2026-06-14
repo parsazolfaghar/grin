@@ -1,11 +1,11 @@
 import json
 from datetime import datetime
-from ronin.executor import execute_task, resume_task, TaskResult, DEFAULT_MODEL
-from ronin.engagement import validate_engagement
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner, ExecResult
-from ronin.finding import Finding
-from ronin.results import ResultStore, results_path
+from grin.executor import execute_task, resume_task, TaskResult, DEFAULT_MODEL
+from grin.engagement import validate_engagement
+from grin.inference import FakeClient
+from grin.runner import FakeRunner, ExecResult
+from grin.finding import Finding
+from grin.results import ResultStore, results_path
 
 NOW = datetime(2026, 1, 1)
 

@@ -1,12 +1,12 @@
 import json
-from ronin.report import (
+from grin.report import (
     SEVERITY_ORDER, deterministic_summary, summarize_audit, llm_summary, render_report,
 )
-from ronin.orchestrator import EngagementResult
-from ronin.objective import Objective
-from ronin.finding import Finding
-from ronin.inference import FakeClient
-from ronin.engagement import validate_engagement
+from grin.orchestrator import EngagementResult
+from grin.objective import Objective
+from grin.finding import Finding
+from grin.inference import FakeClient
+from grin.engagement import validate_engagement
 
 ENG = validate_engagement({
     "id": "acme", "name": "ACME external", "mode": "client",
@@ -88,7 +88,7 @@ def test_llm_summary_uses_model_reply():
 def test_render_report_has_all_sections_and_findings():
     md = render_report(ENG, _result(), audit_summary="3 actions logged: 2 allowed, 1 refused.",
                        summary_text="Two findings, one high.")
-    assert "# Ronin Engagement Report" in md
+    assert "# Grin Engagement Report" in md
     assert "ACME external" in md
     assert "Two findings, one high." in md
     assert "## Findings" in md

@@ -1,9 +1,9 @@
 import json
 from datetime import datetime
-from ronin.spine import submit_action, approve_action, deny_action, Outcome
-from ronin.engagement import validate_engagement, pending_path
-from ronin.pending import PendingStore
-from ronin.runner import FakeRunner, ExecResult
+from grin.spine import submit_action, approve_action, deny_action, Outcome
+from grin.engagement import validate_engagement, pending_path
+from grin.pending import PendingStore
+from grin.runner import FakeRunner, ExecResult
 
 IN_WINDOW = datetime(2026, 6, 13, 20, 0)
 

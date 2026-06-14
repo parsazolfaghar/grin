@@ -1,5 +1,5 @@
 """Per-engagement working state: the pending (gated) action queue + the set of
-approved phases for phase-gated mode. JSON-backed so `ronin run` and `ronin gate`
+approved phases for phase-gated mode. JSON-backed so `grin run` and `grin gate`
 (separate processes) share it. This is mutable state — distinct from the append-only
 audit log."""
 import json

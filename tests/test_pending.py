@@ -1,4 +1,4 @@
-from ronin.pending import PendingStore
+from grin.pending import PendingStore
 
 
 def test_add_assigns_id_and_persists(tmp_path):

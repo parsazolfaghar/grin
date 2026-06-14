@@ -1,6 +1,6 @@
-from ronin.journal import Step, Journal, journal_path
-from ronin.finding import Finding
-from ronin.engagement import validate_engagement
+from grin.journal import Step, Journal, journal_path
+from grin.finding import Finding
+from grin.engagement import validate_engagement
 
 ENG = {
     "id": "e1", "name": "n", "mode": "own-lab",
@@ -65,7 +65,7 @@ def test_update_pending_result_marks_executed():
 
 
 def test_render_history_shows_no_evidence_nudge():
-    from ronin.journal import Journal, Step
+    from grin.journal import Journal, Step
     j = Journal(task_id="t", objective="o", target="h", engagement_path="e", path="/tmp/x.json")
     j.add_step(Step(action={}, decision="no_evidence"))
     assert "evidence" in j.render_history().lower()

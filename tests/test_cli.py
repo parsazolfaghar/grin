@@ -1,8 +1,8 @@
 import json
 from datetime import datetime
-from ronin.cli import main, cmd_validate, cmd_audit, run_loop
-from ronin.engagement import load_engagement
-from ronin.runner import FakeRunner, ExecResult
+from grin.cli import main, cmd_validate, cmd_audit, run_loop
+from grin.engagement import load_engagement
+from grin.runner import FakeRunner, ExecResult
 
 ENG_YAML = """
 id: e1

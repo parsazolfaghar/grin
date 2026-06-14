@@ -1,10 +1,10 @@
 import json
 from datetime import datetime
-from ronin.orchestrator import orchestrate, _model_for, EngagementResult
-from ronin.objective import Objective
-from ronin.engagement import validate_engagement
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner
+from grin.orchestrator import orchestrate, _model_for, EngagementResult
+from grin.objective import Objective
+from grin.engagement import validate_engagement
+from grin.inference import FakeClient
+from grin.runner import FakeRunner
 
 NOW = datetime(2026, 1, 1)
 

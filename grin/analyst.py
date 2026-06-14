@@ -1,15 +1,15 @@
-"""The Analyst — Ronin's pure-LLM planning brain. It never touches tools or the spine; it only
+"""The Analyst — Grin's pure-LLM planning brain. It never touches tools or the spine; it only
 reasons over findings to plan objectives. initial_plan seeds the queue; replan chases leads and
 decides when the engagement goal is met. Tolerant JSON parsing, fail-soft on a miss."""
 import json
 import re
 from dataclasses import dataclass
 
-from ronin.objective import Objective
-from ronin.classes import ACTION_CLASSES
+from grin.objective import Objective
+from grin.classes import ACTION_CLASSES
 
 PLANNER_SYSTEM = (
-    "You are Ronin's Orchestrator/Analyst, planning an authorized, scope-bound penetration test. "
+    "You are Grin's Orchestrator/Analyst, planning an authorized, scope-bound penetration test. "
     "You decide which objectives to pursue; a separate Executor runs the tools under a fail-closed "
     "gatekeeper. Plan concrete objectives against in-scope targets only. Reply with ONE JSON "
     "object and nothing else."

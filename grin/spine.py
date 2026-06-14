@@ -1,16 +1,16 @@
 """The engagement spine — the SOLE path to execution. Every action goes
 resolve_class -> authorize -> gate -> (execute | enqueue) -> audit, fail-closed.
-There is no other function in Ronin that runs a command or writes an allow line."""
+There is no other function in Grin that runs a command or writes an allow line."""
 from dataclasses import dataclass
 from datetime import datetime
 
-from ronin.audit import audit, result_digest
-from ronin.authorize import authorize
-from ronin.classes import resolve_class
-from ronin.engagement import Engagement, pending_path
-from ronin.gate import gate
-from ronin.pending import PendingStore
-from ronin.runner import ExecResult, Runner
+from grin.audit import audit, result_digest
+from grin.authorize import authorize
+from grin.classes import resolve_class
+from grin.engagement import Engagement, pending_path
+from grin.gate import gate
+from grin.pending import PendingStore
+from grin.runner import ExecResult, Runner
 
 
 @dataclass

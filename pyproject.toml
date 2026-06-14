@@ -1,5 +1,5 @@
 [project]
-name = "ronin"
+name = "grin"
 version = "0.1.0"
 description = "Local-only multi-agent autonomous red-team orchestrator — engagement spine (SP1)"
 requires-python = ">=3.12"
@@ -10,10 +10,10 @@ dev = ["pytest>=8.0"]
 docker = ["docker>=7.0"]
 
 [project.scripts]
-ronin = "ronin.cli:main"
+grin = "grin.cli:main"
 
 [tool.setuptools.packages.find]
-include = ["ronin*"]
+include = ["grin*"]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]

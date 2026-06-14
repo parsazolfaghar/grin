@@ -1,15 +1,15 @@
-"""The Orchestrator — Ronin's engagement brain. An adaptive loop: plan objectives, run each via
+"""The Orchestrator — Grin's engagement brain. An adaptive loop: plan objectives, run each via
 the SP2 Executor, dedup findings, let the Analyst chase leads + decide done, repeat until done /
 objective-budget / empty queue. Pure coordination: it never runs tools or touches the spine —
 all execution flows through execute_task -> submit_action -> the SP1 gatekeeper."""
 from dataclasses import dataclass, field
 from datetime import datetime
 
-from ronin.analyst import initial_plan, replan
-from ronin.engagement import Engagement
-from ronin.executor import execute_task, resume_task, DEFAULT_MODEL
-from ronin.journal import Journal
-from ronin.results import ResultStore, results_path
+from grin.analyst import initial_plan, replan
+from grin.engagement import Engagement
+from grin.executor import execute_task, resume_task, DEFAULT_MODEL
+from grin.journal import Journal
+from grin.results import ResultStore, results_path
 
 
 @dataclass
@@ -97,7 +97,7 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                       planner_model: str | None = None, objective_models=None,
                       max_objectives: int = 10, max_steps: int = 12,
                       engagement_path: str = "") -> EngagementResult:
-    """Continue a gated engagement after `ronin gate` approvals. A paused objective whose
+    """Continue a gated engagement after `grin gate` approvals. A paused objective whose
     pending action is present in the results store (approved) is resumed via resume_task; one
     that's absent (still pending / denied) stays paused. After resuming, the adaptive loop
     continues within budget. No approved objective => prior state is returned unchanged."""

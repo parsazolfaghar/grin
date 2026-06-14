@@ -1,13 +1,13 @@
-"""Persist + reload the SP3 EngagementResult so `ronin report` can run separately from
-`ronin engage`. JSON next to the audit log. Rebuilds Finding/Objective objects on load."""
+"""Persist + reload the SP3 EngagementResult so `grin report` can run separately from
+`grin engage`. JSON next to the audit log. Rebuilds Finding/Objective objects on load."""
 import json
 import os
 from dataclasses import asdict
 from pathlib import Path
 
-from ronin.finding import Finding
-from ronin.objective import Objective
-from ronin.orchestrator import EngagementResult
+from grin.finding import Finding
+from grin.objective import Objective
+from grin.orchestrator import EngagementResult
 
 
 def result_path(engagement) -> str:

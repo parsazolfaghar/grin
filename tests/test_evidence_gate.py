@@ -1,9 +1,9 @@
 import json
 from datetime import datetime
-from ronin.executor import execute_task
-from ronin.engagement import validate_engagement
-from ronin.inference import FakeClient
-from ronin.runner import FakeRunner, ExecResult
+from grin.executor import execute_task
+from grin.engagement import validate_engagement
+from grin.inference import FakeClient
+from grin.runner import FakeRunner, ExecResult
 
 NOW = datetime(2026, 1, 1)
 
