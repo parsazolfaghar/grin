@@ -38,7 +38,11 @@ flag/de-prioritize it instead of charging in (don't waste an engagement or tip o
   chooses; the flag informs, it does not gate or remove capability. Default behavior unchanged.
 - LLM judgment + deterministic heuristics; reuses the Analyst, no new execution path.
 
-## R2 — OPSEC / stealth layer ("anonymous", target-facing only) — PLANNED
+## R2 — OPSEC / stealth layer ("anonymous", target-facing only) — DEFERRED to an at-rig session
+**Deliberately held (2026-06-14):** unlike R1/R4, R2's first cut threads a stealth profile through the
+Executor/prompts and its knob values (timing thresholds, IDS-evading flags) only become meaningful when
+tuned against live targets on the rig — so building it remotely/blind risks rework. Resume when at the
+machine. (Opt-in / default-OFF per the guiding principle still applies.)
 **Goal:** minimize the footprint the blue team / honeypot observes, as realistic adversary emulation
 *within* an authorized scope.
 
