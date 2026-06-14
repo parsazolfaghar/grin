@@ -18,12 +18,15 @@ license to operate, not a capability limit. Within that boundary, full strength 
 
 ---
 
-## R1 — Honeypot / trap detector ("smart") — CORE BUILT (advisory); loop-integration pending
+## R1 — Honeypot / trap detector ("smart") — BUILT (advisory); only live tuning remains
 **Built (2026-06-14):** `grin/honeypot.py` `assess(findings, audit_lines)` (deterministic fingerprint +
-implausibility scorer) + `grin honeypot <eng>` advisory CLI (score + signals, prints "advisory only —
-operator decides", never blocks). Read-only, unit-tested. **Follow-up (needs live tuning on the rig):**
-call `assess` inside the Orchestrator loop to emit a live `suspected-honeypot` finding + de-prioritize
-(still advisory/override-able); tune thresholds + fingerprint catalog vs real honeypot traffic.
+implausibility scorer); `grin honeypot <eng>` advisory CLI; AND **loop-integrated** — the Orchestrator
+calls `_flag_honeypot(findings)` after each objective and appends ONE advisory `Suspected honeypot/decoy`
+info finding when signals fire. **Strictly advisory:** it never blocks, removes objectives, or gates
+execution (tested: emits the finding AND the engagement still completes; idempotent; silent when clean).
+**Remaining (needs the rig + real honeypot traffic):** threshold/fingerprint-catalog tuning and (optional)
+de-prioritizing a flagged target in the queue. De-prioritization deferred precisely because it edges
+toward "limiting" — must stay override-able per the guiding principle.
 
 **Goal:** before committing to exploitation, assess how likely a target/service is a decoy and
 flag/de-prioritize it instead of charging in (don't waste an engagement or tip off defenders).

@@ -140,3 +140,32 @@ def test_empty_initial_plan_completes_with_no_findings(tmp_path):
     assert res.status == "completed"
     assert res.findings == []
     assert res.objectives_run == []
+
+
+def test_flag_honeypot_advisory_once_and_silent_when_clean():
+    from grin.orchestrator import _flag_honeypot
+    suspicious = [Finding("x", "t", "info", "banner: Cowrie SSH honeypot", "nmap", "c", "")]
+    _flag_honeypot(suspicious); _flag_honeypot(suspicious)   # idempotent
+    assert sum(1 for f in suspicious if "Suspected honeypot" in f.title) == 1
+    clean = [Finding("ssh", "t", "info", "22/tcp open ssh OpenSSH 10.3", "nmap", "c", "")]
+    _flag_honeypot(clean)
+    assert all("Suspected" not in f.title for f in clean)
+
+
+def test_honeypot_advisory_emitted_in_loop_but_does_not_block(tmp_path):
+    eng = make_eng(tmp_path)
+    planner = FakeClient([_plan([("scan web", "203.0.113.7")]), _replan(True)])
+    executor = FakeClient([
+        _ex_action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _ex_done([{"title": "SSH", "target": "203.0.113.7", "severity": "info",
+                   "evidence": "22/tcp open ssh banner: Cowrie SSH honeypot", "tool": "nmap",
+                   "command": "nmap", "recommendation": ""}]),
+    ])
+    runner = FakeRunner({"nmap -sV 203.0.113.7": ExecResult("cowrie honeypot", 0, 0.1, False)})
+    res = orchestrate(eng, goal="g", planner_client=planner, executor_client=executor,
+                      runner=runner, now=NOW, model="m", max_objectives=3,
+                      engagement_path=str(tmp_path / "e1.yaml"))
+    titles = [f.title for f in res.findings]
+    assert "Suspected honeypot/decoy (advisory)" in titles   # advisory emitted
+    assert any("SSH" in t for t in titles)                   # original finding kept (not removed)
+    assert res.status == "completed"                         # never blocked the engagement

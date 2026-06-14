@@ -8,9 +8,26 @@ from datetime import datetime
 from grin.analyst import initial_plan, replan
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
+from grin.finding import Finding
+from grin.honeypot import assess as _assess_honeypot
 from grin.journal import Journal
 from grin.loot import LootStore, loot_dir
 from grin.results import ResultStore, results_path
+
+_HONEYPOT_TITLE = "Suspected honeypot/decoy (advisory)"
+
+
+def _flag_honeypot(findings: list) -> None:
+    """ADVISORY ONLY (roadmap R1): if accumulated findings look like a decoy, append ONE info
+    finding (once). Never blocks, removes objectives, or gates execution — the operator decides."""
+    if any(getattr(f, "title", "") == _HONEYPOT_TITLE for f in findings):
+        return
+    a = _assess_honeypot(findings)
+    if a.suspected:
+        findings.append(Finding(
+            title=_HONEYPOT_TITLE, target="(engagement)", severity="info",
+            evidence=a.detail, tool="honeypot-detector", command="",
+            recommendation="Advisory only — verify before further exploitation; the engagement continues."))
 
 
 @dataclass
@@ -55,6 +72,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                            max_steps=max_steps, engagement_path=engagement_path)
         objectives_run.append(obj)
         _merge_findings(findings, res.findings)
+        _flag_honeypot(findings)   # advisory; never alters the queue/execution
         for sec in res.secrets:
             if sec not in secrets:
                 secrets.append(sec)
