@@ -23,6 +23,9 @@ from grin.spine import submit_action, approve_action, deny_action
 from grin.platform_info import detect_platform
 from grin.doctor import run_doctor
 from grin.installer import apply_fixes
+from grin.bench.tasks import default_cases
+from grin.bench.runner import run_bench
+from grin.bench.report import to_text, to_json
 
 
 def cmd_validate(path: str) -> int:
@@ -417,6 +420,30 @@ def _who() -> str:
         return "operator"
 
 
+DEFAULT_BENCH_MODELS = [
+    "qwen3:14b", "qwen3:8b", "hermes3:8b",
+    "hf.co/mradermacher/WhiteRabbitNeo-13B-v1-GGUF:Q4_K_M",
+    "hf.co/mradermacher/Foundation-Sec-8B-Instruct-GGUF:Q4_K_M",
+    "qwen2.5-coder:7b", "dolphin3:8b",
+]
+
+
+def cmd_bench(*, models, roles, base_url, out, json_out) -> int:
+    model_list = [m.strip() for m in models.split(",")] if models else list(DEFAULT_BENCH_MODELS)
+    role_list = [r.strip() for r in roles.split(",")] if roles else ["planner", "recon", "exploit"]
+    client = OllamaClient(base_url) if base_url else OllamaClient()
+    report = run_bench(client, model_list, role_list, default_cases())
+    text = to_text(report)
+    print(text)
+    if out:
+        with open(out, "w") as f:
+            f.write(text + "\n")
+    if json_out:
+        with open(json_out, "w") as f:
+            f.write(to_json(report) + "\n")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     sub = parser.add_subparsers(dest="group", required=True)
@@ -474,6 +501,13 @@ def build_parser() -> argparse.ArgumentParser:
     ap = sub.add_parser("app", help="open the Grin desktop app (needs the [app] extra)")
     ap.add_argument("dir", nargs="?", default=".", help="folder of engagement .yaml files")
 
+    bn = sub.add_parser("bench", help="benchmark local models for each role")
+    bn.add_argument("--models", default=None, help="comma-separated model names (default: the candidate set)")
+    bn.add_argument("--roles", default=None, help="comma-separated roles (default: planner,recon,exploit)")
+    bn.add_argument("--base-url", default=None, dest="base_url", help="Ollama base URL (default: local)")
+    bn.add_argument("--out", default=None, help="write the text report to a file")
+    bn.add_argument("--json", default=None, dest="json_out", help="write the JSON results to a file")
+
     return parser
 
 
@@ -518,6 +552,9 @@ def main(argv=None) -> int:
     if args.group == "app":
         from grin.app.launch import main as app_main
         return app_main([args.dir])
+    if args.group == "bench":
+        return cmd_bench(models=args.models, roles=args.roles, base_url=args.base_url,
+                         out=args.out, json_out=args.json_out)
     return 2
 
 
