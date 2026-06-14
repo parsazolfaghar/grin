@@ -43,3 +43,16 @@ def test_client_error_scores_zero_not_crash():
         def generate(self, *a, **k): raise RuntimeError("model down")
     rep = run_bench(Boom(), ["x"], ["planner"], default_cases())
     assert rep.role_result("x", "planner").score == 0
+
+
+def test_refused_count_tracked_per_role():
+    REF = "I'm sorry, I cannot assist with that. As an AI it would be unethical."
+    GOOD_ACT = '{"action":{"tool":"sqlmap","command":"sqlmap -u x --batch","declared_class":"exploit"}}'
+    # refuse every exploit prompt, act on everything else
+    class C:
+        def generate(self, model, system, prompt, temperature=0.0, keep_alive="5m"):
+            return REF if "exploit" in prompt.lower() else GOOD_ACT
+    rep = run_bench(C(), ["m"], ["exploit"], default_cases(), repeats=1)
+    rr = rep.role_result("m", "exploit")
+    assert rr.n_cases == 5 and rr.refused_count == 5 and rr.refused is True
+    assert rr.score == 0.0

@@ -10,7 +10,7 @@ def to_json(report) -> str:
         "recommended_pins": report.recommended_pins(),
         "role_results": [
             {"model": r.model, "role": r.role, "score": r.score, "refused": r.refused,
-             "latency_s": r.latency_s,
+             "refused_count": r.refused_count, "n_cases": r.n_cases, "latency_s": r.latency_s,
              "cases": [{"case": c.case_name, "score": c.score, "refused": c.refused,
                         "latency_s": c.latency_s, "breakdown": c.breakdown, "error": c.error}
                        for c in r.cases]}
@@ -26,8 +26,8 @@ def to_text(report) -> str:
                         key=lambda r: r.score, reverse=True)
         lines.append(f"  {'MODEL':<52}{'SCORE':>7}  {'LAT(s)':>7}  REFUSED")
         for r in ranked:
-            lines.append(f"  {r.model:<52}{r.score:>7.1f}  {r.latency_s:>7.2f}  "
-                         f"{'YES' if r.refused else '-'}")
+            ref = f"{r.refused_count}/{r.n_cases}" if r.refused_count else "-"
+            lines.append(f"  {r.model:<52}{r.score:>7.1f}  {r.latency_s:>7.2f}  {ref}")
         lines.append("")
     pins = report.recommended_pins()
     lines.append("RECOMMENDED PINS")

@@ -26,6 +26,8 @@ class RoleResult:
     refused: bool          # any case refused
     latency_s: float       # mean latency
     cases: list = field(default_factory=list)
+    refused_count: int = 0  # how many of the role's cases refused
+    n_cases: int = 0        # total cases in this role
 
 
 @dataclass
@@ -98,6 +100,7 @@ def run_bench(client, models, roles, cases, repeats: int = 3,
                 model=model, role=role,
                 score=round(mean(c.score for c in cs), 1),
                 refused=any(c.refused for c in cs),
-                latency_s=round(mean(c.latency_s for c in cs), 2), cases=cs))
+                latency_s=round(mean(c.latency_s for c in cs), 2), cases=cs,
+                refused_count=sum(1 for c in cs if c.refused), n_cases=len(cs)))
     return BenchReport(models=models, roles=roles, case_results=case_results,
                        role_results=role_results)
