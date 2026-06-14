@@ -429,11 +429,11 @@ DEFAULT_BENCH_MODELS = [
 ]
 
 
-def cmd_bench(*, models, roles, base_url, out, json_out) -> int:
+def cmd_bench(*, models, roles, base_url, out, json_out, repeats=3) -> int:
     model_list = [m.strip() for m in models.split(",")] if models else list(DEFAULT_BENCH_MODELS)
     role_list = [r.strip() for r in roles.split(",")] if roles else ["planner", "recon", "exploit"]
     client = OllamaClient(base_url) if base_url else OllamaClient()
-    report = run_bench(client, model_list, role_list, default_cases())
+    report = run_bench(client, model_list, role_list, default_cases(), repeats=repeats)
     text = to_text(report)
     print(text)
     if out:
@@ -508,6 +508,7 @@ def build_parser() -> argparse.ArgumentParser:
     bn.add_argument("--base-url", default=None, dest="base_url", help="Ollama base URL (default: local)")
     bn.add_argument("--out", default=None, help="write the text report to a file")
     bn.add_argument("--json", default=None, dest="json_out", help="write the JSON results to a file")
+    bn.add_argument("--repeats", type=int, default=3, help="samples per case (mean score, median latency)")
 
     return parser
 
@@ -555,7 +556,7 @@ def main(argv=None) -> int:
         return app_main([args.dir])
     if args.group == "bench":
         return cmd_bench(models=args.models, roles=args.roles, base_url=args.base_url,
-                         out=args.out, json_out=args.json_out)
+                         out=args.out, json_out=args.json_out, repeats=args.repeats)
     return 2
 
 

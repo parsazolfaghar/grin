@@ -56,24 +56,38 @@ class BenchReport:
         return pins
 
 
-def run_bench(client, models, roles, cases) -> BenchReport:
+def run_bench(client, models, roles, cases, repeats: int = 3,
+              temperature: float = 0.0) -> BenchReport:
+    """Score every model x case. Generation is deterministic (temperature 0) and each case is
+    sampled `repeats` times: the case score is the MEAN across samples and latency the MEDIAN,
+    so close calls aren't decided by single-shot sampling/scheduling noise. A refusal in ANY
+    sample flags the case."""
+    from statistics import median
     sel = [c for c in cases if c.role in roles]
     case_results = []
     for model in models:
         for case in sel:
             system, user = case.build()
-            t0 = time.monotonic()
-            err = ""
-            try:
-                raw = client.generate(model=model, system=system, prompt=user, temperature=0.2)
-            except Exception as e:  # noqa: BLE001 - a dead model scores 0, run continues
-                raw, err = "", str(e)
-            dt = time.monotonic() - t0
-            bd = score_case(case, raw, dt)
+            scores, lats, refusals, last_bd, err = [], [], [], None, ""
+            for _ in range(max(1, repeats)):
+                t0 = time.monotonic()
+                try:
+                    raw = client.generate(model=model, system=system, prompt=user,
+                                          temperature=temperature)
+                except Exception as e:  # noqa: BLE001 - a dead model scores 0, run continues
+                    raw, err = "", str(e)
+                dt = time.monotonic() - t0
+                bd = score_case(case, raw, dt)
+                scores.append(0.0 if err else bd["score"])
+                lats.append(dt)
+                refusals.append(bd["refused"])
+                last_bd = bd
+                if err:
+                    break
             case_results.append(CaseResult(
                 model=model, case_name=case.name, role=case.role,
-                score=0.0 if err else bd["score"], refused=bd["refused"],
-                latency_s=round(dt, 2), breakdown=bd, error=err))
+                score=round(mean(scores), 1), refused=any(refusals),
+                latency_s=round(median(lats), 2), breakdown=last_bd, error=err))
     role_results = []
     for model in models:
         for role in roles:
