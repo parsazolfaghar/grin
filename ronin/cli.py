@@ -12,6 +12,8 @@ from ronin.inference import OllamaClient
 from ronin.orchestrator import orchestrate
 from ronin.journal import Journal
 from ronin.pending import PendingStore
+from ronin.report_store import save_result, load_result, result_path
+from ronin.report import render_report, summarize_audit, llm_summary
 from ronin.results import ResultStore, results_path
 from ronin.runner import build_runner, FakeRunner
 from ronin.spine import submit_action, approve_action, deny_action
@@ -186,6 +188,7 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
                       now=datetime.now(), model=model, max_objectives=max_objectives,
                       max_steps=max_steps, seeds=seed_list, engagement_path=path)
+    save_result(result_path(eng), res)
     print(f"status: {res.status}")
     print(f"objectives run: {len(res.objectives_run)}")
     for f in res.findings:
@@ -194,6 +197,33 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
         o = p["objective"]
         print(f"  BLOCKED (awaiting approval): {o.objective} on {o.target} "
               f"— pending {p['pending_id']} (run `ronin gate`)")
+    return 0
+
+
+def cmd_report(path: str, *, out, model: str) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    try:
+        result = load_result(result_path(eng))
+    except FileNotFoundError:
+        print("no saved engagement result; run `ronin engage` first", file=sys.stderr)
+        return 1
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"cannot read saved engagement result ({e}); re-run `ronin engage`",
+              file=sys.stderr)
+        return 1
+    summary = llm_summary(_make_client(eng), model, result)
+    md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
+                       summary_text=summary)
+    if out:
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(md)
+        print(f"report written to {out}")
+    else:
+        print(md)
     return 0
 
 
@@ -258,6 +288,11 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
     g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
 
+    rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
+    rp.add_argument("file")
+    rp.add_argument("-o", "--out", default=None, help="output file (default: stdout)")
+    rp.add_argument("--model", default=DEFAULT_MODEL, help="local model for the optional summary")
+
     return parser
 
 
@@ -283,6 +318,8 @@ def main(argv=None) -> int:
     if args.group == "engage":
         return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
                           max_objectives=args.max_objectives, max_steps=args.max_steps)
+    if args.group == "report":
+        return cmd_report(args.file, out=args.out, model=args.model)
     return 2
 
 
