@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
+    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSizeGrip,
 )
 
 HERE = os.path.dirname(__file__)
@@ -508,10 +508,15 @@ class GrinWindow(QWidget):
         self.setWindowTitle("GRIN")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)   # so keyPressEvent fires
-        self.resize(960, 880)
         geo = QSettings("grin", "app").value("geometry")
         if geo is not None:
             self.restoreGeometry(geo)                     # remember size/position
+        else:
+            self.resize(1040, 820)                        # sensible default
+            scr = QApplication.primaryScreen()
+            if scr is not None:                           # center on screen on first launch
+                c = scr.availableGeometry().center()
+                self.move(c.x() - self.width() // 2, c.y() - self.height() // 2)
 
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         self.chrome = Chrome(self); root.addWidget(self.chrome)
@@ -537,6 +542,8 @@ class GrinWindow(QWidget):
         root.addWidget(self.status)
 
         self.overlay = ScanlineOverlay(self); self.overlay.resize(self.size())
+        self._grip = QSizeGrip(self)   # drag bottom-right to resize the frameless window
+        self._grip.resize(16, 16)
 
         self._poll = QTimer(self); self._poll.setInterval(1500); self._poll.timeout.connect(self._tick)
 
@@ -600,6 +607,8 @@ class GrinWindow(QWidget):
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
+        self._grip.move(self.width() - self._grip.width(), self.height() - self._grip.height())
+        self._grip.raise_()   # above the scanline overlay so it stays draggable
         super().resizeEvent(e)
 
     # ---- boot ----
@@ -696,7 +705,8 @@ def build_app(api, argv=None):
                 "JetBrainsMono-ExtraBold.ttf", "ArchivoBlack-Regular.ttf"):
         QFontDatabase.addApplicationFont(os.path.join(FONTS, ttf))
     app.setFont(QFont("JetBrains Mono", 10))
-    icon = QIcon(os.path.join(ASSETS, "logo.png"))   # dock / taskbar / window icon = the Grin logo
+    _ic = os.path.join(ASSETS, "icon.png")           # rounded app-style icon (fallback to raw logo)
+    icon = QIcon(_ic if os.path.exists(_ic) else os.path.join(ASSETS, "logo.png"))
     if not icon.isNull():
         app.setWindowIcon(icon)
     qss = os.path.join(HERE, "style.qss")
