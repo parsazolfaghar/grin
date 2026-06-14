@@ -8,7 +8,7 @@ tested and screenshot-verified headlessly.
 """
 import os
 
-from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSettings, QObject, pyqtSignal
 from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
@@ -239,10 +239,19 @@ class BootView(QWidget):
         self._sel = -1    # keyboard selection index
 
     def set_data(self, doctor: dict, engagements: list):
+        self.set_engagements(engagements)
+        self.set_doctor(doctor)
+
+    def set_doctor_pending(self):
+        _clear(self.log)
+        lab = QLabel("[ .. ]  PREFLIGHT — CHECKING…"); _role(lab, "log"); _track(lab, 1.0)
+        self.log.addWidget(lab)
+
+    def set_doctor(self, doctor: dict):
         _clear(self.log)
         checks = (doctor or {}).get("checks", [])
         if not checks:
-            lab = QLabel("[ .. ] preflight unavailable"); _role(lab, "log"); _track(lab, 1.0)
+            lab = QLabel("[ .. ] preflight unavailable".upper()); _role(lab, "log"); _track(lab, 1.0)
             self.log.addWidget(lab)
         for c in checks[:5]:
             ok = c.get("status") == "ok"
@@ -253,6 +262,7 @@ class BootView(QWidget):
         ready = QLabel("[ READY ]  AWAITING ENGAGEMENT"); _role(ready, "ready")
         _track(ready, 1.0); _glow(ready, "#f3df33", 12); self.log.addWidget(ready)
 
+    def set_engagements(self, engagements: list):
         _clear(self.elist)
         self._rows = []
         if not engagements:
@@ -494,6 +504,22 @@ def desktop_notify(title: str, body: str) -> None:
         pass
 
 
+class _Async(QObject):
+    """Carries a worker-thread result back to the GUI thread via a queued signal."""
+    done = pyqtSignal(object)
+
+
+def _snap_sig(snap):
+    """A cheap signature of a live snapshot — used to skip pane rebuilds when nothing changed."""
+    snap = snap or {}
+    objs = tuple((o.get("objective"), o.get("target"), o.get("status"))
+                 for o in snap.get("objectives", []) or [])
+    finds = tuple((f.get("title"), f.get("severity")) for f in snap.get("findings", []) or [])
+    audit = tuple((a.get("ts"), a.get("command")) for a in snap.get("audit", []) or [])
+    blocked = tuple(b.get("id") for b in snap.get("blocked", []) or [])
+    return (snap.get("status"), objs, finds, audit, blocked)
+
+
 # ---------------------------------------------------------------- main window
 class GrinWindow(QWidget):
     def __init__(self, api, notify_fn=desktop_notify):
@@ -502,6 +528,7 @@ class GrinWindow(QWidget):
         self._notify = notify_fn
         self._job_id = None
         self._job_file = None
+        self._last_sig = None             # last rendered live-snapshot signature (skip rebuilds)
         self._notified_pending = set()   # pending ids already pushed (notify once)
         self._notified_done = False
         self.setObjectName("root")
@@ -611,25 +638,46 @@ class GrinWindow(QWidget):
         self._grip.raise_()   # above the scanline overlay so it stays draggable
         super().resizeEvent(e)
 
+    def _async(self, fn, on_done):
+        """Run fn() on a worker thread; deliver its result to on_done on the GUI thread (Qt
+        queues the signal across threads). Keeps the UI responsive during blocking calls (e.g. the
+        doctor's Ollama HTTP checks). Fail-soft: exceptions come back as {'error': ...}."""
+        import threading
+        carrier = _Async()
+        carrier.done.connect(on_done)
+        self._async_keep = carrier   # keep a ref so it isn't GC'd before delivery
+
+        def work():
+            try:
+                res = fn()
+            except Exception as e:  # noqa: BLE001
+                res = {"error": str(e)}
+            carrier.done.emit(res)
+        threading.Thread(target=work, daemon=True).start()
+
     # ---- boot ----
     def refresh_boot(self):
-        doctor = self.api.doctor()
+        # render engagements + chrome immediately (fast), then fill the preflight log off-thread
         engagements = self.api.list_engagements()
-        self.boot.set_data(doctor, engagements)
+        self.boot.set_engagements(engagements)
+        self.boot.set_doctor_pending()
         self.status.set([("MODE: IDLE", "seg"),
                          (f"ENGAGEMENTS: {len(engagements)}", "segdim"),
                          ("", "stretch"), ("FAIL-CLOSED", "acc")])
         self.chrome.set_breadcrumb("~/engagements"); self.chrome.set_running(False)
         self.stack.setCurrentWidget(self.boot)
+        self._async(self.api.doctor, self.boot.set_doctor)   # doctor off the UI thread
 
     # ---- live ----
     def open_engagement(self, file):
         if not file:
             return
         self._job_file = file
+        self._last_sig = None   # force a render on (re)entry
         snap = {"objectives": [], "findings": self.api.findings(file),
                 "audit": self.api.audit(file), "blocked": self.api.blocked(file)}
         self._show_live(file, snap, running=False)
+        self._last_sig = _snap_sig(snap)
 
     def _show_live(self, file, snap, running):
         try:
@@ -653,6 +701,7 @@ class GrinWindow(QWidget):
         if res.get("error"):
             return res
         self._job_id = res.get("job_id"); self._job_file = file
+        self._last_sig = None   # force the first live render
         self._notified_pending = set(); self._notified_done = False
         self.live.set_command(f'engage --goal "{goal}"')
         self._poll.start()
@@ -665,7 +714,10 @@ class GrinWindow(QWidget):
         if snap.get("error"):
             return
         running = snap.get("status") == "running"
-        self._show_live(self._job_file, snap, running=running)
+        sig = _snap_sig(snap)
+        if sig != self._last_sig:              # only rebuild panes when something changed
+            self._show_live(self._job_file, snap, running=running)
+            self._last_sig = sig
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()

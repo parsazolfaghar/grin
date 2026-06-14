@@ -149,3 +149,19 @@ def test_notify_transitions_fire_once(win):
 def test_window_icon_is_the_logo(win):
     w, _ = win
     assert not w.windowIcon().isNull()   # app/window icon set to the Grin logo
+
+
+def test_snap_sig_changes_only_on_real_change():
+    from grin.app.qt_app import _snap_sig
+    a = {"status": "running", "objectives": [{"objective": "x", "target": "t", "status": "running"}],
+         "findings": [], "audit": [], "blocked": []}
+    b = dict(a, objectives=[{"objective": "x", "target": "t", "status": "running"}])
+    assert _snap_sig(a) == _snap_sig(b)                    # same data -> same sig (skip rebuild)
+    c = dict(b, findings=[{"title": "sqli", "severity": "high"}])
+    assert _snap_sig(a) != _snap_sig(c)                    # changed -> different sig (rebuild)
+
+
+def test_refresh_boot_renders_engagements_without_waiting_on_doctor(win):
+    w, _ = win
+    w.refresh_boot()
+    assert len(w.boot._rows) == 1   # engagements painted immediately; doctor runs off-thread
