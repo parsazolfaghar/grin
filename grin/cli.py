@@ -438,6 +438,38 @@ DEFAULT_BENCH_MODELS = [
 ]
 
 
+def cmd_honeypot(path) -> int:
+    """Advisory trap/honeypot assessment over a finished engagement's findings + audit. Never blocks."""
+    from grin.honeypot import assess
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    findings = []
+    try:
+        findings = load_result(result_path(eng)).findings
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    audit_lines = []
+    p = Path(eng.audit_log)
+    if p.exists():
+        for ln in p.read_text().splitlines():
+            ln = ln.strip()
+            if ln:
+                try:
+                    audit_lines.append(json.loads(ln))
+                except json.JSONDecodeError:
+                    continue
+    a = assess(findings, audit_lines)
+    tag = "SUSPECTED honeypot" if a.suspected else ("weak signals" if a.signals else "clear")
+    print(f"trap assessment: {tag}  (score {a.score}/100)")
+    for s in a.signals:
+        print(f"  - {s}")
+    print("  [advisory only — Grin does not block; the operator decides whether to engage]")
+    return 0
+
+
 def cmd_bench(*, models, roles, base_url, out, json_out, repeats=3) -> int:
     model_list = [m.strip() for m in models.split(",")] if models else list(DEFAULT_BENCH_MODELS)
     role_list = [r.strip() for r in roles.split(",")] if roles else ["planner", "recon", "exploit"]
@@ -497,6 +529,9 @@ def build_parser() -> argparse.ArgumentParser:
     rp.add_argument("file")
     rp.add_argument("-o", "--out", default=None, help="output file (default: stdout)")
     rp.add_argument("--model", default=DEFAULT_MODEL, help="local model for the optional summary")
+
+    hp = sub.add_parser("honeypot", help="advisory honeypot/trap assessment of an engagement")
+    hp.add_argument("file")
 
     lt = sub.add_parser("loot", help="print captured secrets for an engagement")
     lt.add_argument("file")
@@ -558,6 +593,8 @@ def main(argv=None) -> int:
         return cmd_report(args.file, out=args.out, model=args.model)
     if args.group == "loot":
         return cmd_loot(args.file)
+    if args.group == "honeypot":
+        return cmd_honeypot(args.file)
     if args.group == "doctor":
         return cmd_doctor(args.file, fix=args.fix, yes=args.yes, models=args.models, tools=args.tools)
     if args.group == "app":

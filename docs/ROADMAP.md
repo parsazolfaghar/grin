@@ -18,7 +18,13 @@ license to operate, not a capability limit. Within that boundary, full strength 
 
 ---
 
-## R1 — Honeypot / trap detector ("smart") — PLANNED
+## R1 — Honeypot / trap detector ("smart") — CORE BUILT (advisory); loop-integration pending
+**Built (2026-06-14):** `grin/honeypot.py` `assess(findings, audit_lines)` (deterministic fingerprint +
+implausibility scorer) + `grin honeypot <eng>` advisory CLI (score + signals, prints "advisory only —
+operator decides", never blocks). Read-only, unit-tested. **Follow-up (needs live tuning on the rig):**
+call `assess` inside the Orchestrator loop to emit a live `suspected-honeypot` finding + de-prioritize
+(still advisory/override-able); tune thresholds + fingerprint catalog vs real honeypot traffic.
+
 **Goal:** before committing to exploitation, assess how likely a target/service is a decoy and
 flag/de-prioritize it instead of charging in (don't waste an engagement or tip off defenders).
 
@@ -44,39 +50,6 @@ flag/de-prioritize it instead of charging in (don't waste an engagement or tip o
 - A per-engagement "stealth profile" the Orchestrator/Executor honor when proposing commands.
 - **OPT-IN ONLY — default is full-speed / full-power, loud.** Stealth is a mode the operator enables;
   it never silently throttles or limits the toolset. Loud-and-fast remains a first-class option.
-
-**Hard boundary (settled):** anonymity is **target-facing only**. The operator-side **audit trail stays
-fully intact** — it proves the engagement stayed in scope/ROE and is the accountability record.
-Anonymity in Grin = adversary emulation for an *authorized* engagement, NEVER a means to dodge
-authorization or accountability or to act out of scope. The spine still authorizes + audits every action.
-
----
-
-## R3 — Grin self-hardening ("secure") — DRAFT (awaiting operator's touches)
-
-## R1 — Honeypot / trap detector ("smart") — PLANNED
-**Goal:** before committing to exploitation, assess how likely a target/service is a decoy and
-flag/de-prioritize it instead of charging in (don't waste an engagement or tip off defenders).
-
-**Sketch:**
-- A new Analyst "trap assessment" step that scores a target/service for honeypot likelihood from:
-  - known honeypot fingerprints (Cowrie/Kippo SSH banners, Dionaea, Glastopf, Honeyd artifacts, T-Pot),
-  - implausible signals (every port open, *too-easy* / uniform vulnerabilities, inconsistent OS
-    fingerprints, canary-token / decoy-file bait, services that respond too perfectly),
-- Emits a `suspected-honeypot` finding + lowers that target's priority in the Orchestrator's queue;
-  the operator can override.
-- LLM judgment + deterministic heuristics; reuses the Analyst, no new execution path.
-
-## R2 — OPSEC / stealth layer ("anonymous", target-facing only) — PLANNED
-**Goal:** minimize the footprint the blue team / honeypot observes, as realistic adversary emulation
-*within* an authorized scope.
-
-**Sketch:**
-- Egress through the operator's authorized vantage (the bound `env` Kali/BlackArch box): VPN/SOCKS/
-  proxy, source rotation.
-- Scan **timing/jitter + rate-limiting** to stay under IDS thresholds; low-and-slow mode; non-default
-  user agents / scan profiles.
-- A per-engagement "stealth profile" the Orchestrator/Executor honor when proposing commands.
 
 **Hard boundary (settled):** anonymity is **target-facing only**. The operator-side **audit trail stays
 fully intact** — it proves the engagement stayed in scope/ROE and is the accountability record.
