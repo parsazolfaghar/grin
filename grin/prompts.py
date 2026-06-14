@@ -1,10 +1,10 @@
 """Prompt construction + tolerant reply parsing for the Executor loop. Free-text prompts
 (no JSON mode) + JSON-then-Markdown parsing, per Sensei's experience with local GGUF models."""
-import json
 import re
 from dataclasses import dataclass
 
 from grin.finding import Finding, normalize_severity
+from grin.jsonextract import extract_json
 from grin.secret import Secret
 
 SYSTEM = (
@@ -49,11 +49,9 @@ class StepDecision:
 
 
 def _extract_json(raw: str):
-    try:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        return json.loads(m.group(0)) if m else None
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return None
+    # robust: first balanced JSON object bearing an executor key (handles a valid action followed
+    # by trailing prose or an echoed done-template). See grin/jsonextract.py.
+    return extract_json(raw, want=("action", "done", "findings"))
 
 
 def _parse_secrets(items, default_target) -> list:

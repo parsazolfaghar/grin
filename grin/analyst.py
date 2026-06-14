@@ -1,12 +1,11 @@
 """The Analyst — Grin's pure-LLM planning brain. It never touches tools or the spine; it only
 reasons over findings to plan objectives. initial_plan seeds the queue; replan chases leads and
 decides when the engagement goal is met. Tolerant JSON parsing, fail-soft on a miss."""
-import json
-import re
 from dataclasses import dataclass
 
 from grin.objective import Objective
 from grin.classes import ACTION_CLASSES
+from grin.jsonextract import extract_json
 
 PLANNER_SYSTEM = (
     "You are Grin's Orchestrator/Analyst, planning an authorized, scope-bound penetration test. "
@@ -17,11 +16,9 @@ PLANNER_SYSTEM = (
 
 
 def _extract_json(raw: str):
-    try:
-        m = re.search(r"\{.*\}", raw, re.DOTALL)
-        return json.loads(m.group(0)) if m else None
-    except (json.JSONDecodeError, AttributeError, TypeError):
-        return None
+    # robust: first balanced JSON object bearing a planner key (handles trailing prose / echoed
+    # example blocks). See grin/jsonextract.py.
+    return extract_json(raw, want=("objectives", "next_objectives", "done"))
 
 
 def _parse_objectives(items) -> list:
