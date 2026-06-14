@@ -101,3 +101,46 @@ def test_mode_toggle_switches_persists_and_rewires(tmp_path, monkeypatch):
     assert "your-rig" in os.environ["GRIN_OLLAMA_URL"]   # inference rewired to rig
     assert api.tool_env["kind"] == "ssh"                # tools rewired to rig
     w.deleteLater()
+
+
+def test_boot_keyboard_selection_and_open(win):
+    w, _ = win
+    opened = []
+    w.boot.open_engagement.connect(opened.append)
+    w.boot.set_data({"checks": []}, [
+        {"valid": True, "file": "a.yaml", "id": "a", "mode": "client", "name": "n", "state": "active", "targets": 1},
+        {"valid": True, "file": "b.yaml", "id": "b", "mode": "own-lab", "name": "m", "state": "active", "targets": 1}])
+    assert w.boot._sel == 0
+    w.boot.move_selection(1); assert w.boot._sel == 1
+    w.boot.move_selection(5); assert w.boot._sel == 1            # clamped at last
+    w.boot.open_selected(); assert opened == ["b.yaml"]
+
+
+def test_esc_returns_to_boot(win):
+    from PyQt6.QtGui import QKeyEvent
+    from PyQt6.QtCore import QEvent, Qt as _Qt
+    w, _ = win
+    w.open_engagement("e.yaml")
+    assert w.stack.currentWidget() is w.live
+    w.keyPressEvent(QKeyEvent(QEvent.Type.KeyPress, _Qt.Key.Key_Escape, _Qt.KeyboardModifier.NoModifier))
+    assert w.stack.currentWidget() is w.boot
+
+
+def test_copy_emits_signal(win):
+    w, _ = win
+    got = []
+    w.live.copied.connect(got.append)
+    w.live._copy("nmap -sV 203.0.113.7")
+    assert got == ["nmap -sV 203.0.113.7"]
+
+
+def test_notify_transitions_fire_once(win):
+    w, _ = win
+    calls = []
+    w._notify = lambda title, body: calls.append((title, body))
+    snap = {"status": "running", "blocked": [{"id": "p1", "tool": "sqlmap", "command": "-u x", "target": "t"}]}
+    w._notify_transitions(snap, running=True)
+    w._notify_transitions(snap, running=True)            # same pid -> no repeat
+    assert sum(1 for c in calls if "approval" in c[0].lower()) == 1
+    w._notify_transitions({"status": "completed", "blocked": []}, running=False)
+    assert any("finished" in c[0].lower() for c in calls)

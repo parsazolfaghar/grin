@@ -8,7 +8,7 @@ tested and screenshot-verified headlessly.
 """
 import os
 
-from PyQt6.QtCore import Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
 from PyQt6.QtGui import QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
@@ -235,6 +235,8 @@ class BootView(QWidget):
         self.elist = QVBoxLayout(); self.elist.setContentsMargins(22, 4, 22, 14); self.elist.setSpacing(0)
         elw = QWidget(); elw.setLayout(self.elist); outer.addWidget(elw)
         outer.addStretch(1)
+        self._rows = []   # [(file, ClickRow)] for valid engagements
+        self._sel = -1    # keyboard selection index
 
     def set_data(self, doctor: dict, engagements: list):
         _clear(self.log)
@@ -252,22 +254,27 @@ class BootView(QWidget):
         _track(ready, 1.0); _glow(ready, "#f3df33", 12); self.log.addWidget(ready)
 
         _clear(self.elist)
+        self._rows = []
         if not engagements:
             empty = QLabel("NO ENGAGEMENTS IN THIS FOLDER"); _role(empty, "esub")
             _track(empty, 1.5); empty.setContentsMargins(6, 8, 0, 0); self.elist.addWidget(empty)
+            self._sel = -1
             return
-        for i, e in enumerate(engagements):
-            self.elist.addWidget(self._erow(e, hot=(i == 0)))
+        for e in engagements:
+            row = self._erow(e)
+            self.elist.addWidget(row)
+            if e.get("valid", True):
+                self._rows.append((e.get("file") or "", row))
+        self._sel = 0 if self._rows else -1
+        self._highlight()
 
-    def _erow(self, e: dict, hot: bool) -> QWidget:
+    def _erow(self, e: dict) -> QWidget:
         row = ClickRow()
         _role(row, "erow")
-        if hot:
-            row.setObjectName("erowhot")
         row.setCursor(Qt.CursorShape.PointingHandCursor)
         h = QHBoxLayout(row); h.setContentsMargins(6, 11, 6, 11); h.setSpacing(12)
         if e.get("valid", True):
-            h.addWidget(_marker("run" if hot else ""), 0, Qt.AlignmentFlag.AlignTop)
+            h.addWidget(_marker(""), 0, Qt.AlignmentFlag.AlignTop)
             col = QVBoxLayout(); col.setSpacing(4)
             t = QLabel(f"{e.get('id','?')} · {e.get('mode','')}".upper())
             _role(t, "etitle"); _track(t, 0.6); col.addWidget(t)
@@ -275,9 +282,9 @@ class BootView(QWidget):
                        f"{e.get('targets',0)} TARGET(S)".upper())
             _role(s, "esub"); _track(s, 1.0); col.addWidget(s)
             h.addLayout(col, 1)
-            go = QLabel("OPEN ▸"); go.setObjectName("egohot") if hot else _role(go, "ego")
+            go = QLabel("OPEN ▸"); _role(go, "ego")
             _track(go, 1.6); h.addWidget(go, 0, Qt.AlignmentFlag.AlignVCenter)
-            row.clicked.connect(lambda f=e.get("file"): self.open_engagement.emit(f or ""))
+            row.clicked.connect(lambda f=e.get("file"): self._click_row(f or ""))
         else:
             col = QVBoxLayout(); col.setSpacing(4)
             t = QLabel(f"INVALID · {os.path.basename(e.get('file',''))}".upper())
@@ -286,11 +293,36 @@ class BootView(QWidget):
             h.addLayout(col, 1)
         return row
 
+    # ---- keyboard selection ----
+    def _highlight(self):
+        for i, (_f, row) in enumerate(self._rows):
+            row.setObjectName("erowhot" if i == self._sel else "")
+            row.style().unpolish(row); row.style().polish(row)
+
+    def move_selection(self, delta: int):
+        if not self._rows:
+            return
+        self._sel = max(0, min(len(self._rows) - 1, self._sel + delta))
+        self._highlight()
+
+    def _click_row(self, file: str):
+        for i, (f, _r) in enumerate(self._rows):
+            if f == file:
+                self._sel = i
+                break
+        self._highlight()
+        self.open_engagement.emit(file)
+
+    def open_selected(self):
+        if 0 <= self._sel < len(self._rows):
+            self.open_engagement.emit(self._rows[self._sel][0])
+
 
 # ---------------------------------------------------------------- live view
 class LiveView(QWidget):
     approve = pyqtSignal(str)   # pending id
     deny = pyqtSignal(str)
+    copied = pyqtSignal(str)    # text copied to clipboard (for status feedback)
 
     def __init__(self):
         super().__init__()
@@ -382,8 +414,10 @@ class LiveView(QWidget):
                 "auditallow" if a.get("decision") == "allow" else "auditline")
             ts = (a.get("ts", "") or "")[11:19]
             text = f"{ts}  {a.get('decision','')} {a.get('action_class','')} {a.get('command','')}".strip()
-            ln = QLabel(text.upper()); _role(ln, cls); _track(ln, 0.6)
-            ln.setWordWrap(True); self.audit_box.body.addWidget(ln)
+            ln = QLabel(text.upper()); _role(ln, cls); _track(ln, 0.6); ln.setWordWrap(True)
+            ln.setCursor(Qt.CursorShape.PointingHandCursor)
+            ln.mousePressEvent = lambda _e, c=a.get("command", ""): self._copy(c)
+            self.audit_box.body.addWidget(ln)
         self.audit_box.body.addStretch(1)
 
         if blocked:
@@ -406,8 +440,17 @@ class LiveView(QWidget):
         col.addWidget(t); col.addWidget(s); h.addLayout(col, 1)
         return row
 
+    def _copy(self, text):
+        if not text:
+            return
+        QApplication.clipboard().setText(str(text))
+        self.copied.emit(str(text))
+
     def _frow(self, f):
         row = QFrame(); _role(row, "prow")
+        row.setCursor(Qt.CursorShape.PointingHandCursor)
+        cmd = f.get("command") or f.get("evidence") or f.get("title", "")
+        row.mousePressEvent = lambda _e, c=cmd: self._copy(c)
         h = QHBoxLayout(row); h.setContentsMargins(0, 9, 0, 9); h.setSpacing(11)
         sev = (f.get("severity") or "info").lower()
         role = {"critical": "sevhigh", "high": "sevhigh", "medium": "sevmed",
@@ -434,17 +477,41 @@ class LiveView(QWidget):
             self.deny.emit(self._pending)
 
 
+def desktop_notify(title: str, body: str) -> None:
+    """Best-effort LOCAL desktop notification (macOS osascript / Linux notify-send). Fail-soft.
+    The phone version is roadmap R7."""
+    import shutil
+    import subprocess
+    import sys
+    try:
+        if sys.platform == "darwin":
+            subprocess.run(["osascript", "-e",
+                            f"display notification {body!r} with title {title!r}"],
+                           capture_output=True, timeout=5)
+        elif shutil.which("notify-send"):
+            subprocess.run(["notify-send", title, body], capture_output=True, timeout=5)
+    except Exception:  # noqa: BLE001
+        pass
+
+
 # ---------------------------------------------------------------- main window
 class GrinWindow(QWidget):
-    def __init__(self, api):
+    def __init__(self, api, notify_fn=desktop_notify):
         super().__init__()
         self.api = api
+        self._notify = notify_fn
         self._job_id = None
         self._job_file = None
+        self._notified_pending = set()   # pending ids already pushed (notify once)
+        self._notified_done = False
         self.setObjectName("root")
         self.setWindowTitle("GRIN")
         self.setWindowFlags(Qt.WindowType.FramelessWindowHint)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)   # so keyPressEvent fires
         self.resize(960, 880)
+        geo = QSettings("grin", "app").value("geometry")
+        if geo is not None:
+            self.restoreGeometry(geo)                     # remember size/position
 
         root = QVBoxLayout(self); root.setContentsMargins(0, 0, 0, 0); root.setSpacing(0)
         self.chrome = Chrome(self); root.addWidget(self.chrome)
@@ -452,11 +519,17 @@ class GrinWindow(QWidget):
         self.boot = BootView(); self.boot.open_engagement.connect(self.open_engagement)
         self.live = LiveView()
         self.live.approve.connect(self._approve); self.live.deny.connect(self._deny)
+        self.live.copied.connect(self._on_copied)
 
         from PyQt6.QtWidgets import QStackedWidget
         self.stack = QStackedWidget()
         self.stack.addWidget(self.boot); self.stack.addWidget(self.live)
         root.addWidget(self.stack, 1)
+
+        self.keymap = QLabel("[↑/↓] select   [enter] open   [esc] back   [a]/[d] approve / deny   "
+                             "[r] refresh   [?] keys   ·   click a finding/audit line to copy")
+        self.keymap.setObjectName("keymap"); _track(self.keymap, 1.2); self.keymap.hide()
+        root.addWidget(self.keymap)
 
         self.status = StatusBar()
         self.status.set([("MODE: IDLE", "seg"), ("ENGAGEMENTS: 0", "segdim"),
@@ -470,6 +543,45 @@ class GrinWindow(QWidget):
         self.chrome.mode_toggle.connect(self._toggle_mode)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
+
+    # ---- keyboard nav + QoL ----
+    def keyPressEvent(self, e):
+        t = e.text().lower()
+        key = e.key()
+        if t == "?":
+            self.keymap.setVisible(not self.keymap.isVisible()); return
+        if self.stack.currentWidget() is self.boot:
+            if key == Qt.Key.Key_Down or t == "j":
+                self.boot.move_selection(1)
+            elif key == Qt.Key.Key_Up or t == "k":
+                self.boot.move_selection(-1)
+            elif key in (Qt.Key.Key_Return, Qt.Key.Key_Enter):
+                self.boot.open_selected()
+            elif t == "r":
+                self.refresh_boot()
+            else:
+                super().keyPressEvent(e)
+        else:   # live
+            if key == Qt.Key.Key_Escape:
+                self.refresh_boot()                # back to the boot console
+            elif t == "a":
+                self.live._emit_approve()
+            elif t == "d":
+                self.live._emit_deny()
+            elif t == "r" and self._job_id:
+                self._tick()
+            else:
+                super().keyPressEvent(e)
+
+    def _on_copied(self, text):
+        short = (text[:48] + "…") if len(text) > 48 else text
+        seg = self.status
+        # transient feedback in the status bar
+        seg.set([("COPIED", "segy"), (short, "segdim"), ("", "stretch"), ("FAIL-CLOSED", "acc")])
+
+    def closeEvent(self, e):
+        QSettings("grin", "app").setValue("geometry", self.saveGeometry())
+        super().closeEvent(e)
 
     # ---- deployment mode (roadmap R4) ----
     def _apply_active_profile(self):
@@ -532,6 +644,7 @@ class GrinWindow(QWidget):
         if res.get("error"):
             return res
         self._job_id = res.get("job_id"); self._job_file = file
+        self._notified_pending = set(); self._notified_done = False
         self.live.set_command(f'engage --goal "{goal}"')
         self._poll.start()
         return res
@@ -544,8 +657,21 @@ class GrinWindow(QWidget):
             return
         running = snap.get("status") == "running"
         self._show_live(self._job_file, snap, running=running)
+        self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()
+
+    def _notify_transitions(self, snap, running):
+        """Desktop-notify on a NEW gated action or on completion (once each). Never blocks."""
+        for b in snap.get("blocked", []) or []:
+            pid = b.get("id")
+            if pid and pid not in self._notified_pending:
+                self._notified_pending.add(pid)
+                self._notify("GRIN — approval needed",
+                             f"{b.get('tool', '')} {b.get('command', '')} // {b.get('target', '')}")
+        if not running and not self._notified_done:
+            self._notified_done = True
+            self._notify("GRIN — engagement finished", f"status: {snap.get('status', 'done')}")
 
     def _approve(self, pid):
         if self._job_file:

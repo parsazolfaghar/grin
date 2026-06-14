@@ -73,6 +73,8 @@ QLabel[role="auditrefuse"] { color: #f3df33; font-size: 11px; }
 QLabel[role="auditline"]   { color: rgba(246,246,244,0.52); font-size: 11px; }
 
 /* ---- powerline status bar ---- */
+QLabel#keymap { color: rgba(246,246,244,0.45); font-size: 10px; padding: 6px 16px;
+                background: #0a14cf; border-top: 1px solid rgba(246,246,244,0.18); }
 QWidget#status { background: #0b18e8; border-top: 1px solid rgba(246,246,244,0.40); }
 QLabel[role="seg"]    { color: #f6f6f4; font-size: 10px; padding: 7px 13px; border-right: 1px solid rgba(246,246,244,0.18); }
 QLabel[role="segdim"] { color: rgba(246,246,244,0.52); font-size: 10px; padding: 7px 13px; border-right: 1px solid rgba(246,246,244,0.18); }

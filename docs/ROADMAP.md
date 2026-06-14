@@ -200,16 +200,20 @@ existing spine pending-action / `grin gate` mechanism (a notifier fires when an 
 
 ---
 
-## QoL — app polish (deferred to at-home session)
-Restrained, on-brand quality-of-life for the PyQt6 app — all must keep the neat terminal aesthetic
-(several reinforce it). Captured 2026-06-14; build when at the machine.
+## QoL — app polish — TOP PICKS BUILT (2026-06-14); rest deferred
+Restrained, on-brand QoL for the PyQt6 app — all keep the neat terminal aesthetic.
+
+**BUILT (the "top picks", screenshot-verified, 307 tests):**
 - **Keyboard-first nav:** `↑/↓` or `j/k` select engagement, `Enter` open, `Esc` back to boot, `r` refresh,
-  `/` filter, `?` toggle a faint keymap hint in the status bar (extends the existing `A`/`D`).
-- **Esc-to-back** from live → boot (currently no clean way back).
-- **Awareness:** desktop notification on gated/complete (local; R7 is the phone version); elapsed-time +
-  live counters in the status bar; a brief status-bar line on actions (started/approved/denied — no popups).
-- **Data handling:** click-to-copy on finding commands and especially **loot/secret values**; `/` filter on
-  the findings/audit panes; in-app loot view; an in-app doctor health dot (green/amber) → SP9 report.
-- **Window:** remember size/position (QSettings); resizable panes via splitters.
-- **Top picks (biggest QoL, least risk to the look):** keyboard nav + Esc-back, gated/complete
-  notifications, click-to-copy loot, persistent window size. All Mac-buildable + screenshot-verifiable.
+  `?` toggles a faint keymap hint line (extends the existing `A`/`D`). Selection shown via the yellow row
+  highlight; window has StrongFocus so keys fire.
+- **Esc-to-back** from live → boot.
+- **Click-to-copy:** click a finding row or audit line → command copied to clipboard + a `COPIED` flash in
+  the status bar.
+- **Desktop notifications (local):** `desktop_notify` (macOS osascript / Linux notify-send, fail-soft) fires
+  on a NEW gated action ("approval needed") and on completion (once each). R7 is the phone version.
+- **Persistent window** size/position via QSettings (restore on open, save on close).
+
+**STILL DEFERRED:**
+- `/` filter on the findings/audit panes; in-app **loot/secrets view**; in-app **doctor health dot**
+  (green/amber → SP9 report); **resizable panes** via splitters; elapsed-time/live counters in the status bar.
