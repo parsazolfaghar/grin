@@ -41,12 +41,20 @@ def test_cmd_engage_runs_and_reports(tmp_path, capsys, monkeypatch):
         json.dumps({"objectives": [{"objective": "enumerate", "target": "203.0.113.0/24"}]}),
         json.dumps({"done": True, "reason": "done", "next_objectives": []}),
     ])
-    executor = FakeClient(json.dumps({"done": True, "findings": [
-        {"title": "host up", "severity": "info", "evidence": ".7", "tool": "nmap",
-         "command": "nmap -sn 203.0.113.0/24"}]}))
+    # The executor must run an action before reporting findings (evidence gate).
+    executor = FakeClient([
+        json.dumps({"action": {"tool": "nmap", "command": "nmap -sn 203.0.113.0/24",
+                               "target": "203.0.113.0/24", "declared_class": "active-scan",
+                               "why": "enumerate"}}),
+        json.dumps({"done": True, "findings": [
+            {"title": "host up", "severity": "info", "evidence": ".7", "tool": "nmap",
+             "command": "nmap -sn 203.0.113.0/24"}]}),
+    ])
     monkeypatch.setattr(cli, "_make_client", lambda eng: planner)
     monkeypatch.setattr(cli, "_make_executor_client", lambda eng: executor)
-    monkeypatch.setattr(cli, "_runner_for", lambda eng: FakeRunner())
+    monkeypatch.setattr(cli, "_runner_for",
+                        lambda eng: FakeRunner({"nmap -sn 203.0.113.0/24":
+                                                ExecResult(".7 up", 0, 0.1, False)}))
     rc = cmd_engage(path, goal="assess network", seeds="", model="m", max_objectives=10,
                     max_steps=12)
     assert rc == 0

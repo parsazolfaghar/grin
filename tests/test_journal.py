@@ -62,3 +62,10 @@ def test_update_pending_result_marks_executed():
     assert j.steps[0].decision == "executed"
     assert j.steps[0].output == "injection found"
     assert j.awaiting_pending_id is None
+
+
+def test_render_history_shows_no_evidence_nudge():
+    from ronin.journal import Journal, Step
+    j = Journal(task_id="t", objective="o", target="h", engagement_path="e", path="/tmp/x.json")
+    j.add_step(Step(action={}, decision="no_evidence"))
+    assert "evidence" in j.render_history().lower()

@@ -63,6 +63,9 @@ class Journal:
                 lines.append(f"- [refused] {cmd} ({s.reason})")
             elif s.decision == "pending":
                 lines.append(f"- [awaiting approval] {cmd}")
+            elif s.decision == "no_evidence":
+                lines.append("- [rejected: reported findings with no tool run yet — "
+                             "run a tool to gather evidence first]")
             else:
                 lines.append("- [unparseable model reply, retried]")
         return "\n".join(lines)
