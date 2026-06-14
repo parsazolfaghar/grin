@@ -105,6 +105,17 @@ def render_report(engagement, result, *, audit_summary: str, summary_text: str) 
             for f in other:
                 out.append(_finding_block(f))
             out.append("")
+    out.append("## Secrets")
+    if not getattr(result, "secrets", []):
+        out.append("No secrets captured.")
+    else:
+        for s in result.secrets:
+            out.append(f"- **[{s.label}]** {s.target}")
+            out.append(f"  - value: {s.value}")
+            out.append(f"  - tool: `{s.tool}`  command: `{s.command}`")
+            if s.context:
+                out.append(f"  - context: {s.context}")
+        out.append("")
     out.append("## Methodology")
     out.append("Objectives run:")
     for o in result.objectives_run:

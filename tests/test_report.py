@@ -131,3 +131,19 @@ def test_llm_summary_falls_back_on_exception():
         def generate(self, **kw): raise RuntimeError("boom")
     r = _result()
     assert llm_summary(_Exploder(), "m", r) == deterministic_summary(r)
+
+
+def test_render_report_secrets_section():
+    from grin.report import render_report
+    from grin.secret import Secret
+    r = _result(findings=[])
+    r.secrets = [Secret("SSH password","root:toor","10.0.0.5","hydra","hydra ...","root over ssh")]
+    md = render_report(ENG, r, audit_summary="x", summary_text="s")
+    assert "## Secrets" in md and "root:toor" in md and "SSH password" in md
+
+
+def test_render_report_no_secrets():
+    from grin.report import render_report
+    r = _result(findings=[]); r.secrets = []
+    md = render_report(ENG, r, audit_summary="x", summary_text="s")
+    assert "No secrets captured" in md
