@@ -1,0 +1,131 @@
+<!doctype html><html lang="en"><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>GRIN — console</title>
+<link rel="stylesheet" href="app.css">
+<style>
+  .hero{display:grid;grid-template-columns:auto 1fr;gap:40px;align-items:center;padding:44px 34px 32px}
+  .badge{position:relative;width:208px;height:208px;display:grid;place-items:center;border:1.5px solid var(--line2)}
+  .badge img{width:150px;height:150px}
+  .badge i{position:absolute;width:13px;height:13px;border:2px solid var(--white)}
+  .badge i.tl{top:-2px;left:-2px;border-right:0;border-bottom:0}
+  .badge i.tr{top:-2px;right:-2px;border-left:0;border-bottom:0}
+  .badge i.bl{bottom:-2px;left:-2px;border-right:0;border-top:0}
+  .badge i.br{bottom:-2px;right:-2px;border-left:0;border-top:0}
+  .badge figcaption{position:absolute;bottom:-24px;left:0;right:0;text-align:center;font-size:9px;letter-spacing:.22em;color:var(--dim)}
+
+  .word{font-size:clamp(56px,8.5vw,104px);line-height:.84;margin:0}
+  .rule{height:1.5px;background:var(--line2);margin:20px 0 14px;width:100%}
+  .sub{font-size:11px;letter-spacing:.3em;color:var(--dim);line-height:2}
+  .specrow{display:flex;gap:24px;margin-top:16px;font-size:10px;letter-spacing:.18em;color:var(--line2)}
+  .specrow b{color:var(--dim);font-weight:500}
+
+  .bootlog{padding:2px 34px 18px;font-size:11px;color:var(--dim);letter-spacing:.07em}
+  .bootlog div{padding:3.5px 0}
+  .okk{color:var(--white)}
+
+  .promptrow{padding:14px 16px;border-bottom:1.5px solid var(--line2)}
+  .approve{border-bottom:1.5px solid var(--line2);padding:14px 16px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+  .approve .tag{color:var(--yellow);font-size:11px;letter-spacing:.22em;border:1.5px solid var(--yellow);padding:.2em .6em;text-shadow:0 0 10px rgba(243,223,51,.5)}
+  .approve .cmd{font-size:12.5px}.approve .sp{flex:1}
+  .approve .keys{display:flex;gap:10px}
+  .three{grid-template-columns:1.05fr 1.25fr .9fr}
+  @media(max-width:820px){.three{grid-template-columns:1fr}}
+  .mark{width:32px;height:32px;border:1.5px solid var(--line2)}
+  .eng{cursor:pointer}.eng:hover{background:rgba(255,255,255,.04)}
+</style></head><body>
+
+<!-- BOOT CONSOLE -->
+<div id="boot">
+  <div class="term">
+    <div class="titlebar">
+      <div class="dotrow"><span class="d on"></span><span class="d"></span><span class="d"></span></div>
+      <span>GRIN ▸ CONSOLE</span><span class="path">— ~/engagements</span><span class="sp"></span>
+      <span class="chip">LOCAL AI</span><span class="chip">FAIL-CLOSED</span>
+    </div>
+
+    <div class="hero">
+      <figure class="badge" style="margin:0">
+        <i class="tl"></i><i class="tr"></i><i class="bl"></i><i class="br"></i>
+        <img src="logo.png" alt="GRIN mascot">
+        <figcaption>MASCOT.PNG · 1254×1254</figcaption>
+      </figure>
+      <div>
+        <h1 class="word disp glow">GRIN</h1>
+        <div class="rule"></div>
+        <div class="sub">AUTONOMOUS RED-TEAM ORCHESTRATOR<br>LOCAL AI · ANY AUTHORIZED TARGET</div>
+        <div class="specrow"><span><b>SPINE</b> FAIL-CLOSED</span><span><b>ARSENAL</b> KALI · BLACKARCH</span></div>
+      </div>
+    </div>
+
+    <div id="bootlog" class="bootlog"></div>
+
+    <div id="englist" style="padding:0 34px 28px"></div>
+  </div>
+
+  <div class="status" style="max-width:1120px;margin:0 auto">
+    <span class="seg">MODE: IDLE</span>
+    <span class="seg dim">ENGAGEMENTS: —</span>
+    <span class="seg dim">LAST: —</span>
+    <span class="sp" style="border-right:1.5px solid var(--line)"></span>
+    <span class="seg acc">FAIL-CLOSED</span>
+  </div>
+</div>
+
+<!-- LIVE CONSOLE (hidden until an engagement starts) -->
+<div id="live" style="display:none">
+  <div class="term">
+    <div class="titlebar">
+      <img class="mark" src="logo.png" alt="" style="margin-right:2px">
+      <span class="disp" style="font-size:15px;letter-spacing:.06em">GRIN</span>
+      <span class="path" id="live-path">▸ —</span><span class="sp"></span>
+      <span class="chip y" id="live-chip">● RUNNING</span>
+    </div>
+
+    <div class="promptrow">
+      <div class="prompt"><span class="ps">PS grin&gt;</span>
+        <span class="cmd">engage — goal loaded</span>
+        <span class="cursor"></span></div>
+    </div>
+
+    <div id="approve" class="approve" style="display:none">
+      <span class="tag">AWAITING APPROVAL</span>
+      <span class="cmd" id="approve-cmd"></span>
+      <span class="sp"></span>
+      <span class="keys">
+        <kbd class="y" onclick="decide(true)">A</kbd>
+        <span class="dim" style="align-self:center">approve</span>
+        <kbd onclick="decide(false)">D</kbd>
+        <span class="dim" style="align-self:center">deny</span>
+      </span>
+    </div>
+
+    <div class="grid three">
+      <div class="cell">
+        <div class="lbl"><span>[ OBJECTIVES ]</span></div>
+        <div id="obj-rows"></div>
+      </div>
+
+      <div class="cell">
+        <div class="lbl"><span>[ FINDINGS ]</span></div>
+        <div id="find-rows"></div>
+      </div>
+
+      <div class="cell audit">
+        <div class="lbl"><span>[ AUDIT ]</span><span class="rev">JSONL</span></div>
+        <div id="audit-rows"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="live-status" class="status" style="max-width:1120px;margin:0 auto">
+    <span class="seg">MODE: ACTION-GATED</span>
+    <span class="seg" id="st-obj">OBJ 0</span>
+    <span class="seg y" id="st-find">FIND 0</span>
+    <span class="seg" id="st-block">BLOCKED 0</span>
+    <span class="sp" style="border-right:1.5px solid var(--line)"></span>
+    <span class="seg dim">SPINE: FAIL-CLOSED</span>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body></html>
