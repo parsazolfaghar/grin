@@ -1,0 +1,51 @@
+"""The loot store — organizes captured secrets into a per-engagement folder. Writes a structured
+secrets.jsonl (full records + provenance) and a human-readable, labeled secrets.md. Full values,
+no redaction (proof of exposure); local only."""
+import json
+import os
+from datetime import datetime, timezone
+from pathlib import Path
+
+
+def loot_dir(engagement) -> str:
+    base, _ext = os.path.splitext(engagement.audit_log)
+    return base + ".loot"
+
+
+class LootStore:
+    def __init__(self, directory: str):
+        self._dir = Path(directory)
+
+    def record(self, secret, *, objective: str, ts: str | None = None) -> None:
+        rec = {
+            "label": secret.label, "value": secret.value, "target": secret.target,
+            "tool": secret.tool, "command": secret.command, "context": secret.context,
+            "objective": objective, "ts": ts or datetime.now(timezone.utc).isoformat(),
+        }
+        self._dir.mkdir(parents=True, exist_ok=True)
+        with open(self._dir / "secrets.jsonl", "a") as f:
+            f.write(json.dumps(rec) + "\n")
+        self._render_md(self._load())
+
+    def all(self) -> list:
+        return self._load()
+
+    def _load(self) -> list:
+        p = self._dir / "secrets.jsonl"
+        if not p.exists():
+            return []
+        return [json.loads(l) for l in p.read_text().splitlines() if l.strip()]
+
+    def _render_md(self, rows) -> None:
+        out = ["# Loot — captured secrets", "",
+               f"{len(rows)} secret(s). Full values; handle as sensitive.", ""]
+        for r in rows:
+            out.append(f"## [{r['label']}] {r['target']}")
+            out.append(f"- value: {r['value']}")
+            out.append(f"- tool: {r['tool']}        command: {r['command']}")
+            out.append(f"- objective: {r['objective']}")
+            out.append(f"- obtained: {r['ts']}")
+            if r.get("context"):
+                out.append(f"- context: {r['context']}")
+            out.append("")
+        (self._dir / "secrets.md").write_text("\n".join(out))

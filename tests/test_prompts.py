@@ -64,3 +64,32 @@ def test_parse_step_markdown_action_fallback():
 def test_parse_step_garbage_is_parse_miss():
     d = parse_step("I'm not sure what to do here, sorry!", "h")
     assert d.kind == "parse_miss"
+
+
+def test_parse_step_done_with_secrets():
+    import json
+    from grin.prompts import parse_step
+    from grin.secret import Secret
+    raw = json.dumps({"done": True, "findings": [], "secrets": [
+        {"label": "SSH password", "value": "root:toor", "target": "10.0.0.5",
+         "tool": "hydra", "command": "hydra ...", "context": "root over ssh"}]})
+    d = parse_step(raw, "10.0.0.5")
+    assert d.kind == "done"
+    assert d.secrets == [Secret(label="SSH password", value="root:toor", target="10.0.0.5",
+                                tool="hydra", command="hydra ...", context="root over ssh")]
+
+
+def test_parse_step_skips_malformed_secret():
+    import json
+    from grin.prompts import parse_step
+    raw = json.dumps({"done": True, "findings": [],
+                      "secrets": [{"label": "x"}, {"value": "y"}]})
+    d = parse_step(raw, "h")
+    assert d.secrets == []
+
+
+def test_parse_step_no_secrets_key():
+    import json
+    from grin.prompts import parse_step
+    d = parse_step(json.dumps({"done": True, "findings": []}), "h")
+    assert d.secrets == []
