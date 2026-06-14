@@ -6,6 +6,8 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
+import subprocess
+
 from grin.engagement import load_engagement, EngagementError, pending_path
 from grin.loot import LootStore, loot_dir
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
@@ -18,6 +20,9 @@ from grin.report import render_report, summarize_audit, llm_summary
 from grin.results import ResultStore, results_path
 from grin.runner import build_runner, FakeRunner
 from grin.spine import submit_action, approve_action, deny_action
+from grin.platform_info import detect_platform
+from grin.doctor import run_doctor
+from grin.installer import apply_fixes
 
 
 def cmd_validate(path: str) -> int:
@@ -279,6 +284,95 @@ def cmd_loot(path: str) -> int:
     return 0
 
 
+_STATUS_TAG = {"ok": "[OK]  ", "missing": "[MISSING]", "broken": "[BROKEN]", "skipped": "[SKIP] "}
+
+
+def _run_subprocess(cmd: str):
+    try:
+        p = subprocess.run(["bash", "-lc", cmd], capture_output=True, text=True, timeout=900)
+        return ((p.stdout + p.stderr).strip(), p.returncode == 0)
+    except Exception as e:  # noqa: BLE001 - surface any failure as a non-ok result
+        return (str(e), False)
+
+
+def _run_ollama_pull(cmd: str):
+    return _run_subprocess(cmd)
+
+
+def _ssh_prober(host: str) -> bool:
+    try:
+        return subprocess.run(["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=10",
+                               host, "true"], capture_output=True, timeout=20).returncode == 0
+    except Exception:  # noqa: BLE001
+        return False
+
+
+def _docker_prober(container: str):
+    try:
+        d = subprocess.run(["docker", "info"], capture_output=True, timeout=10).returncode == 0
+        c = False
+        if d:
+            r = subprocess.run(["docker", "ps", "-a", "--format", "{{.Names}}"],
+                               capture_output=True, text=True, timeout=10)
+            c = container in r.stdout.split()
+        return {"daemon": d, "container": c}
+    except Exception:  # noqa: BLE001
+        return {"daemon": False, "container": False}
+
+
+def cmd_doctor(path, *, fix: bool, yes: bool, models, tools) -> int:
+    plat = detect_platform()
+    required = [m.strip() for m in models.split(",")] if isinstance(models, str) else (models or [DEFAULT_MODEL])
+    tool_list = [t.strip() for t in tools.split(",")] if isinstance(tools, str) else (tools or ["nmap"])
+    engagement = None
+    runner = None
+    if path:
+        engagement = load_engagement(path)
+        runner = build_runner(engagement.env)
+    report = run_doctor(platform=plat, ollama=OllamaClient(), engagement=engagement,
+                        runner=runner, required_models=required, tools=tool_list,
+                        ssh_prober=_ssh_prober, docker_prober=_docker_prober)
+    print(f"grin doctor — {plat.os} (pkg mgr: {plat.host_pkg_mgr})\n")
+    for c in report.checks:
+        line = f"  {_STATUS_TAG.get(c.status, c.status)}  {c.name}: {c.detail}"
+        print(line)
+        if c.fix and c.status not in ("ok", "skipped"):
+            tag = "fix" if c.fix.kind == "auto" else "manual"
+            print(f"            -> {tag}: {c.fix.command}")
+    print()
+    if not fix:
+        if report.ok:
+            print("All checks passed.")
+            return 0
+        print("Some checks need attention. Re-run with --fix to install the auto-fixable ones.")
+        return 1
+
+    fixable = report.fixable()
+    if not fixable:
+        print("Nothing auto-fixable. Address any [BROKEN]/[MISSING] advisory items manually.")
+        return 0 if report.ok else 1
+
+    def confirm(f):
+        if yes:
+            return True
+        ans = input(f"Apply: {f.command} ? [y/N] ").strip().lower()
+        return ans == "y"
+
+    def env_install(cmd):
+        # run the install inside the engagement env via the runner
+        res = runner.run(engagement.scope.include[0] if engagement and engagement.scope.include
+                         else "localhost", cmd, timeout=900)
+        return (res.output, res.exit_code == 0 and not res.timed_out)
+
+    results = apply_fixes([c.fix for c in fixable], confirm=confirm, run=_run_subprocess,
+                          ollama_pull=_run_ollama_pull, env_install=env_install)
+    print()
+    for r in results:
+        state = "applied" if r.applied and r.ok else ("FAILED" if r.applied else "skipped")
+        print(f"  {state}: {r.fix.label}")
+    return 0 if all(r.ok for r in results) else 1
+
+
 def _runner_for(eng):
     """Live runner from the engagement env; fall back to FakeRunner if the env
     cannot be built (e.g. docker extra missing) so the spine is still exercisable."""
@@ -366,6 +460,13 @@ def build_parser() -> argparse.ArgumentParser:
     lt = sub.add_parser("loot", help="print captured secrets for an engagement")
     lt.add_argument("file")
 
+    dr = sub.add_parser("doctor", help="check the environment + permission-gated installs")
+    dr.add_argument("file", nargs="?", help="engagement file (omit for host-only checks)")
+    dr.add_argument("--fix", action="store_true", help="install auto-fixable missing items (asks per item)")
+    dr.add_argument("--yes", action="store_true", help="auto-confirm all fixes (with --fix)")
+    dr.add_argument("--models", default=None, help="comma-separated required models (default: the base model)")
+    dr.add_argument("--tools", default=None, help="comma-separated expected arsenal tools (default: nmap)")
+
     return parser
 
 
@@ -405,6 +506,8 @@ def main(argv=None) -> int:
         return cmd_report(args.file, out=args.out, model=args.model)
     if args.group == "loot":
         return cmd_loot(args.file)
+    if args.group == "doctor":
+        return cmd_doctor(args.file, fix=args.fix, yes=args.yes, models=args.models, tools=args.tools)
     return 2
 
 
