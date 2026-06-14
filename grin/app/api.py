@@ -88,7 +88,7 @@ class GrinApi:
         try:
             eng = self._load(file)
             return LootStore(loot_dir(eng)).all()
-        except EngagementError as ex:
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 
     def audit(self, file, limit=50):
@@ -105,14 +105,14 @@ class GrinApi:
                 except json.JSONDecodeError:
                     continue
             return out
-        except EngagementError as ex:
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 
     def blocked(self, file):
         try:
             eng = self._load(file)
             return PendingStore(pending_path(eng)).list()
-        except EngagementError as ex:
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 
     # ---- actions (route through the existing spine/orchestrator; no new execution path) ----
@@ -144,11 +144,14 @@ class GrinApi:
             job = self._job_runner_factory(eng, goal=goal, **opts)
         else:
             from grin.cli import _make_client, _make_executor_client
+            # mirror the CLI: orchestrate needs the engagement file path so sub-tasks write
+            # their journals/results next to it (the app adds no execution path of its own).
+            run_opts = {"engagement_path": file, **opts}
             job = JobRunner(
                 eng, goal=goal, orchestrate_fn=_default_orchestrate(), save_fn=save_result_for,
                 snapshot_reader=lambda e: self._merged_snapshot(file),
                 client_factory=_make_client, executor_factory=_make_executor_client,
-                runner_factory=self._runner_factory, now_fn=self._now, opts=opts)
+                runner_factory=self._runner_factory, now_fn=self._now, opts=run_opts)
         job.start()
         self._jobs[job_id] = (file, job)
         return {"job_id": job_id, "started": True}

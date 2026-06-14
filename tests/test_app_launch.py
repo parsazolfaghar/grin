@@ -15,5 +15,7 @@ def test_launch_without_webview_returns_hint(monkeypatch, capsys):
         return real_import(name, *a, **k)
     monkeypatch.setattr(builtins, "__import__", fake_import)
     rc = launch.main([])
-    out = capsys.readouterr().out + capsys.readouterr().err
+    captured = capsys.readouterr()
+    out = captured.out + captured.err
     assert rc == 1
+    assert "grin[app]" in out  # the install hint is surfaced to the user
