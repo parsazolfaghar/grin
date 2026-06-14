@@ -57,3 +57,41 @@ def test_replan_parse_miss_is_fail_soft():
     assert d.done is False
     assert d.next_objectives == []
     assert "unparseable" in d.reason
+
+
+def test_initial_plan_parses_action_class():
+    import json
+    from ronin.analyst import initial_plan
+    from ronin.objective import Objective
+    from ronin.inference import FakeClient
+    reply = json.dumps({"objectives": [
+        {"objective": "enumerate", "target": "h", "action_class": "active-scan"},
+        {"objective": "exploit it", "target": "h", "action_class": "exploit"},
+    ]})
+    plan = initial_plan(FakeClient(reply), "m", "g", ["h"], [])
+    assert plan[0].action_class == "active-scan"
+    assert plan[1].action_class == "exploit"
+
+
+def test_initial_plan_invalid_or_absent_action_class_defaults_empty():
+    import json
+    from ronin.analyst import initial_plan
+    from ronin.inference import FakeClient
+    reply = json.dumps({"objectives": [
+        {"objective": "a", "target": "h", "action_class": "bogus"},
+        {"objective": "b", "target": "h"},
+    ]})
+    plan = initial_plan(FakeClient(reply), "m", "g", ["h"], [])
+    assert plan[0].action_class == ""
+    assert plan[1].action_class == ""
+
+
+def test_replan_parses_action_class():
+    import json
+    from ronin.analyst import replan
+    from ronin.inference import FakeClient
+    reply = json.dumps({"done": False, "reason": "r",
+                        "next_objectives": [{"objective": "x", "target": "h",
+                                             "action_class": "exploit"}]})
+    d = replan(FakeClient(reply), "m", "g", [], 1, 0)
+    assert d.next_objectives[0].action_class == "exploit"
