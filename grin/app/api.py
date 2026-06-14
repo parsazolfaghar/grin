@@ -35,6 +35,14 @@ class GrinApi:
         self._jobs = {}
         # set lazily to avoid an import cycle at module load; real default wired in launch.py
         self._job_runner_factory = job_runner_factory
+        self._tool_env = None   # active deployment profile's tool env (None -> use the engagement's)
+
+    def set_backend(self, tool_env):
+        """Apply a deployment profile's backend: rebuild the Ollama client (re-reads
+        $GRIN_OLLAMA_URL, already set by config.apply_profile) and set the tool-env override that
+        app-launched engagements run in. Inference + tools rewired together (roadmap R4)."""
+        self._tool_env = tool_env
+        self._ollama = OllamaClient()
 
     # ---- helpers ----
     def _load(self, file):
@@ -141,7 +149,7 @@ class GrinApi:
             return {"error": str(ex)}
         job_id = uuid.uuid4().hex[:12]
         if self._job_runner_factory is not None:
-            job = self._job_runner_factory(eng, goal=goal, **opts)
+            job = self._job_runner_factory(eng, goal=goal, env=self._tool_env, **opts)
         else:
             from grin.cli import _make_client, _make_executor_client
             # mirror the CLI: orchestrate needs the engagement file path so sub-tasks write
@@ -151,7 +159,8 @@ class GrinApi:
                 eng, goal=goal, orchestrate_fn=_default_orchestrate(), save_fn=save_result_for,
                 snapshot_reader=lambda e: self._merged_snapshot(file),
                 client_factory=_make_client, executor_factory=_make_executor_client,
-                runner_factory=self._runner_factory, now_fn=self._now, opts=run_opts)
+                runner_factory=self._runner_factory, now_fn=self._now, opts=run_opts,
+                env=self._tool_env)
         job.start()
         self._jobs[job_id] = (file, job)
         return {"job_id": job_id, "started": True}

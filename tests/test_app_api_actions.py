@@ -60,3 +60,16 @@ def test_approve_bad_id_returns_error(tmp_path):
                   runner_factory=lambda env: None)
     out = api.approve(_eng(tmp_path), "bad")
     assert "error" in out
+
+
+def test_set_backend_threads_tool_env_into_jobrunner(tmp_path):
+    captured = {}
+    class FakeJob:
+        def __init__(self, eng, **kw): captured.update(kw)
+        def start(self): pass
+        def snapshot(self): return {}
+    api = GrinApi(engagements_dir=str(tmp_path),
+                  job_runner_factory=lambda eng, **kw: FakeJob(eng, **kw))
+    api.set_backend({"kind": "ssh", "ssh_host": "root@rig"})
+    api.start_engagement(_eng(tmp_path), "goal")
+    assert captured["env"] == {"kind": "ssh", "ssh_host": "root@rig"}

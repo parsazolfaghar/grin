@@ -40,6 +40,9 @@ class FakeApi:
     def deny(self, f, pid):
         self.denied.append(pid); return {"status": "denied", "reason": ""}
 
+    def set_backend(self, tool_env):
+        self.tool_env = tool_env
+
 
 @pytest.fixture
 def win():
@@ -79,3 +82,22 @@ def test_deny_routes_through_api(win):
     w.open_engagement("e.yaml")
     w.live._emit_deny()
     assert api.denied == ["p1"]
+
+
+def test_mode_toggle_switches_persists_and_rewires(tmp_path, monkeypatch):
+    import os
+    from grin.app import config
+    from grin.app.qt_app import build_app
+    cfgp = str(tmp_path / "app.json")
+    monkeypatch.setattr(config, "config_path", lambda: cfgp)
+    monkeypatch.delenv("GRIN_OLLAMA_URL", raising=False)
+
+    api = FakeApi()
+    _app, w = build_app(api)
+    assert "LOCAL" in w.chrome.mode_btn.text()          # starts local
+    w._toggle_mode()
+    assert "SPLIT" in w.chrome.mode_btn.text()          # toggled
+    assert config.get_active()[0] == "split"            # persisted
+    assert "your-rig" in os.environ["GRIN_OLLAMA_URL"]   # inference rewired to rig
+    assert api.tool_env["kind"] == "ssh"                # tools rewired to rig
+    w.deleteLater()

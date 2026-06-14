@@ -7,7 +7,7 @@ import threading
 class JobRunner:
     def __init__(self, eng, *, goal, orchestrate_fn, save_fn, snapshot_reader,
                  client_factory=None, executor_factory=None, runner_factory=None,
-                 now_fn=None, opts=None):
+                 now_fn=None, opts=None, env=None):
         self.eng = eng
         self.goal = goal
         self._orchestrate = orchestrate_fn
@@ -18,6 +18,8 @@ class JobRunner:
         self._runner_factory = runner_factory
         self._now = now_fn
         self._opts = opts or {}
+        # optional tool-env override (the active deployment profile); falls back to the engagement's
+        self._env = env
         self.status = "idle"
         self.error = ""
         self._thread = None
@@ -35,7 +37,7 @@ class JobRunner:
             if self._executor_factory:
                 kw["executor_client"] = self._executor_factory(self.eng)
             if self._runner_factory:
-                kw["runner"] = self._runner_factory(self.eng.env)
+                kw["runner"] = self._runner_factory(self._env or self.eng.env)
             if self._now:
                 kw["now"] = self._now()
             res = self._orchestrate(self.eng, **kw)

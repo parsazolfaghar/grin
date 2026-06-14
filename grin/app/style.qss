@@ -11,6 +11,9 @@ QLabel#brand { font-family: "Archivo Black"; font-size: 14px; }
 QLabel#path  { color: rgba(246,246,244,0.52); }
 QLabel[role="chip"]    { border: 1px solid rgba(246,246,244,0.40); color: rgba(246,246,244,0.52); padding: 2px 8px; font-size: 10px; }
 QLabel#runchip         { border: 1px solid #f3df33; color: #f3df33; padding: 2px 8px; font-size: 10px; }
+QPushButton#modebtn    { border: 1px solid rgba(246,246,244,0.40); color: rgba(246,246,244,0.78);
+                         padding: 2px 8px; font-size: 10px; background: transparent; }
+QPushButton#modebtn:hover { color: #0a0a0a; background: #f3df33; border-color: #f3df33; }
 QPushButton[role="wc"] {
   border: 1px solid rgba(246,246,244,0.40); color: rgba(246,246,244,0.62);
   min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px; padding: 0; font-size: 9px;

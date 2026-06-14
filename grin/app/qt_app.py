@@ -101,6 +101,8 @@ class ClickRow(QFrame):
 class Chrome(QWidget):
     """Frameless custom title bar: brand, breadcrumb, chips, window controls. Draggable."""
 
+    mode_toggle = pyqtSignal()
+
     def __init__(self, window):
         super().__init__()
         self.setObjectName("chrome")
@@ -128,6 +130,12 @@ class Chrome(QWidget):
         for text in ("LOCAL AI", "FAIL-CLOSED"):
             c = QLabel(text); _role(c, "chip"); _track(c, 2.0); row.addWidget(c)
 
+        # deployment-mode toggle (roadmap R4): click to switch Local <-> Split(rig)
+        self.mode_btn = QPushButton("MODE: LOCAL"); self.mode_btn.setObjectName("modebtn")
+        self.mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.mode_btn.clicked.connect(self.mode_toggle.emit)
+        _track(self.mode_btn, 1.6); row.addWidget(self.mode_btn)
+
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
                                  ("✕", "wcclose", window.close)):
@@ -143,6 +151,9 @@ class Chrome(QWidget):
 
     def set_running(self, on, label="● RUNNING"):
         self.runchip.setText(label); self.runchip.setVisible(bool(on))
+
+    def set_mode_label(self, text):
+        self.mode_btn.setText(f"MODE: {text}")
 
     # drag the frameless window from the title bar
     def mousePressEvent(self, e):
@@ -456,7 +467,24 @@ class GrinWindow(QWidget):
 
         self._poll = QTimer(self); self._poll.setInterval(1500); self._poll.timeout.connect(self._tick)
 
+        self.chrome.mode_toggle.connect(self._toggle_mode)
+        self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
+
+    # ---- deployment mode (roadmap R4) ----
+    def _apply_active_profile(self):
+        from grin.app import config
+        name, profile = config.get_active()
+        env = config.apply_profile(profile)          # sets $GRIN_OLLAMA_URL
+        self.api.set_backend(env)                    # rebuild Ollama client + tool-env override
+        self.chrome.set_mode_label(profile.get("label", name.upper()))
+
+    def _toggle_mode(self):
+        from grin.app import config
+        name, _ = config.get_active()
+        config.set_active(config.next_profile(name))
+        self._apply_active_profile()
+        self.refresh_boot()                          # re-check doctor at the new endpoint
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()

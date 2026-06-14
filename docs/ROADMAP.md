@@ -79,7 +79,15 @@ _Captured as a stub; the operator has additional requirements to add before this
 
 ---
 
-## R4 — Deployment mode toggle: single-machine ↔ split (app local / compute on rig) — PLANNED
+## R4 — Deployment mode toggle: single-machine ↔ split (app local / compute on rig) — BUILT
+**Built (2026-06-14):** inference-offload primitive (`resolve_ollama_url`) + the in-app toggle.
+`grin/app/config.py` holds persisted deployment profiles (`local` / `split`), each bundling
+`{ollama_url, env}`. The PyQt6 chrome has a **MODE: LOCAL ↔ SPLIT (RIG)** button — clicking it
+persists the choice, sets `$GRIN_OLLAMA_URL` (inference) AND the tool-env override
+(`GrinApi.set_backend` → `JobRunner(env=...)`), then re-checks the doctor at the new endpoint. So one
+click rewires inference + tools together. Unit-tested (config round-trip, env threading, runner
+override) + offscreen screenshot-verified. Defaults: split → rig IP for Ollama + ssh→rig for tools
+(switch to an SSH tunnel for security per R3). Follow-up: in-app profile editing (host/url fields).
 **This is a baked-in, OPTIONAL app feature** — a first-class setting in the GUI (not hand-edited config).
 The operator switches between two modes depending on where they're working:
 - **Local mode** — app + inference (Ollama) + tools all on ONE machine (e.g. running everything on the

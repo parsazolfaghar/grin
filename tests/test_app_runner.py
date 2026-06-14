@@ -42,3 +42,19 @@ def test_snapshot_merges_status():
     snap = jr.snapshot()
     assert snap["status"] == "idle"          # not started yet
     assert snap["findings"] == [1]
+
+
+def test_jobrunner_uses_env_override_over_engagement_env():
+    import time
+    seen = {}
+    jr = JobRunner(_Eng(), goal="g",
+                   orchestrate_fn=lambda e, **k: EngagementResult(status="completed", findings=[]),
+                   save_fn=lambda *a: None, snapshot_reader=lambda e: {},
+                   runner_factory=lambda env: seen.setdefault("env", env),
+                   env={"kind": "ssh", "ssh_host": "root@rig"})
+    jr.start()
+    for _ in range(100):
+        if jr.status in ("completed", "error"):
+            break
+        time.sleep(0.01)
+    assert seen["env"] == {"kind": "ssh", "ssh_host": "root@rig"}  # override beat eng.env (local)
