@@ -199,7 +199,8 @@ class BootView(QWidget):
 
     def __init__(self):
         super().__init__()
-        outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
+        inner = QWidget(); inner.setStyleSheet("background: transparent;")
+        outer = QVBoxLayout(inner); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
 
         # hero
         hero = QWidget()
@@ -235,6 +236,13 @@ class BootView(QWidget):
         self.elist = QVBoxLayout(); self.elist.setContentsMargins(22, 4, 22, 14); self.elist.setSpacing(0)
         elw = QWidget(); elw.setLayout(self.elist); outer.addWidget(elw)
         outer.addStretch(1)
+        # the whole home screen scrolls when content exceeds the window height
+        self._scroll = QScrollArea(); self._scroll.setWidgetResizable(True); self._scroll.setWidget(inner)
+        self._scroll.setFrameShape(QFrame.Shape.NoFrame)
+        self._scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self._scroll.viewport().setStyleSheet("background: transparent;")
+        wrap = QVBoxLayout(self); wrap.setContentsMargins(0, 0, 0, 0); wrap.setSpacing(0)
+        wrap.addWidget(self._scroll)
         self._rows = []   # [(file, ClickRow)] for valid engagements
         self._sel = -1    # keyboard selection index
 
@@ -314,6 +322,7 @@ class BootView(QWidget):
             return
         self._sel = max(0, min(len(self._rows) - 1, self._sel + delta))
         self._highlight()
+        self._scroll.ensureWidgetVisible(self._rows[self._sel][1])   # keep selection on screen
 
     def _click_row(self, file: str):
         for i, (f, _r) in enumerate(self._rows):
