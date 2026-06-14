@@ -64,3 +64,41 @@ def test_parse_step_markdown_action_fallback():
 def test_parse_step_garbage_is_parse_miss():
     d = parse_step("I'm not sure what to do here, sorry!", "h")
     assert d.kind == "parse_miss"
+
+
+def test_parse_step_done_with_secrets():
+    import json
+    from grin.prompts import parse_step
+    from grin.secret import Secret
+    raw = json.dumps({"done": True, "findings": [], "secrets": [
+        {"label": "SSH password", "value": "root:toor", "target": "10.0.0.5",
+         "tool": "hydra", "command": "hydra ...", "context": "root over ssh"}]})
+    d = parse_step(raw, "10.0.0.5")
+    assert d.kind == "done"
+    assert d.secrets == [Secret(label="SSH password", value="root:toor", target="10.0.0.5",
+                                tool="hydra", command="hydra ...", context="root over ssh")]
+
+
+def test_parse_step_skips_malformed_secret():
+    import json
+    from grin.prompts import parse_step
+    raw = json.dumps({"done": True, "findings": [],
+                      "secrets": [{"label": "x"}, {"value": "y"}]})
+    d = parse_step(raw, "h")
+    assert d.secrets == []
+
+
+def test_parse_step_no_secrets_key():
+    import json
+    from grin.prompts import parse_step
+    d = parse_step(json.dumps({"done": True, "findings": []}), "h")
+    assert d.secrets == []
+
+
+def test_build_step_prompt_documents_secrets_format():
+    from grin.prompts import build_step_prompt
+    from grin.journal import Journal
+    j = Journal(task_id="t", objective="o", target="127.0.0.1", engagement_path="e", path="/tmp/j.json")
+    sys, usr = build_step_prompt("o", "127.0.0.1", j, ["passive", "active-scan"])
+    assert "secrets" in usr.lower()        # the model is told how to report captured secrets
+    assert "value" in usr.lower()

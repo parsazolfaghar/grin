@@ -7,6 +7,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 from grin.finding import Finding
+from grin.secret import Secret
 
 
 def journal_path(engagement, task_id: str) -> str:
@@ -35,6 +36,7 @@ class Journal:
         self.max_steps = max_steps
         self.steps: list[Step] = []
         self.findings: list[Finding] = []
+        self.secrets: list = []
         self.awaiting_pending_id: str | None = None
 
     def add_step(self, step: Step) -> None:
@@ -42,6 +44,9 @@ class Journal:
 
     def set_findings(self, findings) -> None:
         self.findings = list(findings)
+
+    def set_secrets(self, secrets) -> None:
+        self.secrets = list(secrets)
 
     def update_pending_result(self, pending_id: str, output: str, exit_code) -> None:
         for s in self.steps:
@@ -64,7 +69,7 @@ class Journal:
             elif s.decision == "pending":
                 lines.append(f"- [awaiting approval] {cmd}")
             elif s.decision == "no_evidence":
-                lines.append("- [rejected: reported findings with no tool run yet — "
+                lines.append("- [rejected: reported findings/secrets with no tool run yet — "
                              "run a tool to gather evidence first]")
             else:
                 lines.append("- [unparseable model reply, retried]")
@@ -77,6 +82,7 @@ class Journal:
             "max_steps": self.max_steps, "awaiting_pending_id": self.awaiting_pending_id,
             "steps": [asdict(s) for s in self.steps],
             "findings": [asdict(f) for f in self.findings],
+            "secrets": [asdict(s) for s in self.secrets],
         }
 
     def save(self) -> None:
@@ -92,4 +98,5 @@ class Journal:
         j.awaiting_pending_id = data.get("awaiting_pending_id")
         j.steps = [Step(**s) for s in data.get("steps", [])]
         j.findings = [Finding(**f) for f in data.get("findings", [])]
+        j.secrets = [Secret(**s) for s in data.get("secrets", [])]
         return j

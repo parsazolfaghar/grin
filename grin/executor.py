@@ -3,7 +3,7 @@ the next action, submit it to the SP1 spine (authorize/gate/execute/audit), feed
 back, repeat until done / budget / a gated pause. The spine is still the sole execution path;
 the Executor never runs a command itself."""
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime
 
 from grin.engagement import Engagement
@@ -21,6 +21,7 @@ class TaskResult:
     findings: list
     journal: Journal
     pending_id: str | None = None
+    secrets: list = field(default_factory=list)
 
 
 def execute_task(eng: Engagement, *, objective: str, target: str, client, runner,
@@ -34,7 +35,8 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
 
     if not client.is_up():
         journal.save()
-        return TaskResult("model_unavailable", journal.findings, journal)
+        return TaskResult("model_unavailable", journal.findings, journal,
+                          secrets=journal.secrets)
 
     while len(journal.steps) < journal.max_steps:
         system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions)
@@ -43,14 +45,16 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
 
         if decision.kind == "done":
             has_evidence = any(s.decision == "executed" for s in journal.steps)
-            if decision.findings and not has_evidence:
-                # Evidence gate: don't accept findings until at least one tool actually ran.
+            if (decision.findings or decision.secrets) and not has_evidence:
+                # Evidence gate: don't accept findings/secrets until at least one tool actually ran.
                 # Record a nudge step (shown in history) and keep looping within the budget.
                 journal.add_step(Step(action={}, decision="no_evidence"))
                 continue
             journal.set_findings(decision.findings or [])
+            journal.set_secrets(decision.secrets or [])
             journal.save()
-            return TaskResult("completed", journal.findings, journal)
+            return TaskResult("completed", journal.findings, journal,
+                              secrets=journal.secrets)
 
         if decision.kind == "parse_miss":
             journal.add_step(Step(action={}, decision="parse_miss"))
@@ -69,10 +73,11 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             journal.awaiting_pending_id = out.pending_id
             journal.save()
             return TaskResult("awaiting_approval", journal.findings, journal,
-                              pending_id=out.pending_id)
+                              pending_id=out.pending_id, secrets=journal.secrets)
 
     journal.save()
-    return TaskResult("budget_exhausted", journal.findings, journal)
+    return TaskResult("budget_exhausted", journal.findings, journal,
+                      secrets=journal.secrets)
 
 
 def resume_task(eng: Engagement, journal: Journal, *, client, runner, now: datetime,
@@ -84,10 +89,11 @@ def resume_task(eng: Engagement, journal: Journal, *, client, runner, now: datet
     pid = journal.awaiting_pending_id
     if not pid:
         status = "completed" if journal.findings else "budget_exhausted"
-        return TaskResult(status, journal.findings, journal)
+        return TaskResult(status, journal.findings, journal, secrets=journal.secrets)
     rec = result_store.get(pid)
     if rec is None:
-        return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid)
+        return TaskResult("awaiting_approval", journal.findings, journal, pending_id=pid,
+                          secrets=journal.secrets)
     journal.update_pending_result(pid, rec.get("output", ""), rec.get("exit_code"))
     journal.save()
     return execute_task(eng, objective=journal.objective, target=journal.target,

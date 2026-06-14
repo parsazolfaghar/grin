@@ -5,6 +5,7 @@ import re
 from dataclasses import dataclass
 
 from grin.finding import Finding, normalize_severity
+from grin.secret import Secret
 
 SYSTEM = (
     "You are Grin's Executor, an autonomous penetration-testing agent operating under an "
@@ -29,7 +30,11 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         '"why": "short reason"}}\n'
         'To finish, reply EXACTLY: {"done": true, "findings": [{"title": "...", '
         '"severity": "info|low|medium|high|critical", "evidence": "...", "tool": "...", '
-        '"command": "...", "recommendation": "..."}]}\n'
+        '"command": "...", "recommendation": "..."}], '
+        '"secrets": [{"label": "...", "value": "...", "target": "...", "tool": "...", '
+        '"command": "...", "context": "..."}]} '
+        "(include any credentials/keys/tokens you actually obtained in `secrets`, with full values; "
+        "omit the secrets array or leave it empty if none were captured)\n"
         "Return ONLY the JSON object."
     )
     return SYSTEM, user
@@ -37,9 +42,10 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
 
 @dataclass
 class StepDecision:
-    kind: str                         # action | done | parse_miss
+    kind: str
     action: dict | None = None
     findings: list | None = None
+    secrets: list | None = None
 
 
 def _extract_json(raw: str):
@@ -48,6 +54,25 @@ def _extract_json(raw: str):
         return json.loads(m.group(0)) if m else None
     except (json.JSONDecodeError, AttributeError, TypeError):
         return None
+
+
+def _parse_secrets(items, default_target) -> list:
+    out = []
+    for it in items or []:
+        if not isinstance(it, dict):
+            continue
+        label = str(it.get("label", "")).strip()
+        value = str(it.get("value", "")).strip()
+        if not (label and value):
+            continue
+        out.append(Secret(
+            label=label, value=value,
+            target=str(it.get("target") or default_target).strip(),
+            tool=str(it.get("tool", "")).strip(),
+            command=str(it.get("command", "")).strip(),
+            context=str(it.get("context", "")).strip(),
+        ))
+    return out
 
 
 def _parse_findings(items, default_target) -> list:
@@ -88,8 +113,9 @@ def parse_step(raw: str, default_target: str) -> StepDecision:
                 "why": str(act.get("why", "")).strip(),
             })
         if data.get("done") or "findings" in data:
-            return StepDecision("done", findings=_parse_findings(data.get("findings", []),
-                                                                 default_target))
+            return StepDecision("done",
+                                findings=_parse_findings(data.get("findings", []), default_target),
+                                secrets=_parse_secrets(data.get("secrets", []), default_target))
     # Markdown fallback: a "Command:" line -> an action (tool = first token).
     m = _CMD_RE.search(raw or "")
     if m:

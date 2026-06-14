@@ -89,6 +89,15 @@ the methodology the Orchestrator followed, and appends an audit-trail + blocked-
 The executive summary is deterministic by default; if a local model is up it writes a short
 narrative instead (and falls back to deterministic if the model is unavailable).
 
+## Loot — captured secrets (SP8)
+
+Secrets the Executor obtains (credentials, keys, tokens, hashes) are captured in full to a
+per-engagement loot folder, `audit/<engagement>.loot/` — a structured `secrets.jsonl` plus a
+labeled, human-readable `secrets.md` (value, context, tool, command, objective, timestamp). They
+also appear in full in the report's Secrets section. No redaction — the point is concrete proof of
+what was exposed. Print them with `grin loot <engagement.yaml>`. (Loot files hold live secrets in
+plaintext; handle as sensitive. Everything stays local.)
+
 ## Test
 ```bash
 python3 -m pytest -v

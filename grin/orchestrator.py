@@ -9,6 +9,7 @@ from grin.analyst import initial_plan, replan
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.journal import Journal
+from grin.loot import LootStore, loot_dir
 from grin.results import ResultStore, results_path
 
 
@@ -20,6 +21,7 @@ class EngagementResult:
     paused: list = field(default_factory=list)      # [{objective, pending_id, journal}]
     plan_log: list = field(default_factory=list)
     goal: str = ""
+    secrets: list = field(default_factory=list)
 
 
 def _merge_findings(into: list, new) -> None:
@@ -42,7 +44,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 objectives_run: list, paused: list, plan_log: list, planner_client,
                 executor_client, runner, now: datetime, planner_model: str,
                 objective_models, base_model: str, max_objectives: int,
-                max_steps: int, engagement_path: str) -> str:
+                max_steps: int, engagement_path: str, secrets: list, loot) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
     passed-in lists; returns the final status (completed | budget_exhausted)."""
     while queue and len(objectives_run) < max_objectives:
@@ -53,6 +55,10 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                            max_steps=max_steps, engagement_path=engagement_path)
         objectives_run.append(obj)
         _merge_findings(findings, res.findings)
+        for sec in res.secrets:
+            if sec not in secrets:
+                secrets.append(sec)
+                loot.record(sec, objective=obj.objective)
         if res.status == "awaiting_approval":
             paused.append({"objective": obj, "pending_id": res.pending_id,
                            "journal": res.journal.path})
@@ -81,6 +87,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
     objectives_run: list = []
     paused: list = []
     plan_log: list = [{"kind": "initial_plan", "objectives": list(queue)}]
+    secrets: list = []
+    loot = LootStore(loot_dir(eng))
 
     status = _drive_loop(eng, goal=goal, queue=queue, findings=findings,
                          objectives_run=objectives_run, paused=paused, plan_log=plan_log,
@@ -88,8 +96,9 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                          runner=runner, now=now, planner_model=eff_planner,
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
-                         engagement_path=engagement_path)
-    return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal)
+                         engagement_path=engagement_path, secrets=secrets, loot=loot)
+    return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
+                            secrets=secrets)
 
 
 def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_client,
@@ -107,6 +116,8 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
     objectives_run = list(prior.objectives_run)   # paused objectives are already counted here
     plan_log = list(prior.plan_log)
     paused: list = []
+    secrets = list(prior.secrets)
+    loot = LootStore(loot_dir(eng))
     store = ResultStore(results_path(eng))
     resumed_any = False
 
@@ -119,13 +130,17 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                           runner=runner, now=now, result_store=store,
                           model=_model_for(p["objective"], objective_models, model))
         _merge_findings(findings, res.findings)
+        for sec in res.secrets:
+            if sec not in secrets:
+                secrets.append(sec)
+                loot.record(sec, objective=p["objective"].objective)
         if res.status == "awaiting_approval":
             paused.append({"objective": p["objective"], "pending_id": res.pending_id,
                            "journal": res.journal.path})
 
     if not resumed_any:
         return EngagementResult(prior.status, findings, objectives_run, paused, plan_log,
-                                goal=goal)
+                                goal=goal, secrets=secrets)
 
     queue: list = []
     if len(objectives_run) < max_objectives:
@@ -134,7 +149,7 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                          "objectives": list(decision.next_objectives)})
         if decision.done:
             return EngagementResult("completed", findings, objectives_run, paused, plan_log,
-                                    goal=goal)
+                                    goal=goal, secrets=secrets)
         queue = list(decision.next_objectives)
 
     status = _drive_loop(eng, goal=goal, queue=queue, findings=findings,
@@ -143,5 +158,6 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                          runner=runner, now=now, planner_model=eff_planner,
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
-                         engagement_path=engagement_path)
-    return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal)
+                         engagement_path=engagement_path, secrets=secrets, loot=loot)
+    return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
+                            secrets=secrets)

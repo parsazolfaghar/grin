@@ -8,6 +8,7 @@ from pathlib import Path
 from grin.finding import Finding
 from grin.objective import Objective
 from grin.orchestrator import EngagementResult
+from grin.secret import Secret
 
 
 def result_path(engagement) -> str:
@@ -36,6 +37,7 @@ def save_result(path: str, result: EngagementResult) -> None:
                     "pending_id": p.get("pending_id"), "journal": p.get("journal")}
                    for p in result.paused],
         "plan_log": [_planlog_entry_to_dict(e) for e in result.plan_log],
+        "secrets": [asdict(s) for s in result.secrets],
     }
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_text(json.dumps(data, indent=2))
@@ -63,4 +65,5 @@ def load_result(path: str) -> EngagementResult:
                  "pending_id": p.get("pending_id"), "journal": p.get("journal")}
                 for p in data.get("paused", [])],
         plan_log=[_planlog_entry_from_dict(e) for e in data.get("plan_log", [])],
+        secrets=[Secret(**s) for s in data.get("secrets", [])],
     )
