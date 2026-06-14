@@ -422,7 +422,8 @@ def _who() -> str:
 
 DEFAULT_BENCH_MODELS = [
     "qwen3:14b", "qwen3:8b", "hermes3:8b",
-    "hf.co/mradermacher/WhiteRabbitNeo-13B-v1-GGUF:Q4_K_M",
+    "whiterabbitneo:13b",   # local re-template of the GGUF (see docs/.../whiterabbitneo-13b.Modelfile);
+                            # the raw hf.co GGUF ships a {{ .Prompt }} passthrough that drops the system msg
     "hf.co/mradermacher/Foundation-Sec-8B-Instruct-GGUF:Q4_K_M",
     "qwen2.5-coder:7b", "dolphin3:8b",
 ]
