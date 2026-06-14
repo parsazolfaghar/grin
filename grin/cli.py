@@ -471,6 +471,9 @@ def build_parser() -> argparse.ArgumentParser:
     dr.add_argument("--models", default=None, help="comma-separated required models (default: the base model)")
     dr.add_argument("--tools", default=None, help="comma-separated expected arsenal tools (default: nmap)")
 
+    ap = sub.add_parser("app", help="open the Grin desktop app (needs the [app] extra)")
+    ap.add_argument("dir", nargs="?", default=".", help="folder of engagement .yaml files")
+
     return parser
 
 
@@ -512,6 +515,9 @@ def main(argv=None) -> int:
         return cmd_loot(args.file)
     if args.group == "doctor":
         return cmd_doctor(args.file, fix=args.fix, yes=args.yes, models=args.models, tools=args.tools)
+    if args.group == "app":
+        from grin.app.launch import main as app_main
+        return app_main([args.dir])
     return 2
 
 
