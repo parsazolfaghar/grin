@@ -222,10 +222,19 @@ existing spine pending-action / `grin gate` mechanism (a notifier fires when an 
 
 ---
 
-## QoL — app polish — TOP PICKS BUILT (2026-06-14); rest deferred
+## QoL — app polish — ALL BUILT (2026-06-14)
 Restrained, on-brand QoL for the PyQt6 app — all keep the neat terminal aesthetic.
 
-**BUILT (the "top picks", screenshot-verified, 307 tests):**
+**Second wave BUILT (screenshot-verified, 322 tests):**
+- **Resizable panes:** the live OBJECTIVES/FINDINGS/AUDIT grid is a `QSplitter` (drag the dividers).
+- **`/` filter:** in the live view, `/` focuses a filter box that hides non-matching findings + audit rows
+  (esc clears). Counts stay = totals.
+- **In-app loot view:** `L` opens a `LootDialog` listing captured secrets (full values, click to copy, esc).
+- **Doctor health dot:** a green/amber/dim `●` in the chrome reflecting the (off-thread) doctor result.
+- **Elapsed clock + live counters:** the status bar shows OBJ/FIND/BLOCKED + an mm:ss run timer (ticks every
+  poll even when panes are unchanged).
+
+**First wave BUILT (the "top picks"):**
 - **Keyboard-first nav:** `↑/↓` or `j/k` select engagement, `Enter` open, `Esc` back to boot, `r` refresh,
   `?` toggles a faint keymap hint line (extends the existing `A`/`D`). Selection shown via the yellow row
   highlight; window has StrongFocus so keys fire.
@@ -235,7 +244,3 @@ Restrained, on-brand QoL for the PyQt6 app — all keep the neat terminal aesthe
 - **Desktop notifications (local):** `desktop_notify` (macOS osascript / Linux notify-send, fail-soft) fires
   on a NEW gated action ("approval needed") and on completion (once each). R7 is the phone version.
 - **Persistent window** size/position via QSettings (restore on open, save on close).
-
-**STILL DEFERRED:**
-- `/` filter on the findings/audit panes; in-app **loot/secrets view**; in-app **doctor health dot**
-  (green/amber → SP9 report); **resizable panes** via splitters; elapsed-time/live counters in the status bar.

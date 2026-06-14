@@ -12,7 +12,8 @@ from PyQt6.QtCore import Qt, QTimer, QSettings, QObject, QRect, pyqtSignal
 from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
+    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSplitter, QLineEdit,
+    QDialog,
 )
 
 HERE = os.path.dirname(__file__)
@@ -130,6 +131,10 @@ class Chrome(QWidget):
         for text in ("LOCAL AI", "FAIL-CLOSED"):
             c = QLabel(text); _role(c, "chip"); _track(c, 2.0); row.addWidget(c)
 
+        self.health = QLabel("●"); self.health.setObjectName("healthdot")
+        self.health.setToolTip("preflight health"); self.set_health(None)
+        row.addWidget(self.health)
+
         # deployment-mode toggle (roadmap R4): click to switch Local <-> Split(rig)
         self.mode_btn = QPushButton("MODE: LOCAL"); self.mode_btn.setObjectName("modebtn")
         self.mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
@@ -154,6 +159,11 @@ class Chrome(QWidget):
 
     def set_mode_label(self, text):
         self.mode_btn.setText(f"MODE: {text}")
+
+    def set_health(self, ok):
+        """Doctor health dot: green ok / amber issues / dim unknown (checking)."""
+        color = "#6ee7a0" if ok else ("#f3df33" if ok is False else "rgba(246,246,244,0.40)")
+        self.health.setStyleSheet(f"color:{color}; font-size:13px;")
 
     # drag the frameless window from the title bar
     def mousePressEvent(self, e):
@@ -346,6 +356,8 @@ class LiveView(QWidget):
     def __init__(self):
         super().__init__()
         self._pending = None
+        self._snap = {}
+        self._filter = ""
         outer = QVBoxLayout(self); outer.setContentsMargins(0, 0, 0, 0); outer.setSpacing(0)
 
         prow = QWidget(); prow.setObjectName("promptrow")
@@ -371,13 +383,22 @@ class LiveView(QWidget):
         self.approve_bar.hide()
         outer.addWidget(self.approve_bar)
 
-        # three-pane grid (hairline gaps)
-        grid = QWidget(); grid.setObjectName("grid")
-        gl = QHBoxLayout(grid); gl.setContentsMargins(0, 0, 0, 0); gl.setSpacing(1)
+        # filter bar ( '/' to focus ) — filters findings + audit
+        self.filter_box = QLineEdit(); self.filter_box.setObjectName("filterbox")
+        self.filter_box.setPlaceholderText("/ filter findings + audit  (esc to clear)")
+        self.filter_box.textChanged.connect(self._on_filter)
+        self.filter_box.keyPressEvent = self._filter_keypress
+        self.filter_box.hide()
+        outer.addWidget(self.filter_box)
+
+        # three-pane grid — a splitter so the operator can drag the pane boundaries
+        grid = QSplitter(Qt.Orientation.Horizontal); grid.setObjectName("grid")
+        grid.setChildrenCollapsible(False); grid.setHandleWidth(1)
         self.obj_box, oc = self._cell("[ OBJECTIVES ]")
         self.find_box, fc = self._cell("[ FINDINGS ]")
         self.audit_box, ac = self._cell("[ AUDIT ]", rev="JSONL")
-        gl.addWidget(oc, 105); gl.addWidget(fc, 125); gl.addWidget(ac, 92)
+        grid.addWidget(oc); grid.addWidget(fc); grid.addWidget(ac)
+        grid.setSizes([330, 390, 290])
         outer.addWidget(grid, 1)
         self._objrev = self.obj_box.rev; self._findrev = self.find_box.rev
 
@@ -403,11 +424,19 @@ class LiveView(QWidget):
         return box, cell
 
     def set_data(self, snap: dict):
-        snap = snap or {}
+        self._snap = snap or {}
+        self._render()
+
+    def _render(self):
+        snap = self._snap
+        flt = self._filter
         objectives = snap.get("objectives", []) or []
         findings = snap.get("findings", []) or []
         audit = snap.get("audit", []) or []
         blocked = snap.get("blocked", []) or []
+
+        def _match(*parts):
+            return (not flt) or flt in " ".join(str(p) for p in parts).lower()
 
         self._objrev.setText(str(len(objectives)))
         self._findrev.setText(str(len(findings)))
@@ -424,15 +453,18 @@ class LiveView(QWidget):
 
         _clear(self.find_box.body)
         for f in findings:
-            self.find_box.body.addWidget(self._frow(f))
+            if _match(f.get("title"), f.get("evidence"), f.get("tool"), f.get("command")):
+                self.find_box.body.addWidget(self._frow(f))
         self.find_box.body.addStretch(1)
 
         _clear(self.audit_box.body)
         for a in audit:
-            cls = "auditrefuse" if a.get("decision") == "refuse" else (
-                "auditallow" if a.get("decision") == "allow" else "auditline")
             ts = (a.get("ts", "") or "")[11:19]
             text = f"{ts}  {a.get('decision','')} {a.get('action_class','')} {a.get('command','')}".strip()
+            if not _match(text):
+                continue
+            cls = "auditrefuse" if a.get("decision") == "refuse" else (
+                "auditallow" if a.get("decision") == "allow" else "auditline")
             ln = QLabel(text.upper()); _role(ln, cls); _track(ln, 0.6); ln.setWordWrap(True)
             ln.setCursor(Qt.CursorShape.PointingHandCursor)
             ln.mousePressEvent = lambda _e, c=a.get("command", ""): self._copy(c)
@@ -483,6 +515,20 @@ class LiveView(QWidget):
         _role(s, "psub"); _track(s, 0.8); s.setWordWrap(True)
         col.addWidget(t); col.addWidget(s); h.addLayout(col, 1)
         return row
+
+    def focus_filter(self):
+        self.filter_box.setVisible(True)
+        self.filter_box.setFocus()
+
+    def _on_filter(self, text):
+        self._filter = (text or "").lower()
+        self._render()
+
+    def _filter_keypress(self, e):
+        if e.key() == Qt.Key.Key_Escape:
+            self.filter_box.clear(); self.filter_box.hide(); self.window().setFocus()
+            return
+        QLineEdit.keyPressEvent(self.filter_box, e)
 
     def set_command(self, text):
         self.cmd.setText(text)
@@ -584,6 +630,41 @@ def _snap_sig(snap):
     return (snap.get("status"), objs, finds, audit, blocked)
 
 
+class LootDialog(QDialog):
+    """In-app view of captured secrets (full values, no redaction — SP8). Esc closes."""
+
+    def __init__(self, parent, secrets):
+        super().__init__(parent)
+        self.setObjectName("root")           # reuse the blue substrate + border
+        self.setWindowTitle("GRIN — LOOT")
+        self.resize(660, 460)
+        v = QVBoxLayout(self); v.setContentsMargins(16, 14, 16, 14); v.setSpacing(0)
+        title = QLabel(f"[ LOOT ]  {len(secrets)} SECRET(S)"); _role(title, "celllbl"); _track(title, 2.6)
+        v.addWidget(title); v.addSpacing(10)
+        body = QVBoxLayout(); body.setSpacing(0)
+        bw = QWidget(); bw.setLayout(body); bw.setStyleSheet("background: transparent;")
+        sa = QScrollArea(); sa.setWidgetResizable(True); sa.setWidget(bw)
+        sa.setFrameShape(QFrame.Shape.NoFrame); sa.viewport().setStyleSheet("background: transparent;")
+        v.addWidget(sa, 1)
+        if not secrets:
+            lab = QLabel("NO SECRETS CAPTURED."); _role(lab, "psub"); _track(lab, 1.0)
+            body.addWidget(lab)
+        for s in secrets:
+            row = QFrame(); _role(row, "prow")
+            rh = QVBoxLayout(row); rh.setContentsMargins(0, 9, 0, 9); rh.setSpacing(3)
+            t = QLabel(f"[{s.get('label', '')}] {s.get('target', '')}".upper())
+            _role(t, "ptitle"); _track(t, 0.5); t.setWordWrap(True)
+            val = QLabel(f"value: {s.get('value', '')}"); _role(val, "psuby"); val.setWordWrap(True)
+            val.setCursor(Qt.CursorShape.PointingHandCursor)
+            val.mousePressEvent = lambda _e, vv=s.get("value", ""): QApplication.clipboard().setText(vv)
+            meta = QLabel(f"{s.get('tool', '')} // {s.get('command', '')}"); _role(meta, "psub")
+            meta.setWordWrap(True)
+            rh.addWidget(t); rh.addWidget(val); rh.addWidget(meta); body.addWidget(row)
+        body.addStretch(1)
+        hint = QLabel("click a value to copy · esc to close"); _role(hint, "khint"); _track(hint, 1.0)
+        v.addSpacing(8); v.addWidget(hint)
+
+
 # ---------------------------------------------------------------- main window
 class GrinWindow(QWidget):
     def __init__(self, api, notify_fn=desktop_notify):
@@ -593,6 +674,7 @@ class GrinWindow(QWidget):
         self._job_id = None
         self._job_file = None
         self._last_sig = None             # last rendered live-snapshot signature (skip rebuilds)
+        self._run_start = None            # monotonic start time of the active run (elapsed clock)
         self._notified_pending = set()   # pending ids already pushed (notify once)
         self._notified_done = False
         self.setObjectName("root")
@@ -675,8 +757,20 @@ class GrinWindow(QWidget):
                 self.live._emit_deny()
             elif t == "r" and self._job_id:
                 self._tick()
+            elif t == "/":
+                self.live.focus_filter()           # filter findings + audit
+            elif t == "l":
+                self._show_loot()                  # in-app captured-secrets view
             else:
                 super().keyPressEvent(e)
+
+    def _show_loot(self):
+        if not self._job_file:
+            return
+        secrets = self.api.loot(self._job_file)
+        if isinstance(secrets, dict):   # {"error": ...} guard
+            secrets = []
+        LootDialog(self, secrets).exec()
 
     def _on_copied(self, text):
         short = (text[:48] + "…") if len(text) > 48 else text
@@ -743,8 +837,14 @@ class GrinWindow(QWidget):
                          (f"ENGAGEMENTS: {len(engagements)}", "segdim"),
                          ("", "stretch"), ("FAIL-CLOSED", "acc")])
         self.chrome.set_breadcrumb("~/engagements"); self.chrome.set_running(False)
+        self.chrome.set_health(None)                          # "checking…" until doctor returns
+        self._run_start = None                                # no run clock on the boot screen
         self.stack.setCurrentWidget(self.boot)
-        self._async(self.api.doctor, self.boot.set_doctor)   # doctor off the UI thread
+        self._async(self.api.doctor, self._on_doctor)         # doctor off the UI thread
+
+    def _on_doctor(self, doctor):
+        self.boot.set_doctor(doctor)
+        self.chrome.set_health((doctor or {}).get("ok"))      # green/amber health dot
 
     # ---- live ----
     def open_engagement(self, file):
@@ -767,12 +867,21 @@ class GrinWindow(QWidget):
         self.chrome.set_breadcrumb(crumb)
         self.chrome.set_running(running)
         self.live.set_data(snap)
-        self.status.set([("MODE: RUNNING" if running else "MODE: ACTION-GATED", "seg"),
-                         (f"OBJ {len(snap.get('objectives',[]))}", "seg"),
-                         (f"FIND {len(snap.get('findings',[]))}", "segy"),
-                         (f"BLOCKED {len(snap.get('blocked',[]))}", "seg"),
-                         ("", "stretch"), ("SPINE: FAIL-CLOSED", "segdim")])
+        self._update_status(snap, running)
         self.stack.setCurrentWidget(self.live)
+
+    def _update_status(self, snap, running):
+        """Cheap status-bar refresh (counters + elapsed clock) — safe to call every poll tick."""
+        segs = [("MODE: RUNNING" if running else "MODE: ACTION-GATED", "seg"),
+                (f"OBJ {len(snap.get('objectives', []))}", "seg"),
+                (f"FIND {len(snap.get('findings', []))}", "segy"),
+                (f"BLOCKED {len(snap.get('blocked', []))}", "seg")]
+        if self._run_start is not None:
+            import time
+            secs = int(time.monotonic() - self._run_start)
+            segs.append((f"{secs // 60:02d}:{secs % 60:02d}", "segdim"))
+        segs += [("", "stretch"), ("SPINE: FAIL-CLOSED", "segdim")]
+        self.status.set(segs)
 
     def start(self, file, goal):
         res = self.api.start_engagement(file, goal)
@@ -780,6 +889,8 @@ class GrinWindow(QWidget):
             return res
         self._job_id = res.get("job_id"); self._job_file = file
         self._last_sig = None   # force the first live render
+        import time
+        self._run_start = time.monotonic()   # start the elapsed clock
         self._notified_pending = set(); self._notified_done = False
         self.live.set_command(f'engage --goal "{goal}"')
         self._poll.start()
@@ -796,6 +907,8 @@ class GrinWindow(QWidget):
         if sig != self._last_sig:              # only rebuild panes when something changed
             self._show_live(self._job_file, snap, running=running)
             self._last_sig = sig
+        else:
+            self._update_status(snap, running)  # still tick the elapsed clock / counters
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()

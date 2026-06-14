@@ -204,3 +204,38 @@ def test_no_phone_notify_when_unconfigured(win, monkeypatch):
     w._desktop_notify = lambda *a: None
     w._notify("x", "y")
     assert sent == []                                        # nothing pushed when GRIN_NTFY_URL unset
+
+
+def _find_row_count(box):
+    return sum(1 for i in range(box.body.count()) if box.body.itemAt(i).widget() is not None)
+
+
+def test_live_filter_hides_nonmatching_findings(win):
+    w, _ = win
+    snap = {"objectives": [], "audit": [], "blocked": [], "findings": [
+        {"title": "sqli", "severity": "high", "evidence": "id param", "tool": "sqlmap", "command": "sqlmap -u x"},
+        {"title": "nginx", "severity": "medium", "evidence": "banner", "tool": "whatweb", "command": "whatweb x"}]}
+    w.live.set_data(snap)
+    assert _find_row_count(w.live.find_box) == 2
+    w.live._filter = "sqlmap"; w.live._render()
+    assert _find_row_count(w.live.find_box) == 1     # only the sqlmap finding survives
+    w.live._filter = ""; w.live._render()
+    assert _find_row_count(w.live.find_box) == 2     # cleared -> all back
+
+
+def test_loot_dialog_builds_with_secrets(win):
+    from grin.app.qt_app import LootDialog
+    w, _ = win
+    d = LootDialog(w, [{"label": "cred", "value": "admin:pw", "target": "t",
+                        "tool": "sqlmap", "command": "c"}])
+    assert d is not None
+    d.deleteLater()
+
+
+def test_resizable_panes_are_a_splitter(win):
+    from PyQt6.QtWidgets import QSplitter
+    w, _ = win
+    w.open_engagement("e.yaml")
+    # the live grid is a QSplitter with the 3 cells
+    splitters = w.live.findChildren(QSplitter)
+    assert splitters and splitters[0].count() == 3
