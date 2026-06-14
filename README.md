@@ -59,6 +59,17 @@ ronin report examples/external-net.yaml -o report.md
 findings, keeps the adaptive loop going, and re-saves the result. Denied / not-yet-approved
 objectives stay blocked; if nothing is approved yet it reports "nothing to resume."
 
+### Per-role models (SP6)
+
+Route models by objective type (all local Ollama; default is one `--model` for everything):
+```bash
+ronin engage examples/external-net.yaml --goal "assess the external network" \
+  --recon-model qwen3:8b --exploit-model hermes3:8b --planner-model qwen3:14b
+```
+Recon/passive objectives run on `--recon-model`, exploit/post-exploit objectives on
+`--exploit-model`, planning on `--planner-model` — each falling back to `--model`. The action-class
+tag drives model choice only; the spine still resolves and authorizes every command.
+
 ## The Reporter (SP4)
 
 Turn a finished engagement into a Markdown report:

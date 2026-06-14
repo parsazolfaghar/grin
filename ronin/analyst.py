@@ -6,6 +6,7 @@ import re
 from dataclasses import dataclass
 
 from ronin.objective import Objective
+from ronin.classes import ACTION_CLASSES
 
 PLANNER_SYSTEM = (
     "You are Ronin's Orchestrator/Analyst, planning an authorized, scope-bound penetration test. "
@@ -30,8 +31,12 @@ def _parse_objectives(items) -> list:
             continue
         objective = str(it.get("objective", "")).strip()
         target = str(it.get("target", "")).strip()
-        if objective and target:
-            out.append(Objective(objective=objective, target=target))
+        if not (objective and target):
+            continue
+        ac = str(it.get("action_class", "")).strip().lower()
+        if ac not in ACTION_CLASSES:
+            ac = ""
+        out.append(Objective(objective=objective, target=target, action_class=ac))
     return out
 
 
@@ -51,7 +56,9 @@ def initial_plan(client, model: str, goal: str, scope_targets, seeds) -> list:
         "discovering hosts and services in scope). Each objective has a plain-language goal and a "
         "concrete in-scope target.\n"
         'Reply EXACTLY: {"objectives": [{"objective": "enumerate hosts", '
-        '"target": "203.0.113.0/24"}]}\nReturn ONLY the JSON.'
+        '"target": "203.0.113.0/24", "action_class": "active-scan"}]} '
+        '(action_class is one of passive|active-scan|exploit|post-exploit, your best guess for '
+        'the objective).\nReturn ONLY the JSON.'
     )
     data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,
                                          temperature=0.3))
@@ -75,7 +82,8 @@ def replan(client, model: str, goal: str, findings, done_count: int,
         "Decide: is the goal met (done)? If not, propose follow-up objectives that chase the most "
         "promising leads in the findings (in-scope targets only). Do not repeat completed work.\n"
         'Reply EXACTLY: {"done": false, "reason": "why", "next_objectives": '
-        '[{"objective": "...", "target": "..."}]}\nReturn ONLY the JSON.'
+        '[{"objective": "...", "target": "...", "action_class": "active-scan"}]}\n'
+        "Return ONLY the JSON."
     )
     data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,
                                          temperature=0.3))
