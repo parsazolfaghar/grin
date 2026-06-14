@@ -167,3 +167,49 @@ in split mode). Opens a physical/RF attack surface — sub-GHz, NFC/RFID, IR, iB
 
 **Value:** physical/proximity authorized engagements (badge cloning, RF replay, BadUSB drops) —
 orthogonal to Grin's current network strength. Only worth building once a device is on hand.
+
+---
+
+## R7 — Remote approval notifications (phone) — PLANNED (deferred to at-home session)
+**Goal:** when an engagement hits a gated action, ping the operator's **phone** — optionally with
+**Approve / Deny** right from the notification — so a gated run can proceed while away. Hooks into the
+existing spine pending-action / `grin gate` mechanism (a notifier fires when an action is queued gated).
+
+**Two levels:**
+- **Notify-only:** phone buzzes "awaiting approval — <action> on <target>"; operator approves at the
+  console / `grin gate` later.
+- **Notify + act:** Approve/Deny from the phone (a remote approval channel = C2 for offensive actions →
+  treat with care, see guardrails).
+
+**Channels:**
+- **ntfy (self-hostable) — preferred.** HTTP POST to a topic; free phone app subscribes. Self-host on
+  the rig/LAN → nothing leaves operator control (best fit for the local-only/privacy posture).
+- **Telegram bot** — already used in [[project-portfolio-bot]] / [[project-agent-team]]; reliable;
+  supports inline Approve/Deny buttons. Downside: routes through Telegram's servers (third-party).
+
+**Security guardrails (REQUIRED):**
+- **Opt-in / default-off** (additive; never changes default behavior).
+- Notification content **leaves the box** → keep it **minimal/configurable** (no client secrets/full
+  commands through a third party; self-hosted ntfy avoids the exposure).
+- **Lock the channel to the operator** (single chat-id / token) — nobody else can approve.
+- For **exploit/post-exploit** actions, keep remote-approve behind **extra auth** or require the console
+  — approving offensive actions from a phone is the one place to stay conservative.
+- The **audit trail still records** the approval + that it came via the remote channel (accountability intact).
+
+**Recommendation:** ntfy self-hosted, notify+approve, locked to the operator.
+
+---
+
+## QoL — app polish (deferred to at-home session)
+Restrained, on-brand quality-of-life for the PyQt6 app — all must keep the neat terminal aesthetic
+(several reinforce it). Captured 2026-06-14; build when at the machine.
+- **Keyboard-first nav:** `↑/↓` or `j/k` select engagement, `Enter` open, `Esc` back to boot, `r` refresh,
+  `/` filter, `?` toggle a faint keymap hint in the status bar (extends the existing `A`/`D`).
+- **Esc-to-back** from live → boot (currently no clean way back).
+- **Awareness:** desktop notification on gated/complete (local; R7 is the phone version); elapsed-time +
+  live counters in the status bar; a brief status-bar line on actions (started/approved/denied — no popups).
+- **Data handling:** click-to-copy on finding commands and especially **loot/secret values**; `/` filter on
+  the findings/audit panes; in-app loot view; an in-app doctor health dot (green/amber) → SP9 report.
+- **Window:** remember size/position (QSettings); resizable panes via splitters.
+- **Top picks (biggest QoL, least risk to the look):** keyboard nav + Esc-back, gated/complete
+  notifications, click-to-copy loot, persistent window size. All Mac-buildable + screenshot-verifiable.
