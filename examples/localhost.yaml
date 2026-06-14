@@ -1,0 +1,15 @@
+# localhost.yaml — minimal own-lab engagement using the `local` runner.
+# Tools run directly on the host Ronin runs on. Used to live-validate the pipeline.
+id: localhost-validate
+name: "Localhost validation"
+mode: own-lab
+scope:
+  in:
+    - "127.0.0.1"
+roe:
+  allowed_actions: [passive, active-scan]
+autonomy: autonomous
+env:
+  kind: local
+audit_log: ./audit/localhost.jsonl
+state: active

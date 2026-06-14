@@ -1,0 +1,17 @@
+# blackarch-docker.yaml — own-lab engagement using the `docker` runner against a BlackArch
+# container (e.g. `docker run -d --name ronin-blackarch --network host
+# blackarchlinux/blackarch sleep infinity`, then install tools with `pacman -S`).
+id: blackarch-docker-validate
+name: "BlackArch container validation"
+mode: own-lab
+scope:
+  in:
+    - "127.0.0.1"
+roe:
+  allowed_actions: [passive, active-scan]
+autonomy: autonomous
+env:
+  kind: docker
+  container: ronin-blackarch
+audit_log: ./audit/blackarch.jsonl
+state: active

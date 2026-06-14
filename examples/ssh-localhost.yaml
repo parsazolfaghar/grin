@@ -1,0 +1,18 @@
+# ssh-localhost.yaml — own-lab engagement using the `ssh` runner.
+# Commands run over key-based SSH on the box at `ssh_host` (the attacker vantage / a Kali
+# box). Here it points at the host itself (loopback) for validation; point it at a real
+# remote box with `ssh_host: kali@<addr>` for an actual engagement.
+id: ssh-localhost-validate
+name: "SSH runner validation"
+mode: own-lab
+scope:
+  in:
+    - "127.0.0.1"
+roe:
+  allowed_actions: [passive, active-scan]
+autonomy: autonomous
+env:
+  kind: ssh
+  ssh_host: "root@127.0.0.1"
+audit_log: ./audit/ssh.jsonl
+state: active
