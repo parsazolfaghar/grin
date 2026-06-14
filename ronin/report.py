@@ -3,9 +3,11 @@ optional-LLM summaries. Read-only: no tools, no spine. The LLM summary degrades 
 import json
 from pathlib import Path
 
-from ronin.finding import SEVERITIES  # noqa: F401 — imported for vocabulary parity
-
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}" if n == 1 else f"{n} {word}s"
 
 
 def deterministic_summary(result) -> str:
@@ -13,12 +15,12 @@ def deterministic_summary(result) -> str:
     objs = len(result.objectives_run)
     blocked = len(result.paused)
     if n == 0:
-        return f"No findings across {objs} objectives; {blocked} blocked awaiting approval."
+        return f"No findings across {_plural(objs, 'objective')}; {blocked} blocked awaiting approval."
     counts = {s: 0 for s in SEVERITY_ORDER}
     for f in result.findings:
         counts[f.severity] = counts.get(f.severity, 0) + 1
     parts = [f"{counts[s]} {s}" for s in SEVERITY_ORDER if counts[s]]
-    return (f"{n} findings ({', '.join(parts)}) across {objs} objectives; "
+    return (f"{_plural(n, 'finding')} ({', '.join(parts)}) across {_plural(objs, 'objective')}; "
             f"{blocked} blocked awaiting approval.")
 
 
@@ -95,6 +97,12 @@ def render_report(engagement, result, *, audit_summary: str, summary_text: str) 
                 continue
             out.append(f"### {sev}")
             for f in group:
+                out.append(_finding_block(f))
+            out.append("")
+        other = [f for f in result.findings if f.severity not in SEVERITY_ORDER]
+        if other:
+            out.append("### other")
+            for f in other:
                 out.append(_finding_block(f))
             out.append("")
     out.append("## Methodology")

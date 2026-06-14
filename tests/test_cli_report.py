@@ -82,3 +82,15 @@ def test_main_dispatches_report(tmp_path, monkeypatch):
                 objectives_run=[], paused=[], plan_log=[]))
     monkeypatch.setattr(cli, "_make_client", lambda eng: FakeClient("x", up=False))
     assert main(["report", path]) == 0
+
+
+def test_cmd_report_corrupted_result_errors(tmp_path, capsys):
+    path = _write_eng(tmp_path)
+    eng = load_engagement(path)
+    from pathlib import Path
+    rp = result_path(eng)
+    Path(rp).parent.mkdir(parents=True, exist_ok=True)
+    Path(rp).write_text("{ not valid json")
+    rc = cmd_report(path, out=None, model="m")
+    assert rc != 0
+    assert "engage" in capsys.readouterr().err.lower()

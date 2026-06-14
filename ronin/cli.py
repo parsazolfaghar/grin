@@ -211,11 +211,14 @@ def cmd_report(path: str, *, out, model: str) -> int:
     except FileNotFoundError:
         print("no saved engagement result; run `ronin engage` first", file=sys.stderr)
         return 1
+    except (json.JSONDecodeError, KeyError) as e:
+        print(f"cannot read saved engagement result ({e}); re-run `ronin engage`",
+              file=sys.stderr)
+        return 1
     summary = llm_summary(_make_client(eng), model, result)
     md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
                        summary_text=summary)
     if out:
-        from pathlib import Path
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(md)
         print(f"report written to {out}")

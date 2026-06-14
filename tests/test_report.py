@@ -108,3 +108,26 @@ def test_render_report_no_findings():
     md = render_report(ENG, _result(findings=[]), audit_summary="(no audit log)",
                        summary_text="No findings.")
     assert "No findings." in md
+
+
+def test_render_report_includes_unknown_severity_findings():
+    r = _result(findings=[Finding("Weird thing", "h", "bogus-sev", "e", "tool", "cmd", "")])
+    md = render_report(ENG, r, audit_summary="x", summary_text="s")
+    assert "Weird thing" in md   # an unexpected severity must NOT be silently dropped
+
+
+def test_deterministic_summary_singular_grammar():
+    r = _result(findings=[Finding("One", "h", "high", "e", "t", "c", "")],
+                objectives_run=[Objective("o", "t")], paused=[])
+    s = deterministic_summary(r)
+    assert "1 finding (" in s
+    assert "across 1 objective;" in s
+    assert "findings" not in s and "objectives" not in s
+
+
+def test_llm_summary_falls_back_on_exception():
+    class _Exploder:
+        def is_up(self): return True
+        def generate(self, **kw): raise RuntimeError("boom")
+    r = _result()
+    assert llm_summary(_Exploder(), "m", r) == deterministic_summary(r)
