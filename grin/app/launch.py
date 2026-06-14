@@ -1,27 +1,16 @@
-"""`grin app` — open the native window over the engine. pywebview is imported lazily so the
-engine, CLI, and tests never need it; a clear hint is printed if the [app] extra is missing."""
-import os
+"""`grin app` — open the native PyQt6 window over the engine. PyQt6 is imported lazily (via
+qt_app) so the engine, CLI, and tests never need it; a clear hint is printed if the [app]
+extra is missing."""
 import sys
-
-from grin.app.api import GrinApi
-
-
-def web_dir() -> str:
-    return os.path.join(os.path.dirname(__file__), "web")
 
 
 def main(argv=None) -> int:
     argv = argv if argv is not None else sys.argv[1:]
     engagements_dir = argv[0] if argv else "."
     try:
-        import webview
+        from grin.app.qt_app import run
     except ImportError:
-        print("grin app needs pywebview — install it with:  pip install 'grin[app]'",
+        print("grin app needs PyQt6 — install it with:  pip install 'grin[app]'",
               file=sys.stderr)
         return 1
-    api = GrinApi(engagements_dir=engagements_dir)
-    index = os.path.join(web_dir(), "index.html")
-    webview.create_window("GRIN", url=index, js_api=api, width=1180, height=820,
-                          background_color="#0b18e8")
-    webview.start()
-    return 0
+    return run(engagements_dir=engagements_dir)
