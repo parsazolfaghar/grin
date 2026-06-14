@@ -56,3 +56,21 @@ def test_load_missing_file_raises(tmp_path):
     import pytest
     with pytest.raises(FileNotFoundError):
         load_result(str(tmp_path / "nope.json"))
+
+
+def test_goal_roundtrips(tmp_path):
+    from ronin.report_store import result_path, save_result, load_result
+    from ronin.orchestrator import EngagementResult
+    path = str(tmp_path / "e.engagement.json")
+    save_result(path, EngagementResult(status="completed", goal="assess the network"))
+    assert load_result(path).goal == "assess the network"
+
+
+def test_load_defaults_goal_when_absent(tmp_path):
+    import json
+    from pathlib import Path
+    from ronin.report_store import load_result
+    path = str(tmp_path / "old.engagement.json")
+    Path(path).write_text(json.dumps({"status": "completed", "findings": [],
+                                      "objectives_run": [], "paused": [], "plan_log": []}))
+    assert load_result(path).goal == ""

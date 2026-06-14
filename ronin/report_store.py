@@ -29,6 +29,7 @@ def _planlog_entry_to_dict(e: dict) -> dict:
 def save_result(path: str, result: EngagementResult) -> None:
     data = {
         "status": result.status,
+        "goal": result.goal,
         "findings": [asdict(f) for f in result.findings],
         "objectives_run": [_obj_to_dict(o) for o in result.objectives_run],
         "paused": [{"objective": _obj_to_dict(p["objective"]),
@@ -55,6 +56,7 @@ def load_result(path: str) -> EngagementResult:
     data = json.loads(Path(path).read_text())   # FileNotFoundError if absent
     return EngagementResult(
         status=data["status"],
+        goal=data.get("goal", ""),
         findings=[Finding(**f) for f in data.get("findings", [])],
         objectives_run=[_obj_from_dict(o) for o in data.get("objectives_run", [])],
         paused=[{"objective": _obj_from_dict(p["objective"]),
