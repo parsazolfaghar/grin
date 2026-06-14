@@ -188,7 +188,7 @@ def _print_engagement_result(res) -> None:
 
 
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
-               max_steps: int) -> int:
+               max_steps: int, planner_model=None, recon_model=None, exploit_model=None) -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
@@ -197,14 +197,17 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
     seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
     res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
-                      now=datetime.now(), model=model, max_objectives=max_objectives,
-                      max_steps=max_steps, seeds=seed_list, engagement_path=path)
+                      now=datetime.now(), model=model, planner_model=planner_model,
+                      objective_models=_objective_models(recon_model, exploit_model),
+                      max_objectives=max_objectives, max_steps=max_steps, seeds=seed_list,
+                      engagement_path=path)
     save_result(result_path(eng), res)
     _print_engagement_result(res)
     return 0
 
 
-def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: int) -> int:
+def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: int,
+                      planner_model=None, recon_model=None, exploit_model=None) -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
@@ -225,7 +228,9 @@ def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: 
     res = resume_engagement(eng, prior, planner_client=_make_client(eng),
                             executor_client=_make_executor_client(eng), runner=_runner_for(eng),
                             now=datetime.now(), model=model, max_objectives=max_objectives,
-                            max_steps=max_steps, engagement_path=path)
+                            max_steps=max_steps, engagement_path=path,
+                            planner_model=planner_model,
+                            objective_models=_objective_models(recon_model, exploit_model))
     save_result(result_path(eng), res)
     _print_engagement_result(res)
     return 0
@@ -279,6 +284,17 @@ def _make_executor_client(eng):
     return OllamaClient()
 
 
+def _objective_models(recon_model, exploit_model):
+    omap = {}
+    if recon_model:
+        omap["passive"] = recon_model
+        omap["active-scan"] = recon_model
+    if exploit_model:
+        omap["exploit"] = exploit_model
+        omap["post-exploit"] = exploit_model
+    return omap or None
+
+
 def _who() -> str:
     import getpass
     try:
@@ -318,6 +334,12 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
     g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
     g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
+    g2.add_argument("--planner-model", default=None, dest="planner_model",
+                    help="model for the Orchestrator/Analyst (default: --model)")
+    g2.add_argument("--recon-model", default=None, dest="recon_model",
+                    help="model for passive/active-scan objectives (default: --model)")
+    g2.add_argument("--exploit-model", default=None, dest="exploit_model",
+                    help="model for exploit/post-exploit objectives (default: --model)")
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `ronin gate` approvals")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
@@ -350,12 +372,16 @@ def main(argv=None) -> int:
     if args.group == "engage":
         if args.resume:
             return cmd_engage_resume(args.file, model=args.model,
-                                     max_objectives=args.max_objectives, max_steps=args.max_steps)
+                                     max_objectives=args.max_objectives, max_steps=args.max_steps,
+                                     planner_model=args.planner_model, recon_model=args.recon_model,
+                                     exploit_model=args.exploit_model)
         if not args.goal:
             print("engage needs --goal (or --resume)", file=sys.stderr)
             return 2
         return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
-                          max_objectives=args.max_objectives, max_steps=args.max_steps)
+                          max_objectives=args.max_objectives, max_steps=args.max_steps,
+                          planner_model=args.planner_model, recon_model=args.recon_model,
+                          exploit_model=args.exploit_model)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model)
     return 2
