@@ -12,6 +12,14 @@ def loot_dir(engagement) -> str:
     return base + ".loot"
 
 
+def _secure(path, mode):
+    """Restrict perms (R3): loot holds plaintext secrets — owner-only. Best-effort (POSIX)."""
+    try:
+        os.chmod(path, mode)
+    except OSError:
+        pass
+
+
 class LootStore:
     def __init__(self, directory: str):
         self._dir = Path(directory)
@@ -23,8 +31,11 @@ class LootStore:
             "objective": objective, "ts": ts or datetime.now(timezone.utc).isoformat(),
         }
         self._dir.mkdir(parents=True, exist_ok=True)
-        with open(self._dir / "secrets.jsonl", "a") as f:
+        _secure(self._dir, 0o700)               # owner-only loot dir (R3)
+        jp = self._dir / "secrets.jsonl"
+        with open(jp, "a") as f:
             f.write(json.dumps(rec) + "\n")
+        _secure(jp, 0o600)                       # owner-only secrets file (R3)
         self._render_md(self._load())
 
     def all(self) -> list:
@@ -48,4 +59,6 @@ class LootStore:
             if r.get("context"):
                 out.append(f"- context: {r['context']}")
             out.append("")
-        (self._dir / "secrets.md").write_text("\n".join(out))
+        mp = self._dir / "secrets.md"
+        mp.write_text("\n".join(out))
+        _secure(mp, 0o600)                       # owner-only readable loot (R3)

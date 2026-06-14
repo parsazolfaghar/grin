@@ -46,6 +46,12 @@ flag/de-prioritize it instead of charging in (don't waste an engagement or tip o
 Executor/prompts and its knob values (timing thresholds, IDS-evading flags) only become meaningful when
 tuned against live targets on the rig — so building it remotely/blind risks rework. Resume when at the
 machine. (Opt-in / default-OFF per the guiding principle still applies.)
+
+**In R2 scope — DEVICE/IDENTITY SPOOFING (target-facing only):** Grin does NOT spoof the host device
+today. Add (opt-in, on the bound vantage box): MAC-address spoofing (macchanger), hostname, source IP via
+VPN/SOCKS/proxy egress, scan-fingerprint/UA profiles. Hides the *attacker vantage* from the target/blue
+team. Boundary unchanged: target-facing only — the operator-side audit trail stays intact (accountability),
+authorized-engagement only, never to dodge authorization/attribution by law enforcement.
 **Goal:** minimize the footprint the blue team / honeypot observes, as realistic adversary emulation
 *within* an authorized scope.
 
@@ -78,7 +84,17 @@ _Captured as a stub; the operator has additional requirements to add before this
 - Keep existing properties: local-only models (no egress), fail-closed spine, append-only audit,
   hardened JSON parsing.
 
-**STATUS: do not spec yet — pending the operator's added requirements ("the secure section needs touches").**
+**SAFE DEFAULTS BUILT (2026-06-14):**
+- Loot perms — `LootStore` now writes the loot dir `0700` + `secrets.jsonl`/`secrets.md` `0600` (owner-only).
+- Destructive-command **self-guard** — `grin/safety.py` `is_self_destructive()` (narrow host/disk patterns:
+  `rm -rf / ~ /*`, `mkfs`, `dd of=/dev/*`, redirect to a block device, fork bomb); the spine refuses +
+  audits such a command at the execution chokepoint (`_execute_and_audit`, covers autonomous + approved).
+  Override `GRIN_ALLOW_DESTRUCTIVE=1`. Verified it does NOT flag offensive tooling (sqlmap/nmap/hydra/…).
+- No-secret-logging: the audit stores only a sha256 digest (already true); loot files are the only place
+  values live. Unit-tested (`tests/test_safety.py`).
+
+**STILL PENDING (operator's touches + opt-in encryption):** loot encryption-at-rest (age/agenix) as an
+opt-in flag; any operator-specific denylist additions / secrets-retention policy. Tell me your touches.
 
 ---
 

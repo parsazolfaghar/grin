@@ -11,6 +11,7 @@ from grin.engagement import Engagement, pending_path
 from grin.gate import gate
 from grin.pending import PendingStore
 from grin.runner import ExecResult, Runner
+from grin.safety import is_self_destructive, destructive_allowed
 
 
 @dataclass
@@ -24,6 +25,13 @@ class Outcome:
 
 def _execute_and_audit(eng: Engagement, *, target, tool, command, action_class,
                        gated: bool, approved_by, runner: Runner) -> Outcome:
+    # R3 self-guard: block commands that would destroy the OPERATOR's own host/disk (never offensive
+    # actions against the target). Override with GRIN_ALLOW_DESTRUCTIVE=1. Audited as a refusal.
+    if is_self_destructive(command) and not destructive_allowed():
+        return _audit_refuse(eng, target=target, tool=tool, command=command,
+                             action_class=action_class, gated=gated, approved_by=approved_by,
+                             reason="blocked: self-destructive command (R3 self-guard); "
+                                    "set GRIN_ALLOW_DESTRUCTIVE=1 to override")
     res = runner.run(target, command, int(eng.env.get("timeout", 60)))
     rec = audit(eng.audit_log, engagement=eng.id, target=target, tool=tool,
                 command=command, action_class=action_class, decision="allow",
