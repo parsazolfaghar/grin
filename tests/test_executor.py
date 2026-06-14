@@ -149,3 +149,46 @@ def test_resume_on_completed_journal_is_noop(tmp_path):
                       runner=runner, now=NOW, result_store=ResultStore(results_path(eng)))
     assert res.status == "completed"
     assert len(res.journal.steps) == n_steps     # unchanged — no new actions
+
+
+def test_execute_task_returns_secrets(tmp_path):
+    import json
+    from datetime import datetime
+    from grin.executor import execute_task
+    from grin.engagement import validate_engagement
+    from grin.inference import FakeClient
+    from grin.runner import FakeRunner, ExecResult
+    from grin.secret import Secret
+    eng = validate_engagement({"id":"e1","name":"n","mode":"own-lab",
+        "scope":{"in":["127.0.0.1"]},"roe":{"allowed_actions":["passive","active-scan"]},
+        "autonomy":"autonomous","env":{"kind":"local"},
+        "audit_log":str(tmp_path/"audit"/"e1.jsonl"),"state":"active"})
+    client = FakeClient([
+        json.dumps({"action":{"tool":"nmap","command":"nmap 127.0.0.1","target":"127.0.0.1","declared_class":"active-scan","why":"x"}}),
+        json.dumps({"done":True,"findings":[],"secrets":[
+            {"label":"SSH password","value":"root:toor","target":"127.0.0.1","tool":"nmap","command":"c","context":"ctx"}]}),
+    ])
+    runner = FakeRunner({"nmap 127.0.0.1": ExecResult("ok",0,0.1,False)})
+    res = execute_task(eng, objective="o", target="127.0.0.1", client=client, runner=runner,
+                       now=datetime(2026,1,1), max_steps=6)
+    assert res.status == "completed"
+    assert res.secrets == [Secret("SSH password","root:toor","127.0.0.1","nmap","c","ctx")]
+
+
+def test_secrets_also_evidence_gated(tmp_path):
+    import json
+    from datetime import datetime
+    from grin.executor import execute_task
+    from grin.engagement import validate_engagement
+    from grin.inference import FakeClient
+    from grin.runner import FakeRunner
+    eng = validate_engagement({"id":"e1","name":"n","mode":"own-lab",
+        "scope":{"in":["127.0.0.1"]},"roe":{"allowed_actions":["passive","active-scan"]},
+        "autonomy":"autonomous","env":{"kind":"local"},
+        "audit_log":str(tmp_path/"audit"/"e1.jsonl"),"state":"active"})
+    client = FakeClient(json.dumps({"done":True,"findings":[],"secrets":[
+        {"label":"x","value":"y","target":"127.0.0.1","tool":"t","command":"c"}]}))
+    res = execute_task(eng, objective="o", target="127.0.0.1", client=client, runner=FakeRunner(),
+                       now=datetime(2026,1,1), max_steps=2)
+    assert res.status == "budget_exhausted"
+    assert res.secrets == []
