@@ -359,7 +359,11 @@ def cmd_doctor(path, *, fix: bool, yes: bool, models, tools) -> int:
         return ans == "y"
 
     def env_install(cmd):
-        # run the install inside the engagement env via the runner
+        # run the install inside the engagement env via the runner. Guard: env fixes only
+        # arise from check_tools, which only runs with an engagement + runner, so runner is
+        # never None here in practice — but fail safe rather than crash if that ever changes.
+        if runner is None:
+            return ("no engagement env to install into", False)
         res = runner.run(engagement.scope.include[0] if engagement and engagement.scope.include
                          else "localhost", cmd, timeout=900)
         return (res.output, res.exit_code == 0 and not res.timed_out)

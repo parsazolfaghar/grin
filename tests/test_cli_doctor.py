@@ -24,3 +24,23 @@ def test_doctor_fix_yes_pulls_missing_model(monkeypatch, capsys):
     out = capsys.readouterr().out
     assert any("qwen3:14b" in c for c in pulled)
     assert "applied" in out.lower() or "done" in out.lower()
+
+
+def test_doctor_with_engagement_file_adds_env_and_tool_checks(monkeypatch, capsys):
+    # With an engagement file, cmd_doctor must build a runner and probe env + arsenal tools.
+    from grin.engagement import Engagement, Scope, ROE
+    from grin.runner import FakeRunner, ExecResult
+
+    eng = Engagement(id="e", name="e", mode="own-lab", scope=Scope(["127.0.0.1"], []),
+                     roe=ROE(["passive"], []), autonomy="autonomous", env={"kind": "local"},
+                     audit_log="/tmp/a.jsonl", state="active")
+    monkeypatch.setattr(cli, "OllamaClient", lambda *a, **k: FakeClient(up=True, models=[cli.DEFAULT_MODEL]))
+    monkeypatch.setattr(cli, "load_engagement", lambda p: eng)
+    # nmap present in the env -> a "[OK] ... tool: nmap" line must appear
+    monkeypatch.setattr(cli, "build_runner",
+                        lambda env: FakeRunner({"command -v nmap": ExecResult("/usr/bin/nmap", 0, 0.0, False)}))
+    rc = cli.cmd_doctor("eng.yaml", fix=False, yes=False, models=None, tools=None)
+    out = capsys.readouterr().out
+    assert "tool: nmap" in out
+    assert "env: local" in out
+    assert rc == 0

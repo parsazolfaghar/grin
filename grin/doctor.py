@@ -141,6 +141,8 @@ def check_tools(engagement, runner, tools: list) -> list:
     image_hint = env.get("container", "")
     checks = []
     for t in tools:
+        # The runner's `target` arg is ignored by every concrete runner (each runs on its own
+        # bound arsenal host); we pass a scope host only to satisfy the signature.
         res = runner.run(engagement.scope.include[0] if engagement.scope.include else "localhost",
                          f"command -v {t}")
         present = res.exit_code == 0 and not res.timed_out
