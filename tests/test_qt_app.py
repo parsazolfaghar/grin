@@ -144,3 +144,8 @@ def test_notify_transitions_fire_once(win):
     assert sum(1 for c in calls if "approval" in c[0].lower()) == 1
     w._notify_transitions({"status": "completed", "blocked": []}, running=False)
     assert any("finished" in c[0].lower() for c in calls)
+
+
+def test_window_icon_is_the_logo(win):
+    w, _ = win
+    assert not w.windowIcon().isNull()   # app/window icon set to the Grin logo

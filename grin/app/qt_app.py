@@ -9,7 +9,7 @@ tested and screenshot-verified headlessly.
 import os
 
 from PyQt6.QtCore import Qt, QTimer, QSettings, pyqtSignal
-from PyQt6.QtGui import QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient
+from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
     QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect,
@@ -696,11 +696,15 @@ def build_app(api, argv=None):
                 "JetBrainsMono-ExtraBold.ttf", "ArchivoBlack-Regular.ttf"):
         QFontDatabase.addApplicationFont(os.path.join(FONTS, ttf))
     app.setFont(QFont("JetBrains Mono", 10))
+    icon = QIcon(os.path.join(ASSETS, "logo.png"))   # dock / taskbar / window icon = the Grin logo
+    if not icon.isNull():
+        app.setWindowIcon(icon)
     qss = os.path.join(HERE, "style.qss")
     if os.path.exists(qss):
         with open(qss) as f:
             app.setStyleSheet(f.read())
     win = GrinWindow(api)
+    win.setWindowIcon(icon)
     return app, win
 
 
