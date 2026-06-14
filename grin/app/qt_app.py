@@ -589,7 +589,7 @@ class GrinWindow(QWidget):
     def __init__(self, api, notify_fn=desktop_notify):
         super().__init__()
         self.api = api
-        self._notify = notify_fn
+        self._desktop_notify = notify_fn
         self._job_id = None
         self._job_file = None
         self._last_sig = None             # last rendered live-snapshot signature (skip rebuilds)
@@ -799,6 +799,14 @@ class GrinWindow(QWidget):
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()
+
+    def _notify(self, title, body):
+        """Local desktop notification + (opt-in) phone push via ntfy if GRIN_NTFY_URL is set (R7)."""
+        self._desktop_notify(title, body)
+        from grin.notify import ntfy_url, ntfy_send
+        url = ntfy_url()
+        if url:
+            ntfy_send(url, title, body)
 
     def _notify_transitions(self, snap, running):
         """Desktop-notify on a NEW gated action or on completion (once each). Never blocks."""

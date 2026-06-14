@@ -186,7 +186,13 @@ orthogonal to Grin's current network strength. Only worth building once a device
 
 ---
 
-## R7 — Remote approval notifications (phone) — PLANNED (deferred to at-home session)
+## R7 — Remote approval notifications (phone) — NOTIFY-ONLY BUILT (ntfy); actionable deferred
+**Built (2026-06-14):** `grin/notify.py` `ntfy_send()` + the app's `_notify` pushes to **ntfy** when
+`GRIN_NTFY_URL` is set (opt-in; self-host on the rig/LAN → nothing leaves operator control). Piggybacks
+the existing gated/complete alert path, so your phone buzzes when an engagement needs approval or finishes.
+Fail-soft (never blocks the run); unit-tested (sends when configured, silent when not). **Deferred:**
+actionable Approve/Deny *from* the phone (needs a callback listener) + a headless-engage notify hook +
+the Telegram backend. Set up: run ntfy on the rig, install the ntfy phone app, `export GRIN_NTFY_URL=...`.
 **Goal:** when an engagement hits a gated action, ping the operator's **phone** — optionally with
 **Approve / Deny** right from the notification — so a gated run can proceed while away. Hooks into the
 existing spine pending-action / `grin gate` mechanism (a notifier fires when an action is queued gated).

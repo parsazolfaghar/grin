@@ -182,3 +182,25 @@ def test_window_has_edge_and_corner_handles(win):
     w, _ = win
     assert set(w._handles) == {"top", "bottom", "left", "right",
                                "lefttop", "righttop", "leftbottom", "rightbottom"}
+
+
+def test_phone_notify_via_ntfy_when_configured(win, monkeypatch):
+    import grin.notify as N
+    sent = []
+    monkeypatch.setattr(N, "ntfy_url", lambda: "http://rig:8080/grin")
+    monkeypatch.setattr(N, "ntfy_send", lambda url, t, m, **k: sent.append((url, t, m)) or True)
+    w, _ = win
+    w._desktop_notify = lambda *a: None      # silence the real desktop notifier in tests
+    w._notify("approval needed", "sqlmap // target")
+    assert sent and sent[0][0] == "http://rig:8080/grin"
+
+
+def test_no_phone_notify_when_unconfigured(win, monkeypatch):
+    import grin.notify as N
+    sent = []
+    monkeypatch.setattr(N, "ntfy_url", lambda: None)         # opt-in: not set
+    monkeypatch.setattr(N, "ntfy_send", lambda *a, **k: sent.append(a) or True)
+    w, _ = win
+    w._desktop_notify = lambda *a: None
+    w._notify("x", "y")
+    assert sent == []                                        # nothing pushed when GRIN_NTFY_URL unset
