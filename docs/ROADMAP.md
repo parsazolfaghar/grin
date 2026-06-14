@@ -90,3 +90,21 @@ The operator switches between two modes depending on where they're working:
 **Net:** once the configurable Ollama endpoint lands, `grin app` on the Mac + `GRIN_OLLAMA_URL`=rig
 (via tunnel) + an `env: ssh→rig` engagement = full Mac-control / rig-compute split. Latency is fine
 (GPU compute dominates, not LAN).
+
+---
+
+## R5 — Multi-arsenal env (Kali + BlackArch together) — OPTIONAL / LOW PRIORITY
+**Decision (settled):** default stays **one arsenal per engagement** + lean on the env doctor (SP9) to
+install missing tools on demand. Multi-arsenal is an optional power-user feature for the long tail only.
+
+**Why the modest priority (honest):** Kali (~600 curated) and BlackArch (~2800+) **overlap heavily** on
+the tools actually used (nmap, sqlmap, hydra, metasploit, nuclei, ffuf, gobuster…). Running a tool on
+either distro is identical output — so combining them does **NOT** make any attack stronger. The only
+gain is **breadth of available tooling** (the union, for niche tools that live on just one distro). And
+SP9's permission-gated install already covers most "tool not present" cases on a single arsenal. True
+dual-arsenal earns its keep only for a tool that exists on *one* distro and can't be installed on the
+other — rare.
+
+**If/when built:** the engagement `env` becomes a *set* of environments; a dispatcher routes each tool
+command to the distro that has it (a tool→distro catalog, or "prefer Kali, fall back to BlackArch").
+Cost: two containers resident + routing logic + version skew. Power gain: coverage, not strength.
