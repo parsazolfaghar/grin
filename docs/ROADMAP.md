@@ -127,10 +127,11 @@ The operator switches between two modes depending on where they're working:
 - **App on Mac** — the PyQt6 app is cross-platform; it already runs natively on macOS.
 
 **Still needed (small):**
-- **Inference offload** — `engage`/`execute` currently hardcode `OllamaClient()` (localhost). Add a
-  configurable Ollama endpoint engine-wide (env var `GRIN_OLLAMA_URL` and/or a flag), so the Mac talks
-  to the rig's Ollama. `bench` already has `--base-url`; generalize it to `_make_client`/
-  `_make_executor_client`.
+- **Inference offload** — DONE (2026-06-14): `OllamaClient` now resolves its endpoint via
+  `resolve_ollama_url()` = explicit arg → `$GRIN_OLLAMA_URL` → localhost. Every engine construction
+  (`_make_client`/`_make_executor_client`, doctor, bench) honors it automatically; `grin doctor` shows
+  the resolved URL. So `GRIN_OLLAMA_URL=<rig/tunnel> grin engage …` already offloads inference. The
+  remaining R4 work is the **in-app toggle/profiles** that set this + `tool_env` from the GUI.
 - **Secure transport (ties to R3)** — prefer an **SSH tunnel** (`ssh -L 11434:localhost:11434
   root@rig`) over exposing Ollama on the LAN (`OLLAMA_HOST=0.0.0.0`); then point Grin at
   `http://127.0.0.1:11434` which tunnels to the rig. Document both; recommend the tunnel.

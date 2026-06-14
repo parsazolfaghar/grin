@@ -70,9 +70,10 @@ def check_engine_deps(want_docker: bool) -> list:
 
 
 def check_ollama(client) -> Check:
+    url = getattr(client, "base_url", "local")
     if client.is_up():
-        return Check("Ollama daemon", "ok", "reachable on the local Ollama API")
-    return Check("Ollama daemon", "broken", "not reachable — start Ollama",
+        return Check("Ollama daemon", "ok", f"reachable at {url}")
+    return Check("Ollama daemon", "broken", f"not reachable at {url} — start Ollama (or check the tunnel)",
                  fix=Fix("start Ollama", "ollama serve", "advisory", "host"))
 
 

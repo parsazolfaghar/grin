@@ -1,10 +1,18 @@
 """Local-model boundary — recycled from the Sensei (app/inference.py). A Protocol with a
 real Ollama client and a deterministic fake. The Executor talks only to this interface, so
 the whole loop is testable with no model. Local-only by project charter."""
+import os
 from typing import Protocol
 import httpx
 
 OLLAMA_URL = "http://127.0.0.1:11434"
+
+
+def resolve_ollama_url(explicit: str | None = None) -> str:
+    """Where to reach Ollama: an explicit arg wins, else $GRIN_OLLAMA_URL, else local default.
+    The deployment-mode toggle (roadmap R4) sets $GRIN_OLLAMA_URL to point the Mac at the rig
+    (ideally via an SSH tunnel to localhost). One resolver so engine/bench/doctor agree."""
+    return explicit or os.environ.get("GRIN_OLLAMA_URL") or OLLAMA_URL
 
 
 class InferenceClient(Protocol):
@@ -17,8 +25,8 @@ class InferenceClient(Protocol):
 class OllamaClient:
     """Real client — talks to a local Ollama on the rig. Not exercised in unit tests."""
 
-    def __init__(self, base_url: str = OLLAMA_URL, timeout: float = 600.0):
-        self.base_url = base_url
+    def __init__(self, base_url: str | None = None, timeout: float = 600.0):
+        self.base_url = resolve_ollama_url(base_url)
         self.timeout = timeout
 
     def is_up(self) -> bool:
