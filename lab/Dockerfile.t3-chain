@@ -2,8 +2,7 @@
 # `www-data` may run /usr/bin/find as root with NOPASSWD; root flag at /root/flag.txt.
 FROM python:3.12-slim
 RUN apt-get update && apt-get install -y iputils-ping sudo findutils \
-    && rm -rf /var/lib/apt/lists/* \
-    && useradd -r -s /usr/sbin/nologin www-data2 2>/dev/null; true
+    && rm -rf /var/lib/apt/lists/*
 COPY app/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app/app.py /app/app.py
