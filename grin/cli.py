@@ -420,6 +420,15 @@ def _who() -> str:
         return "operator"
 
 
+# Per-role default model pins — the current `grin bench` recommendation (deterministic + red-team-
+# weighted, 2026-06-14; see docs/superpowers/results/). These MAY CHANGE as we run more benchmarks;
+# update this one dict to re-pin. Every pin is overridable per run via --planner/--recon/--exploit-model.
+DEFAULT_PINS = {
+    "planner": "hermes3:8b",
+    "recon": "qwen2.5-coder:7b",
+    "exploit": "qwen3:14b",
+}
+
 DEFAULT_BENCH_MODELS = [
     "qwen3:14b", "qwen3:8b", "hermes3:8b",
     "whiterabbitneo:13b",   # local re-template of the GGUF (see docs/.../whiterabbitneo-13b.Modelfile);
@@ -476,12 +485,12 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
     g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
     g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
-    g2.add_argument("--planner-model", default=None, dest="planner_model",
-                    help="model for the Orchestrator/Analyst (default: --model)")
-    g2.add_argument("--recon-model", default=None, dest="recon_model",
-                    help="model for passive/active-scan objectives (default: --model)")
-    g2.add_argument("--exploit-model", default=None, dest="exploit_model",
-                    help="model for exploit/post-exploit objectives (default: --model)")
+    g2.add_argument("--planner-model", default=DEFAULT_PINS["planner"], dest="planner_model",
+                    help=f"model for the Orchestrator/Analyst (default: {DEFAULT_PINS['planner']})")
+    g2.add_argument("--recon-model", default=DEFAULT_PINS["recon"], dest="recon_model",
+                    help=f"model for passive/active-scan objectives (default: {DEFAULT_PINS['recon']})")
+    g2.add_argument("--exploit-model", default=DEFAULT_PINS["exploit"], dest="exploit_model",
+                    help=f"model for exploit/post-exploit objectives (default: {DEFAULT_PINS['exploit']})")
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
