@@ -42,6 +42,12 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
         decision = parse_step(raw, target)
 
         if decision.kind == "done":
+            has_evidence = any(s.decision == "executed" for s in journal.steps)
+            if decision.findings and not has_evidence:
+                # Evidence gate: don't accept findings until at least one tool actually ran.
+                # Record a nudge step (shown in history) and keep looping within the budget.
+                journal.add_step(Step(action={}, decision="no_evidence"))
+                continue
             journal.set_findings(decision.findings or [])
             journal.save()
             return TaskResult("completed", journal.findings, journal)

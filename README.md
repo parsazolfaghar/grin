@@ -33,6 +33,13 @@ authorizes/gates/runs it on the bound Kali/BlackArch box, and the loop continues
 objective is met, the step budget runs out, or a gated action needs `ronin gate` approval
 (then `--resume`). Models are local-only; set the model with `--model` (default `qwen3:14b`).
 
+### Evidence-gated findings (SP7)
+
+The Executor will not report findings unless at least one tool actually ran in that task. If the
+model tries to declare findings with no command executed, it's rejected and re-prompted to gather
+evidence first — so every reported finding is backed by a real command + output (and a task that
+runs nothing simply reports no findings).
+
 ## The Orchestrator (SP3)
 
 Run a whole engagement from one high-level goal (adaptive, lead-chasing):

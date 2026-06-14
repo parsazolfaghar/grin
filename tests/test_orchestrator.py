@@ -76,9 +76,16 @@ def test_findings_are_deduped(tmp_path):
         _replan(True, [], "done"),
     ])
     same = {"title": "dup", "severity": "info", "evidence": "e", "tool": "nmap", "command": "c"}
-    executor = FakeClient([_ex_done([same]), _ex_done([same])])
+    # Each objective runs an action first so the evidence gate is satisfied before done.
+    executor = FakeClient([
+        _ex_action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _ex_done([same]),
+        _ex_action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _ex_done([same]),
+    ])
+    runner = FakeRunner({"nmap -sV 203.0.113.7": ExecResult("ok", 0, 0.1, False)})
     res = orchestrate(eng, goal="g", planner_client=planner, executor_client=executor,
-                      runner=FakeRunner(), now=NOW, max_objectives=10)
+                      runner=runner, now=NOW, max_objectives=10)
     assert res.findings == [Finding(title="dup", target="203.0.113.7", severity="info",
                                     evidence="e", tool="nmap", command="c")]
 
