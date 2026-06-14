@@ -1,0 +1,82 @@
+/* GRIN native window — Tactical Telemetry / CRT terminal aesthetic.
+   Electric-blue substrate, phosphor white, single smiley-yellow accent. 90deg corners.
+   Selectors use a dynamic `role` property: widget.setProperty("role", "...") in code. */
+
+QWidget { color: #f6f6f4; font-family: "JetBrains Mono"; font-size: 13px; }
+QWidget#root { background: #0b18e8; border: 1px solid rgba(246,246,244,0.40); }
+
+/* ---- frameless custom chrome ---- */
+QWidget#chrome { background: #0a14cf; border-bottom: 1px solid rgba(246,246,244,0.40); }
+QLabel#brand { font-family: "Archivo Black"; font-size: 14px; }
+QLabel#path  { color: rgba(246,246,244,0.52); }
+QLabel[role="chip"]    { border: 1px solid rgba(246,246,244,0.40); color: rgba(246,246,244,0.52); padding: 2px 8px; font-size: 10px; }
+QLabel#runchip         { border: 1px solid #f3df33; color: #f3df33; padding: 2px 8px; font-size: 10px; }
+QPushButton[role="wc"] {
+  border: 1px solid rgba(246,246,244,0.40); color: rgba(246,246,244,0.62);
+  min-width: 16px; max-width: 16px; min-height: 16px; max-height: 16px; padding: 0; font-size: 9px;
+}
+QPushButton[role="wc"]:hover { color: #f6f6f4; }
+QPushButton#wcclose { border: 1px solid rgba(243,223,51,0.55); }
+QPushButton#wcclose:hover { background: #f3df33; color: #0a0a0a; }
+
+/* ---- hero ---- */
+QLabel#wordmark { font-family: "Archivo Black"; font-size: 76px; color: #f6f6f4; }
+QLabel#sub  { color: rgba(246,246,244,0.52); font-size: 11px; }
+QLabel#spec { color: rgba(246,246,244,0.40); font-size: 10px; }
+QFrame#rule { background: rgba(246,246,244,0.40); border: none; max-height: 1px; min-height: 1px; }
+
+/* ---- boot log ---- */
+QLabel[role="log"]   { color: rgba(246,246,244,0.52); font-size: 11px; }
+QLabel[role="logok"] { color: #f6f6f4; font-size: 11px; }
+QLabel[role="ready"] { color: #f3df33; font-size: 11px; }
+
+/* ---- section labels ---- */
+QLabel[role="sec"] { color: rgba(246,246,244,0.52); font-size: 10px; }
+
+/* ---- engagement rows ---- */
+QFrame[role="erow"]        { border-bottom: 1px solid rgba(246,246,244,0.18); background: transparent; }
+QFrame[role="erow"]:hover  { background: rgba(246,246,244,0.05); }
+QFrame#erowhot             { background: rgba(246,246,244,0.05); border-left: 2px solid #f3df33; border-bottom: 1px solid rgba(246,246,244,0.18); }
+QLabel[role="etitle"] { font-size: 13px; }
+QLabel[role="esub"]   { color: rgba(246,246,244,0.52); font-size: 10px; }
+QLabel[role="ego"]    { color: rgba(246,246,244,0.52); font-size: 10px; }
+QLabel#egohot         { color: #f3df33; font-size: 10px; }
+
+/* ---- prompt + approve (live) ---- */
+QWidget#promptrow { border-bottom: 1px solid rgba(246,246,244,0.40); }
+QLabel#ps  { color: #f3df33; }
+QLabel#cmd { color: #f6f6f4; }
+QWidget#approve { background: rgba(243,223,51,0.06); border-top: 1px solid rgba(246,246,244,0.40); border-bottom: 1px solid rgba(246,246,244,0.40); border-left: 3px solid #f3df33; }
+QLabel#atag { color: #f3df33; border: 1px solid #f3df33; padding: 2px 8px; font-size: 11px; }
+QLabel#acmd { font-size: 12px; }
+QLabel[role="kbd"]  { border: 1px solid #f6f6f4; padding: 2px 7px; font-size: 11px; }
+QLabel#kbdy         { border: 1px solid #f3df33; color: #f3df33; padding: 2px 7px; font-size: 11px; }
+QLabel[role="khint"] { color: rgba(246,246,244,0.52); font-size: 11px; }
+
+/* ---- live three-pane grid ---- */
+QWidget#grid { background: rgba(246,246,244,0.18); }
+QWidget[role="cell"] { background: #0b18e8; }
+QLabel[role="celllbl"] { color: rgba(246,246,244,0.52); font-size: 10px; }
+QLabel[role="cellrev"] { color: rgba(246,246,244,0.40); font-size: 10px; }
+QFrame[role="prow"]   { border-bottom: 1px solid rgba(246,246,244,0.18); background: transparent; }
+QLabel[role="ptitle"] { font-size: 12px; }
+QLabel[role="psub"]   { color: rgba(246,246,244,0.52); font-size: 10px; }
+QLabel[role="psuby"]  { color: #f3df33; font-size: 10px; }
+QLabel[role="sevhigh"] { color: #f3df33; border: 1px solid #f3df33; padding: 1px 5px; font-size: 10px; }
+QLabel[role="sevmed"]  { color: #ffce8a; border: 1px solid #ffce8a; padding: 1px 5px; font-size: 10px; }
+QLabel[role="sevinfo"] { color: rgba(246,246,244,0.52); border: 1px solid rgba(246,246,244,0.52); padding: 1px 5px; font-size: 10px; }
+QLabel[role="auditallow"]  { color: #f6f6f4; font-size: 11px; }
+QLabel[role="auditrefuse"] { color: #f3df33; font-size: 11px; }
+QLabel[role="auditline"]   { color: rgba(246,246,244,0.52); font-size: 11px; }
+
+/* ---- powerline status bar ---- */
+QWidget#status { background: #0b18e8; border-top: 1px solid rgba(246,246,244,0.40); }
+QLabel[role="seg"]    { color: #f6f6f4; font-size: 10px; padding: 7px 13px; border-right: 1px solid rgba(246,246,244,0.18); }
+QLabel[role="segdim"] { color: rgba(246,246,244,0.52); font-size: 10px; padding: 7px 13px; border-right: 1px solid rgba(246,246,244,0.18); }
+QLabel[role="segy"]   { color: #f3df33; font-size: 10px; padding: 7px 13px; border-right: 1px solid rgba(246,246,244,0.18); }
+QLabel#segacc { background: #f3df33; color: #0a0a0a; font-size: 10px; padding: 7px 13px; }
+
+QScrollArea { border: none; background: transparent; }
+QScrollBar:vertical { background: #0a14cf; width: 8px; margin: 0; }
+QScrollBar::handle:vertical { background: rgba(246,246,244,0.30); min-height: 24px; }
+QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
