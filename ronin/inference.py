@@ -17,7 +17,7 @@ class InferenceClient(Protocol):
 class OllamaClient:
     """Real client — talks to a local Ollama on the rig. Not exercised in unit tests."""
 
-    def __init__(self, base_url: str = OLLAMA_URL, timeout: float = 180.0):
+    def __init__(self, base_url: str = OLLAMA_URL, timeout: float = 600.0):
         self.base_url = base_url
         self.timeout = timeout
 
@@ -38,8 +38,12 @@ class OllamaClient:
                  keep_alive: str = "10m") -> str:
         # Free-text (no grammar-constrained JSON mode): Ollama's JSON mode degrades GGUF
         # security models into empty output; tolerant parsing handles free text instead.
+        # think=False disables "thinking" mode on reasoning models (e.g. qwen3): an autonomous
+        # tool driving many steps doesn't want minutes of per-step reasoning, and it returns the
+        # clean answer directly. Accepted + harmless (no-op) for non-thinking models.
         body = {"model": model, "system": system, "prompt": prompt, "stream": False,
-                "options": {"temperature": temperature}, "keep_alive": keep_alive}
+                "think": False, "options": {"temperature": temperature},
+                "keep_alive": keep_alive}
         r = httpx.post(f"{self.base_url}/api/generate", json=body, timeout=self.timeout)
         r.raise_for_status()
         return r.json().get("response", "")
