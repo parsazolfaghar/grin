@@ -52,12 +52,25 @@ _Captured as a stub; the operator has additional requirements to add before this
 
 ---
 
-## R4 — Control plane (Mac) / compute plane (rig) — PLANNED (partly already works)
-**Goal:** the app + engine **run on the Mac** (the daily machine), but offload the heavy lifting to the
-rig: **GPU inference** (Ollama on the RTX 3060) and the **Kali/BlackArch arsenal**. Mac = UI +
-Orchestrator/Analyst brain; rig = compute + tool execution.
+## R4 — Deployment mode toggle: single-machine ↔ split (app local / compute on rig) — PLANNED
+**This is a baked-in, OPTIONAL app feature** — a first-class setting in the GUI (not hand-edited config).
+The operator switches between two modes depending on where they're working:
+- **Local mode** — app + inference (Ollama) + tools all on ONE machine (e.g. running everything on the
+  rig itself, or a single powerful box).
+- **Split mode** — app + Orchestrator/Analyst brain on the Mac; **GPU inference + Kali/BlackArch arsenal
+  on the rig** (the current two-system setup).
 
-**Already works today:**
+**Design — a "backend profile" the app owns + persists:**
+- A profile bundles `{ ollama_url, tool_env }`:
+  - *Local*: `ollama_url = http://127.0.0.1:11434`, `tool_env = {kind: local|docker}`.
+  - *Split (rig)*: `ollama_url = rig via SSH tunnel`, `tool_env = {kind: ssh, ssh_host: root@rig}`.
+- The app exposes a **mode toggle / profile picker** (Local | Split, + custom), persists the choice, and
+  applies it to engagements at launch — so the SAME app + SAME engagement runs either way with no YAML
+  edits. An engagement may still override the env explicitly.
+- Underlying primitive: the engine needs a **configurable Ollama endpoint** (see "still needed" below);
+  the app's toggle just sets the active profile's `ollama_url` + `tool_env`.
+
+**Already works today (the split-mode plumbing exists, just not toggled from the UI):**
 - **Tool offload** — the engagement `env` binding already points tools at the rig:
   `env: {kind: ssh, ssh_host: "root@your-rig"}` (or docker into the rig's `grin-kali`/`grin-blackarch`).
   The ssh + docker runners are live-validated; the Mac drives, the rig runs the tools.
