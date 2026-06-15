@@ -49,13 +49,20 @@ def initial_plan(client, model: str, goal: str, scope_targets, seeds) -> list:
         f"Engagement goal: {goal}\n"
         f"In-scope targets (patterns): {', '.join(scope_targets)}\n"
         f"Operator seed targets: {', '.join(seeds) if seeds else '(none)'}\n\n"
-        "Produce the FIRST short list of objectives to pursue (usually start by enumerating/"
-        "discovering hosts and services in scope). Each objective has a plain-language goal and a "
-        "concrete in-scope target.\n"
-        'Reply EXACTLY: {"objectives": [{"objective": "enumerate hosts", '
-        '"target": "203.0.113.0/24", "action_class": "active-scan"}]} '
-        '(action_class is one of passive|active-scan|exploit|post-exploit, your best guess for '
-        'the objective).\nReturn ONLY the JSON.'
+        "Produce the FIRST short list of objectives to pursue. Start by enumerating/discovering "
+        "hosts and services in scope — but that recon is only the FIRST STEP. The goal is to "
+        "exploit what you find: capture the flag, obtain credentials, or gain access. Plan recon "
+        "objectives now, and include at least one follow-on exploit objective so the model knows "
+        "where recon leads.\n"
+        "Reply EXACTLY with a JSON array of objectives. Example with two shapes:\n"
+        '{"objectives": ['
+        '{"objective": "enumerate open ports and services", "target": "203.0.113.0/24", '
+        '"action_class": "active-scan"}, '
+        '{"objective": "exploit the identified service to gain access", "target": "203.0.113.5", '
+        '"action_class": "exploit"}'
+        ']} '
+        "(action_class is one of passive|active-scan|exploit|post-exploit).\n"
+        "Return ONLY the JSON."
     )
     data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,
                                          temperature=0.3))
@@ -76,10 +83,19 @@ def replan(client, model: str, goal: str, findings, done_count: int,
         f"Engagement goal: {goal}\n"
         f"Objectives completed: {done_count}; still queued: {remaining_count}\n\n"
         f"Findings so far:\n{_render_findings(findings)}\n\n"
-        "Decide: is the goal met (done)? If not, propose follow-up objectives that chase the most "
-        "promising leads in the findings (in-scope targets only). Do not repeat completed work.\n"
+        "Decide: is the engagement goal met?\n"
+        "The goal is ONLY met when concrete proof appears in the findings — a flag captured, "
+        "credentials obtained, or privileged access gained. Enumerating services is NOT sufficient "
+        "to declare done.\n\n"
+        "If the goal is not yet met:\n"
+        "- If findings reveal a service, port, or weakness, your NEXT objectives MUST be "
+        "EXPLOITATION objectives (action_class: exploit or post-exploit) that act on those "
+        "findings. Do NOT propose more scanning of a service that has already been enumerated.\n"
+        "- Only propose additional recon (active-scan) for targets or services not yet explored.\n\n"
+        "Do not repeat completed work. Propose in-scope targets only.\n"
         'Reply EXACTLY: {"done": false, "reason": "why", "next_objectives": '
-        '[{"objective": "...", "target": "...", "action_class": "active-scan"}]}\n'
+        '[{"objective": "exploit the identified SSH service to gain shell access", '
+        '"target": "10.0.0.5", "action_class": "exploit"}]}\n'
         "Return ONLY the JSON."
     )
     data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,

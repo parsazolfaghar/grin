@@ -95,3 +95,49 @@ def test_replan_parses_action_class():
                                              "action_class": "exploit"}]})
     d = replan(FakeClient(reply), "m", "g", [], 1, 0)
     assert d.next_objectives[0].action_class == "exploit"
+
+
+def test_replan_prompt_biases_toward_exploitation():
+    """replan's USER prompt must mention exploitation so small models parrot exploit, not scan."""
+    captured = {}
+
+    class CapturingClient:
+        def is_up(self):
+            return True
+
+        def generate(self, model, system, prompt, temperature=0.3, keep_alive="10m"):
+            captured["system"] = system
+            captured["prompt"] = prompt
+            return '{"done": false, "reason": "x", "next_objectives": []}'
+
+    from grin.analyst import replan
+    replan(CapturingClient(), "m", "capture the flag", [], 1, 0)
+    blob = captured["prompt"].lower()
+    # The user prompt must explicitly guide toward exploitation
+    assert "exploit" in blob
+    # The example action_class in the replan template must be exploit, NOT active-scan
+    # (so parroting small models default to exploit, not recon)
+    assert '"action_class": "exploit"' in captured["prompt"] or \
+           '"action_class":"exploit"' in captured["prompt"]
+
+
+def test_initial_plan_prompt_mentions_exploitation_goal():
+    """initial_plan's USER prompt must include an exploit-class example AND explicit guidance that
+    recon leads toward exploitation — not just list 'exploit' in the enum."""
+    captured = {}
+
+    class CapturingClient:
+        def is_up(self):
+            return True
+
+        def generate(self, model, system, prompt, temperature=0.3, keep_alive="10m"):
+            captured["prompt"] = prompt
+            return '{"objectives": []}'
+
+    from grin.analyst import initial_plan
+    initial_plan(CapturingClient(), "m", "capture the flag", ["10.0.0.1"], [])
+    prompt = captured["prompt"]
+    # The schema example must include an exploit-class objective (not only active-scan)
+    assert '"action_class": "exploit"' in prompt or '"action_class":"exploit"' in prompt
+    # The guidance text must explicitly direct toward exploitation as the goal of recon
+    assert "exploit" in prompt.lower()
