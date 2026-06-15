@@ -56,6 +56,16 @@ class Journal:
                 s.exit_code = exit_code
         self.awaiting_pending_id = None
 
+    @staticmethod
+    def _clip(text: str, head: int = 500, tail: int = 1200) -> str:
+        """Show enough tool output for the model to act on. Tool results (e.g. hydra's
+        `login: X password: Y` line) often sit at the END after a long banner, so keep both
+        the head and the tail rather than a single front slice that hides the result."""
+        text = text or ""
+        if len(text) <= head + tail:
+            return text
+        return f"{text[:head]}\n...[{len(text) - head - tail} chars omitted]...\n{text[-tail:]}"
+
     def render_history(self) -> str:
         if not self.steps:
             return "(no actions taken yet)"
@@ -63,7 +73,7 @@ class Journal:
         for s in self.steps:
             cmd = s.action.get("command", "") if isinstance(s.action, dict) else ""
             if s.decision == "executed":
-                lines.append(f"- [executed] {cmd} -> {s.output[:300]}")
+                lines.append(f"- [executed] {cmd} -> {self._clip(s.output)}")
             elif s.decision == "refused":
                 lines.append(f"- [refused] {cmd} ({s.reason})")
             elif s.decision == "pending":

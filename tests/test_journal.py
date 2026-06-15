@@ -69,3 +69,16 @@ def test_render_history_shows_no_evidence_nudge():
     j = Journal(task_id="t", objective="o", target="h", engagement_path="e", path="/tmp/x.json")
     j.add_step(Step(action={}, decision="no_evidence"))
     assert "evidence" in j.render_history().lower()
+
+
+def test_render_history_keeps_tail_of_long_output():
+    # A tool result line at the END of long output (e.g. hydra's `login: admin`) must survive
+    # truncation — render_history keeps head+tail, not just a front slice.
+    from grin.journal import Journal, Step
+    j = Journal(task_id="t", objective="o", target="h", engagement_path="e", path="/tmp/x.json")
+    long_out = ("BANNER " * 500) + "\n[22][ssh] login: admin password: password\n"
+    j.add_step(Step(action={"tool": "hydra", "command": "hydra ..."}, decision="executed",
+                    output=long_out))
+    hist = j.render_history()
+    assert "login: admin password: password" in hist
+    assert "omitted" in hist  # it WAS clipped, but the tail (result) survived
