@@ -56,9 +56,9 @@ def initial_plan(client, model: str, goal: str, scope_targets, seeds) -> list:
         "where recon leads.\n"
         "Reply EXACTLY with a JSON array of objectives. Example with two shapes:\n"
         '{"objectives": ['
-        '{"objective": "enumerate open ports and services", "target": "203.0.113.0/24", '
+        '{"objective": "enumerate open ports and services", "target": "<in-scope-target>", '
         '"action_class": "active-scan"}, '
-        '{"objective": "exploit the identified service to gain access", "target": "203.0.113.5", '
+        '{"objective": "exploit the identified service to gain access", "target": "<in-scope-target>", '
         '"action_class": "exploit"}'
         ']} '
         "(action_class is one of passive|active-scan|exploit|post-exploit).\n"
@@ -78,9 +78,10 @@ def _render_findings(findings) -> str:
 
 
 def replan(client, model: str, goal: str, findings, done_count: int,
-           remaining_count: int) -> AnalystDecision:
+           remaining_count: int, scope_targets: list) -> AnalystDecision:
     user = (
         f"Engagement goal: {goal}\n"
+        f"In-scope targets (you may ONLY target these): {', '.join(scope_targets)}\n"
         f"Objectives completed: {done_count}; still queued: {remaining_count}\n\n"
         f"Findings so far:\n{_render_findings(findings)}\n\n"
         "Decide: is the engagement goal met?\n"
@@ -91,11 +92,13 @@ def replan(client, model: str, goal: str, findings, done_count: int,
         "- If findings reveal a service, port, or weakness, your NEXT objectives MUST be "
         "EXPLOITATION objectives (action_class: exploit or post-exploit) that act on those "
         "findings. Do NOT propose more scanning of a service that has already been enumerated.\n"
-        "- Only propose additional recon (active-scan) for targets or services not yet explored.\n\n"
-        "Do not repeat completed work. Propose in-scope targets only.\n"
+        "- Only propose additional recon (active-scan) for targets or services not yet explored.\n"
+        "- Use ONLY in-scope targets from this list or specific hosts already discovered within "
+        "them in the findings. NEVER invent or target any other IP/host.\n\n"
+        "Do not repeat completed work.\n"
         'Reply EXACTLY: {"done": false, "reason": "why", "next_objectives": '
         '[{"objective": "exploit the identified SSH service to gain shell access", '
-        '"target": "10.0.0.5", "action_class": "exploit"}]}\n'
+        '"target": "<in-scope-target>", "action_class": "exploit"}]}\n'
         "Return ONLY the JSON."
     )
     data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,

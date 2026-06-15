@@ -38,7 +38,7 @@ def test_initial_plan_skips_items_missing_fields():
 def test_replan_parses_followups_and_done_false():
     reply = json.dumps({"done": False, "reason": "found a login page",
                         "next_objectives": [{"objective": "brute login", "target": "203.0.113.7"}]})
-    d = replan(FakeClient(reply), "m", "goal", [], 1, 0)
+    d = replan(FakeClient(reply), "m", "goal", [], 1, 0, ["203.0.113.0/24"])
     assert isinstance(d, AnalystDecision)
     assert d.done is False
     assert d.reason == "found a login page"
@@ -47,13 +47,14 @@ def test_replan_parses_followups_and_done_false():
 
 def test_replan_done_true():
     reply = json.dumps({"done": True, "reason": "goal met", "next_objectives": []})
-    d = replan(FakeClient(reply), "m", "goal", [Finding("t", "h", "low", "e", "nmap", "c")], 3, 0)
+    d = replan(FakeClient(reply), "m", "goal", [Finding("t", "h", "low", "e", "nmap", "c")], 3, 0,
+               ["192.168.1.0/24"])
     assert d.done is True
     assert d.next_objectives == []
 
 
 def test_replan_parse_miss_is_fail_soft():
-    d = replan(FakeClient("garbage"), "m", "goal", [], 1, 0)
+    d = replan(FakeClient("garbage"), "m", "goal", [], 1, 0, ["10.10.0.0/16"])
     assert d.done is False
     assert d.next_objectives == []
     assert "unparseable" in d.reason
@@ -93,7 +94,7 @@ def test_replan_parses_action_class():
     reply = json.dumps({"done": False, "reason": "r",
                         "next_objectives": [{"objective": "x", "target": "h",
                                              "action_class": "exploit"}]})
-    d = replan(FakeClient(reply), "m", "g", [], 1, 0)
+    d = replan(FakeClient(reply), "m", "g", [], 1, 0, ["h"])
     assert d.next_objectives[0].action_class == "exploit"
 
 
@@ -111,7 +112,7 @@ def test_replan_prompt_biases_toward_exploitation():
             return '{"done": false, "reason": "x", "next_objectives": []}'
 
     from grin.analyst import replan
-    replan(CapturingClient(), "m", "capture the flag", [], 1, 0)
+    replan(CapturingClient(), "m", "capture the flag", [], 1, 0, ["192.168.50.0/24"])
     blob = captured["prompt"].lower()
     # The user prompt must explicitly guide toward exploitation
     assert "exploit" in blob
@@ -119,6 +120,43 @@ def test_replan_prompt_biases_toward_exploitation():
     # (so parroting small models default to exploit, not recon)
     assert '"action_class": "exploit"' in captured["prompt"] or \
            '"action_class":"exploit"' in captured["prompt"]
+
+
+def test_replan_prompt_includes_scope_and_no_fake_ip():
+    """replan's prompt must include the in-scope targets and must NOT contain hardcoded fake IPs."""
+    captured = {}
+
+    class CapturingClient:
+        def is_up(self):
+            return True
+
+        def generate(self, model, system, prompt, temperature=0.3, keep_alive="10m"):
+            captured["p"] = prompt
+            return '{"done":false,"reason":"x","next_objectives":[]}'
+
+    from grin.analyst import replan
+    replan(CapturingClient(), "m", "goal", [], 1, 0, ["172.30.0.11"])
+    assert "172.30.0.11" in captured["p"]
+    assert "10.0.0.5" not in captured["p"] and "203.0.113" not in captured["p"]
+
+
+def test_initial_plan_example_has_no_concrete_fake_ip():
+    """initial_plan's JSON example must NOT contain concrete fake IPs that models can parrot."""
+    captured = {}
+
+    class CapturingClient:
+        def is_up(self):
+            return True
+
+        def generate(self, model, system, prompt, temperature=0.3, keep_alive="10m"):
+            captured["p"] = prompt
+            return '{"objectives": []}'
+
+    from grin.analyst import initial_plan
+    initial_plan(CapturingClient(), "m", "find the flag", ["10.10.0.0/24"], [])
+    # The example block must not contain concrete routable IPs from the old template
+    assert "203.0.113.0/24" not in captured["p"]
+    assert "203.0.113.5" not in captured["p"]
 
 
 def test_initial_plan_prompt_mentions_exploitation_goal():
