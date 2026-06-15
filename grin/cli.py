@@ -26,6 +26,10 @@ from grin.installer import apply_fixes
 from grin.bench.tasks import default_cases
 from grin.bench.runner import run_bench
 from grin.bench.report import to_text, to_json
+from grin.lab.control import run_up, run_down, run_reset, run_status
+from grin.lab.answers import load_answers as _load_lab_answers
+from grin.lab.engagements import engagement_dict
+from grin.lab.control import LAB_DIR as _LAB_DIR
 
 
 def cmd_validate(path: str) -> int:
@@ -486,6 +490,34 @@ def cmd_bench(*, models, roles, base_url, out, json_out, repeats=3) -> int:
     return 0
 
 
+def _lab_targets():
+    return _load_lab_answers(str(_LAB_DIR / "answers.yaml"))
+
+
+def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali") -> int:
+    if action == "up":
+        return run_up()
+    if action == "down":
+        return run_down()
+    if action == "reset":
+        return run_reset()
+    if action == "status":
+        return run_status(runner_container=runner)
+    if action == "engagements":
+        import yaml
+        from pathlib import Path
+        dest = Path(out_dir or ".")
+        dest.mkdir(parents=True, exist_ok=True)
+        for t in _lab_targets():
+            p = dest / f"lab-{t.id}.yaml"
+            p.write_text(yaml.safe_dump(engagement_dict(t, runner_container=runner),
+                                        sort_keys=False))
+            print(f"wrote {p}")
+        return 0
+    print(f"unknown lab action {action!r}", file=sys.stderr)
+    return 2
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     sub = parser.add_subparsers(dest="group", required=True)
@@ -554,6 +586,12 @@ def build_parser() -> argparse.ArgumentParser:
     bn.add_argument("--json", default=None, dest="json_out", help="write the JSON results to a file")
     bn.add_argument("--repeats", type=int, default=3, help="samples per case (mean score, median latency)")
 
+    p_lab = sub.add_parser("lab", help="manage the isolated flag-lab targets")
+    p_lab.add_argument("action", choices=["up", "down", "reset", "status", "engagements"])
+    p_lab.add_argument("out_dir", nargs="?", default=None,
+                       help="(engagements) directory to write engagement YAMLs into")
+    p_lab.add_argument("--runner", default="grin-kali", help="runner container name")
+
     return parser
 
 
@@ -603,6 +641,8 @@ def main(argv=None) -> int:
     if args.group == "bench":
         return cmd_bench(models=args.models, roles=args.roles, base_url=args.base_url,
                          out=args.out, json_out=args.json_out, repeats=args.repeats)
+    if args.group == "lab":
+        return cmd_lab(args.action, out_dir=args.out_dir, runner=args.runner)
     return 2
 
 
