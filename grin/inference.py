@@ -1,6 +1,7 @@
-"""Local-model boundary — recycled from the Sensei (app/inference.py). A Protocol with a
-real Ollama client and a deterministic fake. The Executor talks only to this interface, so
-the whole loop is testable with no model. Local-only by project charter."""
+"""Model boundary — a Protocol with a local Ollama client, an OpenAI-compatible cloud client, a
+deterministic fake, and an env-driven factory. Backend is cloud-default when configured
+(GRIN_MODEL_URL + GRIN_MODEL_API_KEY), else local Ollama; an explicit GRIN_MODEL_BACKEND overrides.
+The engine talks only to this interface, so the whole loop is testable with no model."""
 import os
 from typing import Protocol
 import httpx
