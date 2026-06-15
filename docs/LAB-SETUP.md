@@ -1,0 +1,86 @@
+# Flag-lab setup & runner provisioning
+
+The flag-lab (`grin lab`) needs two things beyond the repo: a Docker daemon the operator
+user can reach, and an offensive **runner** container (`grin-kali`) provisioned with tools +
+wordlists. The target containers themselves are fully defined in `lab/` and built by
+`grin lab up`; this doc covers the manual rig state the lab depends on.
+
+Validated on the user rig (NixOS, RTX 3060 12 GB, Ollama local). Phase-1 gate is GREEN:
+an autonomous `grin engage` against T1 captured the flag end-to-end with the default local
+model (`qwen3:14b`) once the deterministic extractor landed.
+
+## 1. Docker access for the operator user (NixOS, declarative)
+
+The lab control and the docker runner shell out to Docker, so the operator user needs the
+`docker` group. On the user rig this is declarative in `/etc/nixos/configuration.nix`:
+
+```nix
+users.users.operator.extraGroups = [ "wheel" "networkmanager" "video" "libvirtd" "docker" ];
+```
+
+Then `nixos-rebuild switch` and re-login (or `runuser -l operator`). NOTE: docker-group access is
+root-equivalent; acceptable here because the operator already has sudo/wheel.
+
+## 2. The runner container (`grin-kali`)
+
+The Kali base image (`kalilinux/kali-rolling`) ships almost nothing — install the toolset:
+
+```bash
+docker exec grin-kali sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
+  openssh-client sshpass hydra curl wget netcat-traditional sqlmap nikto nmap iputils-ping wordlists"
+docker exec grin-kali sh -c "gunzip -f /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true"
+```
+
+### Curated credential lists (fast, solvable T1)
+
+rockyou is 14M lines — brute-forcing it over SSH times out. Ship small curated lists so a
+credential attack completes in seconds; the executor prompt points hydra at these:
+
+```bash
+docker exec grin-kali sh -c "printf 'root\nadmin\nuser\noperator\nubuntu\npi\nguest\ntest\noracle\npostgres\nmysql\nadministrator\ndeploy\nservice\n' > /usr/share/wordlists/users.txt"
+docker exec grin-kali sh -c "printf 'password\n123456\nadmin\nroot\npassword123\nletmein\nqwerty\nchangeme\ntoor\n12345678\nadmin123\nwelcome\nP@ssw0rd\niloveyou\nmonkey\ndragon\n' > /usr/share/wordlists/passwords.txt"
+```
+
+### SSH client: don't prompt on unknown host keys
+
+A credential attack must SSH into a freshly-built target whose host key isn't trusted yet.
+Without this, `sshpass` aborts with exit code 6 ("host key unknown"):
+
+```bash
+docker exec grin-kali sh -c "printf 'Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR\n' >> /etc/ssh/ssh_config"
+```
+
+## 3. Bring the lab up
+
+```bash
+cd ~/grin
+python3 -m grin.cli lab up        # build + start the 3 targets on the internal grin-lab net
+python3 -m grin.cli lab status    # confirm running + runner-reach=open for each
+python3 -m grin.cli lab engagements examples/lab   # generate engagement YAMLs
+```
+
+The host-networked `grin-kali` reaches the `internal: true` lab targets (172.30.0.11-13) via
+the host bridge route — no `docker network connect` needed.
+
+## 4. Run an engagement (needs the docker python SDK + pyyaml + httpx)
+
+```bash
+nix-shell -p 'python3.withPackages(ps: with ps; [ pyyaml httpx docker ])' --run \
+  "python3 -m grin.cli engage examples/lab/lab-t1-ssh.yaml --goal 'capture the flag in the home directory'"
+python3 -m grin.cli loot examples/lab/lab-t1-ssh.yaml
+```
+
+The `docker` python package is REQUIRED for the docker runner; without it the engine silently
+falls back to FakeRunner (no real execution).
+
+## Per-engagement hygiene
+
+`grin lab reset` restarts the targets (pristine state). The audit/loot/results/journals dirs are
+append-only per engagement id — clear them (`rm -rf audit loot results journals`) before a clean
+run or a benchmark, or runs accumulate. (Phase 2 `labbench` will handle this automatically.)
+
+## TODO (reproducibility)
+
+The §2 runner provisioning is currently manual. A `grin lab provision` subcommand (or a
+`lab/provision-runner.sh`) should bake the toolset + wordlists + ssh_config into the runner so the
+whole lab is reproducible from a clean rig. Tracked as a follow-up.
