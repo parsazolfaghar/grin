@@ -7,6 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from grin.engagement import Engagement
+from grin.extractors import extract
 from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
@@ -59,7 +60,15 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                     break
                 continue
             journal.set_findings(decision.findings or [])
-            journal.set_secrets(decision.secrets or [])
+            # Merge model-reported secrets with already auto-extracted secrets so
+            # neither source overwrites the other. Dedup by (label, value).
+            existing = list(journal.secrets)
+            existing_keys = {(s.label, s.value) for s in existing}
+            for sec in (decision.secrets or []):
+                if (sec.label, sec.value) not in existing_keys:
+                    existing.append(sec)
+                    existing_keys.add((sec.label, sec.value))
+            journal.set_secrets(existing)
             journal.save()
             return TaskResult("completed", journal.findings, journal,
                               secrets=journal.secrets)
@@ -85,10 +94,22 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
         out = submit_action(eng, target=a["target"], tool=a["tool"], command=a["command"],
                             declared_class=a["declared_class"], runner=runner, now=now)
         if out.status == "executed":
+            raw_output = out.result.output or ""
+            found_secrets = extract(a["tool"], a["command"], raw_output, a["target"])
+            extracted_tags = [{"label": s.label, "value": s.value} for s in found_secrets]
             journal.add_step(Step(action=a, decision="executed",
-                                  output=out.result.output, exit_code=out.result.exit_code))
+                                  output=raw_output, exit_code=out.result.exit_code,
+                                  extracted=extracted_tags))
             executed_commands.add(normalized_cmd)
             noprogress = 0
+            # Merge auto-extracted secrets into journal (model-independent capture).
+            # Dedup by (label, value) — two secrets with the same label+value from
+            # different commands are the same fact.
+            existing_keys = {(s.label, s.value) for s in journal.secrets}
+            for sec in found_secrets:
+                if (sec.label, sec.value) not in existing_keys:
+                    journal.secrets.append(sec)
+                    existing_keys.add((sec.label, sec.value))
         elif out.status == "refused":
             journal.add_step(Step(action=a, decision="refused", reason=out.reason))
             noprogress += 1

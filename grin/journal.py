@@ -3,7 +3,7 @@ each turn (render_history) and saved to disk so a paused task can resume. Distin
 SP1 audit log (tamper-evident evidence); the journal is mutable agent state."""
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 from grin.finding import Finding
@@ -23,6 +23,7 @@ class Step:
     exit_code: int | None = None
     reason: str = ""
     pending_id: str | None = None
+    extracted: list = field(default_factory=list)  # [{label, value}] from auto-extraction
 
 
 class Journal:
@@ -73,7 +74,13 @@ class Journal:
         for s in self.steps:
             cmd = s.action.get("command", "") if isinstance(s.action, dict) else ""
             if s.decision == "executed":
-                lines.append(f"- [executed] {cmd} -> {self._clip(s.output)}")
+                line = f"- [executed] {cmd} -> {self._clip(s.output)}"
+                if s.extracted:
+                    tags = ", ".join(
+                        f"{e['label']} {e['value']}" for e in s.extracted
+                    )
+                    line += f"\n  [auto-extracted: {tags}]"
+                lines.append(line)
             elif s.decision == "refused":
                 lines.append(f"- [refused] {cmd} ({s.reason})")
             elif s.decision == "pending":
@@ -109,7 +116,8 @@ class Journal:
                 engagement_path=data["engagement_path"], path=data["path"],
                 max_steps=data.get("max_steps", 12))
         j.awaiting_pending_id = data.get("awaiting_pending_id")
-        j.steps = [Step(**s) for s in data.get("steps", [])]
+        j.steps = [Step(**{**s, "extracted": s.get("extracted", [])})
+                   for s in data.get("steps", [])]
         j.findings = [Finding(**f) for f in data.get("findings", [])]
         j.secrets = [Secret(**s) for s in data.get("secrets", [])]
         return j
