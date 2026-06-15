@@ -263,12 +263,15 @@ def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: 
         print("no approved blocked actions to resume; approve with `grin gate` first "
               "(nothing to resume)")
         return 0
+    pins = _resolve_pins(planner=planner_model, recon=recon_model, exploit=exploit_model)
+    _print_backend_notice(pins)
+    _record_cloud_backend(eng, pins)
     res = resume_engagement(eng, prior, planner_client=_make_client(eng),
                             executor_client=_make_executor_client(eng), runner=_runner_for(eng),
-                            now=datetime.now(), model=model, max_objectives=max_objectives,
+                            now=datetime.now(), model=pins["planner"], max_objectives=max_objectives,
                             max_steps=max_steps, engagement_path=path,
-                            planner_model=planner_model,
-                            objective_models=_objective_models(recon_model, exploit_model))
+                            planner_model=pins["planner"],
+                            objective_models=_objective_models(pins["recon"], pins["exploit"]))
     save_result(result_path(eng), res)
     _print_engagement_result(res)
     return 0
