@@ -1,6 +1,7 @@
-"""Local-model boundary — recycled from the Sensei (app/inference.py). A Protocol with a
-real Ollama client and a deterministic fake. The Executor talks only to this interface, so
-the whole loop is testable with no model. Local-only by project charter."""
+"""Model boundary — a Protocol with a local Ollama client, an OpenAI-compatible cloud client, a
+deterministic fake, and an env-driven factory. Backend is cloud-default when configured
+(GRIN_MODEL_URL + GRIN_MODEL_API_KEY), else local Ollama; an explicit GRIN_MODEL_BACKEND overrides.
+The engine talks only to this interface, so the whole loop is testable with no model."""
 import os
 from typing import Protocol
 import httpx
@@ -58,8 +59,16 @@ class OllamaClient:
 
 
 def active_backend() -> str:
-    """Which model backend is selected: 'openai' if GRIN_MODEL_BACKEND=openai, else 'ollama'."""
-    return "openai" if os.environ.get("GRIN_MODEL_BACKEND", "").lower() == "openai" else "ollama"
+    """Resolve the model backend. Cloud-default when configured: an explicit GRIN_MODEL_BACKEND
+    (ollama|openai) always wins; otherwise cloud ('openai') if BOTH GRIN_MODEL_URL and
+    GRIN_MODEL_API_KEY are set, else local Ollama. No network probe here — reachability is surfaced
+    by is_up()/`grin doctor`."""
+    explicit = os.environ.get("GRIN_MODEL_BACKEND", "").lower()
+    if explicit in ("openai", "ollama"):
+        return explicit
+    if os.environ.get("GRIN_MODEL_URL") and os.environ.get("GRIN_MODEL_API_KEY"):
+        return "openai"
+    return "ollama"
 
 
 class OpenAICompatClient:

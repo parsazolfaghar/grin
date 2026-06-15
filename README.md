@@ -1,6 +1,6 @@
 # Grin — SP1: the engagement spine
 
-Local-only multi-agent autonomous red-team orchestrator. SP1 is the fail-closed
+Multi-agent autonomous red-team orchestrator. SP1 is the fail-closed
 authorization + scoped-execution spine: the sole path to executing any action.
 
 ## Install
@@ -28,10 +28,10 @@ Run the AI agent on one objective (drives Kali/BlackArch tools through the spine
 grin execute examples/lab-recon.yaml --task "find web services" --target 10.0.0.5
 grin execute --resume ./audit/home-lab-recon.<task-id>.journal.json   # after `grin gate`
 ```
-The Executor asks a local model (Ollama on the rig) for the next action, the spine
-authorizes/gates/runs it on the bound Kali/BlackArch box, and the loop continues until the
-objective is met, the step budget runs out, or a gated action needs `grin gate` approval
-(then `--resume`). Models are local-only; set the model with `--model` (default `qwen3:14b`).
+The Executor asks the configured model for the next action, the spine authorizes/gates/runs
+it on the bound Kali/BlackArch box, and the loop continues until the objective is met, the
+step budget runs out, or a gated action needs `grin gate` approval (then `--resume`).
+Set the model with `--model` (default `qwen3:14b`); see "Model backends" below.
 
 ### Evidence-gated findings (SP7)
 
@@ -51,7 +51,7 @@ The Orchestrator plans objectives, runs each through an SP2 Executor (which driv
 tools via the spine), an Analyst reads the findings and proposes follow-ups, and the loop runs
 until the goal is met or the objective budget (`--max-objectives`, default 10) is hit. In a gated
 (client) engagement, intrusive objectives pause for `grin gate` approval and are reported at the
-end. Models are local-only.
+end.
 
 ### Resuming a gated engagement (SP5)
 
@@ -68,7 +68,7 @@ objectives stay blocked; if nothing is approved yet it reports "nothing to resum
 
 ### Per-role models (SP6)
 
-Route models by objective type (all local Ollama; default is one `--model` for everything):
+Route models by objective type (default is one `--model` for everything):
 ```bash
 grin engage examples/external-net.yaml --goal "assess the external network" \
   --recon-model qwen3:8b --exploit-model hermes3:8b --planner-model qwen3:14b
@@ -97,6 +97,14 @@ labeled, human-readable `secrets.md` (value, context, tool, command, objective, 
 also appear in full in the report's Secrets section. No redaction — the point is concrete proof of
 what was exposed. Print them with `grin loot <engagement.yaml>`. (Loot files hold live secrets in
 plaintext; handle as sensitive. Everything stays local.)
+
+## Model backends
+
+Grin is cloud-default when configured: set `GRIN_MODEL_BACKEND=openai`, `GRIN_MODEL_URL`,
+and `GRIN_MODEL_API_KEY` to use any OpenAI-compatible endpoint (e.g. DeepSeek, Groq,
+OpenRouter). When those vars are absent, Grin falls back to local Ollama. An explicit
+`GRIN_MODEL_BACKEND` (ollama|openai) always wins over auto-detection. Client-mode
+engagements warn and audit whenever a cloud backend is active.
 
 ## Test
 ```bash

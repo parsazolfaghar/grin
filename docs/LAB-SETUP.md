@@ -9,6 +9,11 @@ Validated on the user rig (NixOS, RTX 3060 12 GB, Ollama local). Phase-1 gate is
 an autonomous `grin engage` against T1 captured the flag end-to-end with the default local
 model (`qwen3:14b`) once the deterministic extractor landed.
 
+**Model backend:** Grin is cloud-default when configured — set `GRIN_MODEL_BACKEND=openai`,
+`GRIN_MODEL_URL`, and `GRIN_MODEL_API_KEY` (e.g. via `~/.grin/deepseek.env`) to use an
+OpenAI-compatible cloud endpoint such as DeepSeek. When those vars are absent, Grin falls
+back to local Ollama. An explicit `GRIN_MODEL_BACKEND` always wins.
+
 ## 1. Docker access for the operator user (NixOS, declarative)
 
 The lab control and the docker runner shell out to Docker, so the operator user needs the
