@@ -72,7 +72,38 @@ def _finding_block(f) -> str:
             f"  - Recommendation: {rec}")
 
 
-def render_report(engagement, result, *, audit_summary: str, summary_text: str) -> str:
+def attack_coverage(catalog, audit, findings) -> dict:
+    """Map executed actions + findings onto ATT&CK technique ids via the catalog's tool->technique
+    map. 'attempted' = a tool for the technique ran (allow in audit); 'succeeded' = a tool for the
+    technique produced a finding. Returns {'attempted': [ids], 'succeeded': [ids], 'by_tactic': {...}}."""
+    from grin.catalog import tool_to_techniques
+    t2t = tool_to_techniques(catalog)
+    id_to_tech = {t.id: t for t in catalog}
+
+    def _ids_for_tool(tool):
+        return t2t.get(tool, [])
+
+    attempted, succeeded = [], []
+    for rec in audit or []:
+        if rec.get("decision") != "allow":
+            continue
+        for tid in _ids_for_tool(rec.get("tool", "")):
+            if tid not in attempted:
+                attempted.append(tid)
+    for f in findings or []:
+        for tid in _ids_for_tool(getattr(f, "tool", "")):
+            if tid not in succeeded:
+                succeeded.append(tid)
+    by_tactic = {}
+    for tid in attempted:
+        tech = id_to_tech.get(tid)
+        if tech:
+            by_tactic.setdefault(tech.tactic, []).append(tid)
+    return {"attempted": attempted, "succeeded": succeeded, "by_tactic": by_tactic}
+
+
+def render_report(engagement, result, *, audit_summary: str, summary_text: str,
+                  catalog=None, audit_records=None) -> str:
     eng = engagement
     out = []
     out.append(f"# Grin Engagement Report — {eng.name}")
@@ -139,4 +170,17 @@ def render_report(engagement, result, *, audit_summary: str, summary_text: str) 
     out.append("## Appendix: audit trail")
     out.append(audit_summary)
     out.append("")
+    if catalog is not None:
+        cov = attack_coverage(catalog, audit_records or [], result.findings)
+        out.append("")
+        out.append("## ATT&CK Coverage")
+        if not cov["attempted"]:
+            out.append("No techniques attempted.")
+        else:
+            id_to_name = {t.id: t.name for t in catalog}
+            for tactic, ids in sorted(cov["by_tactic"].items()):
+                out.append(f"- {tactic}:")
+                for tid in ids:
+                    mark = "succeeded" if tid in cov["succeeded"] else "attempted"
+                    out.append(f"  - {tid} {id_to_name.get(tid, '')} ({mark})")
     return "\n".join(out)
