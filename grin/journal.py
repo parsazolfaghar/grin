@@ -71,6 +71,9 @@ class Journal:
             elif s.decision == "no_evidence":
                 lines.append("- [rejected: reported findings/secrets with no tool run yet — "
                              "run a tool to gather evidence first]")
+            elif s.decision == "duplicate":
+                lines.append(f"- [skipped: already ran {cmd} — "
+                             "choose a DIFFERENT action or finish]")
             else:
                 lines.append("- [unparseable model reply, retried]")
         return "\n".join(lines)
