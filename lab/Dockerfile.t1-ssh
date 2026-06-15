@@ -1,12 +1,13 @@
 # lab/Dockerfile.t1-ssh — EASY: weak SSH credentials. Flag baked from generated file.
-# Password is a top-of-rockyou common weak password so a standard `hydra -l operator -P rockyou`
-# cracks it in a few attempts (fast + solvable with stock tooling; no answer-seeding).
+# Uses a COMMON username (admin) + a top-of-rockyou password so a competent credential attack
+# (hydra -l admin -P rockyou, or a direct guess) cracks it fast with stock tooling. The point of
+# the EASY tier is a fully solvable end-to-end chain: recon -> crack -> ssh -> read flag.
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/sshd \
-    && useradd -m -s /bin/bash -g operator operator \
-    && echo 'operator:password' | chpasswd
-COPY _generated/t1.flag /home/operator/flag.txt
-RUN chown operator:operator /home/operator/flag.txt && chmod 644 /home/operator/flag.txt
+    && useradd -m -s /bin/bash admin \
+    && echo 'admin:password' | chpasswd
+COPY _generated/t1.flag /home/admin/flag.txt
+RUN chown admin:admin /home/admin/flag.txt && chmod 644 /home/admin/flag.txt
 EXPOSE 22
 CMD ["/usr/sbin/sshd", "-D", "-e"]
