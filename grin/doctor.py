@@ -2,6 +2,7 @@
 Check (ok/missing/broken/skipped) with an optional Fix. Outside the spine; never touches a
 target. All probes are injectable so the whole engine is testable with fakes."""
 import importlib
+import os
 from dataclasses import dataclass
 
 from grin.platform_info import PlatformInfo
@@ -75,6 +76,22 @@ def check_ollama(client) -> Check:
         return Check("Ollama daemon", "ok", f"reachable at {url}")
     return Check("Ollama daemon", "broken", f"not reachable at {url} — start Ollama (or check the tunnel)",
                  fix=Fix("start Ollama", "ollama serve", "advisory", "host"))
+
+
+def check_model_backend(client, backend: str) -> Check:
+    """Backend-aware model check. ollama -> existing reachability check; openai -> key present +
+    endpoint reachable."""
+    if backend == "openai":
+        if not os.environ.get("GRIN_MODEL_API_KEY"):
+            return Check("model backend: openai", "broken", "GRIN_MODEL_API_KEY not set",
+                         fix=Fix("set API key", "export GRIN_MODEL_API_KEY=...", "advisory", "env"))
+        if not client.is_up():
+            url = os.environ.get("GRIN_MODEL_URL", "(unset)")
+            return Check("model backend: openai", "broken", f"endpoint not reachable at {url}",
+                         fix=Fix("check GRIN_MODEL_URL / network", "", "advisory", "env"))
+        return Check("model backend: openai", "ok",
+                     f"reachable at {os.environ.get('GRIN_MODEL_URL', '')}")
+    return check_ollama(client)
 
 
 def check_models(client, required: list) -> list:
@@ -157,13 +174,18 @@ def check_tools(engagement, runner, tools: list) -> list:
 
 
 def run_doctor(*, platform, ollama, engagement, runner, required_models, tools,
-               ssh_prober=None, docker_prober=None) -> DoctorReport:
+               ssh_prober=None, docker_prober=None, backend: str = "ollama") -> DoctorReport:
     checks = [Check("OS", "ok", f"{platform.os} (pkg mgr: {platform.host_pkg_mgr})")]
     want_docker = bool(engagement and (engagement.env or {}).get("kind") == "docker")
     checks += check_engine_deps(want_docker)
-    ollama_check = check_ollama(ollama)
-    checks.append(ollama_check)
-    checks += check_models(ollama, required_models)
+    backend_check = check_model_backend(ollama, backend)
+    checks.append(backend_check)
+    if backend == "openai":
+        # Hosted API — model presence is managed by the provider; skip local pull checks.
+        checks += [Check(f"model {m}", "skipped", "cloud backend — model availability managed by provider")
+                   for m in required_models]
+    else:
+        checks += check_models(ollama, required_models)
     if engagement is not None:
         env_checks = check_env(engagement, ssh_prober=ssh_prober, docker_prober=docker_prober)
         checks += env_checks

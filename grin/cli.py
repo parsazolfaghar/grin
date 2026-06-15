@@ -371,9 +371,12 @@ def cmd_doctor(path, *, fix: bool, yes: bool, models, tools) -> int:
     if path:
         engagement = load_engagement(path)
         runner = build_runner(engagement.env)
-    report = run_doctor(platform=plat, ollama=OllamaClient(), engagement=engagement,
+    _backend = active_backend()
+    _client = make_inference_client() if _backend == "openai" else OllamaClient()
+    report = run_doctor(platform=plat, ollama=_client, engagement=engagement,
                         runner=runner, required_models=required, tools=tool_list,
-                        ssh_prober=_ssh_prober, docker_prober=_docker_prober)
+                        ssh_prober=_ssh_prober, docker_prober=_docker_prober,
+                        backend=_backend)
     print(f"grin doctor — {plat.os} (pkg mgr: {plat.host_pkg_mgr})\n")
     for c in report.checks:
         line = f"  {_STATUS_TAG.get(c.status, c.status)}  {c.name}: {c.detail}"
