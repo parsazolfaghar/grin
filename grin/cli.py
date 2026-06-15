@@ -231,6 +231,7 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
         max_objectives = max(max_objectives, DEFAULT_AGGRESSIVE_BUDGET["max_objectives"])
         max_steps = max(max_steps, DEFAULT_AGGRESSIVE_BUDGET["max_steps"])
     pins = _resolve_pins(planner=planner_model, recon=recon_model, exploit=exploit_model)
+    _record_cloud_backend(eng, pins)
     res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
                       now=datetime.now(), model=pins["planner"], planner_model=pins["planner"],
@@ -481,6 +482,32 @@ def _resolve_pins(*, planner=None, recon=None, exploit=None) -> dict:
     return {"planner": planner or base["planner"],
             "recon": recon or base["recon"],
             "exploit": exploit or base["exploit"]}
+
+
+def _record_cloud_backend(eng, pins) -> None:
+    """Cloud backend active: append a backend marker to the audit log (always) and, for client
+    engagements, print a loud warning that data goes to a third party (warn-only — the operator's
+    contract is the authorization)."""
+    if active_backend() != "openai":
+        return
+    import json as _json
+    import os as _os
+    from pathlib import Path as _Path
+    url = _os.environ.get("GRIN_MODEL_URL", "")
+    marker = {"event": "model-backend", "backend": "openai", "url": url,
+              "planner": pins["planner"], "exploit": pins["exploit"]}
+    ap = _Path(eng.audit_log)
+    ap.parent.mkdir(parents=True, exist_ok=True)
+    with ap.open("a") as fh:
+        fh.write(_json.dumps(marker) + "\n")
+    if eng.mode == "client":
+        print("=" * 70, file=sys.stderr)
+        print("WARNING: cloud model backend active for a CLIENT engagement.", file=sys.stderr)
+        print("  Targets, findings, and credentials will be sent to a THIRD-PARTY endpoint:",
+              file=sys.stderr)
+        print(f"  {url}", file=sys.stderr)
+        print("  Ensure this is authorized in your engagement contract/ROE.", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
 
 DEFAULT_BENCH_MODELS = [
     "qwen3:14b", "qwen3:8b", "hermes3:8b",
