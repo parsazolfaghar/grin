@@ -498,7 +498,7 @@ def _record_cloud_backend(eng, pins) -> None:
     from pathlib import Path as _Path
     url = _os.environ.get("GRIN_MODEL_URL", "")
     marker = {"event": "model-backend", "backend": "openai", "url": url,
-              "planner": pins["planner"], "exploit": pins["exploit"]}
+              "planner": pins["planner"], "recon": pins["recon"], "exploit": pins["exploit"]}
     ap = _Path(eng.audit_log)
     ap.parent.mkdir(parents=True, exist_ok=True)
     with ap.open("a") as fh:
