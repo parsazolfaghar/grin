@@ -6,7 +6,10 @@ FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/sshd \
     && useradd -m -s /bin/bash admin \
-    && echo 'admin:password' | chpasswd
+    && echo 'admin:password' | chpasswd \
+    # Deliberately brute-force-tolerant sshd so a credential attack (hydra) can actually run
+    # without the daemon dropping its parallel connections — appropriate for a weak-by-design target.
+    && printf '\nMaxStartups 200\nMaxAuthTries 100\nMaxSessions 100\nLoginGraceTime 120\n' >> /etc/ssh/sshd_config
 COPY _generated/t1.flag /home/admin/flag.txt
 RUN chown admin:admin /home/admin/flag.txt && chmod 644 /home/admin/flag.txt
 EXPOSE 22
