@@ -231,6 +231,7 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
         max_objectives = max(max_objectives, DEFAULT_AGGRESSIVE_BUDGET["max_objectives"])
         max_steps = max(max_steps, DEFAULT_AGGRESSIVE_BUDGET["max_steps"])
     pins = _resolve_pins(planner=planner_model, recon=recon_model, exploit=exploit_model)
+    _print_backend_notice(pins)
     _record_cloud_backend(eng, pins)
     res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
@@ -373,6 +374,7 @@ def cmd_doctor(path, *, fix: bool, yes: bool, models, tools) -> int:
         runner = build_runner(engagement.env)
     _backend = active_backend()
     _client = make_inference_client() if _backend == "openai" else OllamaClient()
+    _print_backend_notice(_resolve_pins())
     report = run_doctor(platform=plat, ollama=_client, engagement=engagement,
                         runner=runner, required_models=required, tools=tool_list,
                         ssh_prober=_ssh_prober, docker_prober=_docker_prober,
@@ -485,6 +487,17 @@ def _resolve_pins(*, planner=None, recon=None, exploit=None) -> dict:
     return {"planner": planner or base["planner"],
             "recon": recon or base["recon"],
             "exploit": exploit or base["exploit"]}
+
+
+def _print_backend_notice(pins) -> None:
+    """One-line visibility of the resolved model backend so auto-selection is never silent."""
+    from grin.inference import resolve_ollama_url
+    import os as _osmod
+    if active_backend() == "openai":
+        url = _osmod.environ.get("GRIN_MODEL_URL", "")
+        print(f"[backend] cloud · {pins['planner']} · {url}", file=sys.stderr)
+    else:
+        print(f"[backend] local · {pins['planner']} · {resolve_ollama_url()}", file=sys.stderr)
 
 
 def _record_cloud_backend(eng, pins) -> None:
