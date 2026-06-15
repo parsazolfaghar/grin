@@ -30,6 +30,10 @@ from grin.lab.control import run_up, run_down, run_reset, run_status
 from grin.lab.answers import load_answers as _load_lab_answers
 from grin.lab.engagements import engagement_dict
 from grin.lab.control import LAB_DIR as _LAB_DIR
+from grin.labbench.matrix import load_matrix as _load_matrix
+from grin.labbench.runner import run_sweep
+from grin.labbench.report import aggregate, to_text as _labbench_to_text
+from grin.labbench.scorers import RunArtifact as _RunArtifact
 
 
 def cmd_validate(path: str) -> int:
@@ -518,6 +522,106 @@ def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali") -> int:
     return 2
 
 
+def _clear_engagement_artifacts(eng):
+    """Remove this engagement's append-only artifacts so a benchmark run is scored clean."""
+    import glob
+    import shutil
+    from pathlib import Path
+    try:
+        Path(eng.audit_log).unlink(missing_ok=True)
+    except Exception:  # noqa: BLE001
+        pass
+    for path in (loot_dir(eng), result_path(eng)):
+        p = Path(path)
+        try:
+            if p.is_dir():
+                shutil.rmtree(p, ignore_errors=True)
+            else:
+                p.unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+    # remove any journal files for this engagement (e.g. <id>.*.journal.json)
+    import os
+    base, _ext = os.path.splitext(eng.audit_log)
+    for j in glob.glob(f"{base}.*.journal.json"):
+        try:
+            Path(j).unlink(missing_ok=True)
+        except Exception:  # noqa: BLE001
+            pass
+
+
+def _labbench_reset_fn(runner="grin-kali"):
+    """Return a callable that resets the lab to pristine state before each run."""
+    return lambda: run_reset()
+
+
+def _labbench_collect_fn(runner="grin-kali"):
+    """Build a collect_fn that runs ONE clean live engagement for a target with given pins."""
+    import contextlib
+    import io
+    import time
+    from pathlib import Path
+
+    def collect(target, pins):
+        eng_path = str(Path("examples/lab") / f"lab-{target.id}.yaml")
+        eng = load_engagement(eng_path)
+        _clear_engagement_artifacts(eng)   # clean slate so the score reflects only this run
+        buf = io.StringIO()
+        t0 = time.monotonic()
+        with contextlib.redirect_stdout(buf):
+            res = orchestrate(
+                eng, goal="capture the flag",
+                planner_client=_make_client(eng), executor_client=_make_executor_client(eng),
+                runner=_runner_for(eng), now=datetime.now(),
+                model=pins["planner"], planner_model=pins["planner"],
+                objective_models=_objective_models(pins.get("recon"), pins.get("exploit")),
+                max_objectives=8, max_steps=40, seeds=[], engagement_path=eng_path)
+        dur = time.monotonic() - t0
+        transcript = buf.getvalue()
+        finding_text = " ".join(f"{f.title} {f.evidence} {f.command}" for f in res.findings)
+        loot_text = ""
+        try:
+            loot_text = json.dumps(LootStore(loot_dir(eng)).all())
+        except Exception:  # noqa: BLE001
+            pass
+        audit = []
+        p = Path(eng.audit_log)
+        if p.exists():
+            for ln in p.read_text().splitlines():
+                ln = ln.strip()
+                if ln:
+                    try:
+                        audit.append(json.loads(ln))
+                    except json.JSONDecodeError:
+                        continue
+        blob = " ".join([finding_text, loot_text, json.dumps(audit), transcript])
+        return _RunArtifact(target_id=target.id, blob=blob, finding_text=finding_text,
+                            audit=audit, transcript=transcript, duration_s=dur)
+    return collect
+
+
+def cmd_labbench(*, matrix_path: str, out: str, runner: str = "grin-kali") -> int:
+    from dataclasses import asdict
+    from pathlib import Path
+    matrix = _load_matrix(matrix_path)
+    targets = _lab_targets()
+    rows = run_sweep(matrix, targets,
+                     reset_fn=_labbench_reset_fn(runner),
+                     collect_fn=_labbench_collect_fn(runner))
+    aggs = aggregate(rows)
+    text = _labbench_to_text(aggs)
+    print(text)
+    if out:
+        Path(out).parent.mkdir(parents=True, exist_ok=True)
+        Path(out).write_text(text)
+        runs_json = [{"role": role, "model": model, **asdict(score)}
+                     for role, model, score in rows]
+        runs_path = Path(out).with_name("runs.json")
+        runs_path.write_text(json.dumps(runs_json, indent=2))
+        print(f"\nwrote {out} and {runs_path}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     sub = parser.add_subparsers(dest="group", required=True)
@@ -592,6 +696,11 @@ def build_parser() -> argparse.ArgumentParser:
                        help="(engagements) directory to write engagement YAMLs into")
     p_lab.add_argument("--runner", default="grin-kali", help="runner container name")
 
+    p_lb = sub.add_parser("labbench", help="benchmark local LLMs per role against the flag-lab")
+    p_lb.add_argument("--matrix", default="lab/matrix.yaml", dest="matrix_path")
+    p_lb.add_argument("--out", default="lab/results/ranking.txt")
+    p_lb.add_argument("--runner", default="grin-kali")
+
     return parser
 
 
@@ -643,6 +752,8 @@ def main(argv=None) -> int:
                          out=args.out, json_out=args.json_out, repeats=args.repeats)
     if args.group == "lab":
         return cmd_lab(args.action, out_dir=args.out_dir, runner=args.runner)
+    if args.group == "labbench":
+        return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
     return 2
 
 
