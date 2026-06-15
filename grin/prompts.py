@@ -24,17 +24,37 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         f"Authorized target: {target}\n"
         f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
         f"History so far:\n{history}\n\n"
-        "Decide the SINGLE next action, or finish if the objective is met.\n"
-        'To act, reply EXACTLY: {"action": {"tool": "nmap", "command": "nmap -sV '
-        f'{target}", "target": "{target}", "declared_class": "active-scan", '
-        '"why": "short reason"}}\n'
-        'To finish, reply EXACTLY: {"done": true, "findings": [{"title": "...", '
+        "## Phase progression\n"
+        "Work through these phases in order:\n"
+        "  1. Recon — discover open ports and running services (one scan is enough).\n"
+        "  2. Identify the specific weakness — version-based vuln, weak credentials, injectable param, etc.\n"
+        "  3. Exploit it — use the appropriate tool to gain access or extract the proof.\n"
+        "  4. Capture proof — read the flag file, dump credentials, or confirm the shell.\n"
+        "The objective is NOT complete until exploitation has been attempted and the requested proof captured.\n\n"
+        "## Anti-repeat rule\n"
+        "Do NOT repeat any command already shown in History. "
+        "Once a port or service is identified, move on to exploiting it — do not re-scan.\n\n"
+        "## Exploit-tool reference (use what fits the situation)\n"
+        "- Weak SSH credentials: `hydra -l <user> -P <wordlist> ssh://<target>` "
+        "or `sshpass -p <password> ssh <user>@<target>`\n"
+        "- Web command injection: test parameters with `curl` and chain shell metacharacters "
+        "(e.g. `; cat /flag`, `| id`)\n"
+        "- Once you have a shell or file-read primitive: `cat /flag`, `cat /root/secret`, etc.\n"
+        "- FTP anonymous login: `ftp <target>` with user `anonymous`\n"
+        "- SMB shares: `smbclient -L //<target> -N` then `smbclient //<target>/<share> -N`\n\n"
+        "Decide the SINGLE next action, or finish if the objective is met.\n\n"
+        "To act, reply EXACTLY:\n"
+        '{"action": {"tool": "<tool>", "command": "<your command>", '
+        f'"target": "{target}", "declared_class": "<permitted-class>", '
+        '"why": "short reason"}}\n\n'
+        "To finish, reply EXACTLY:\n"
+        '{"done": true, "findings": [{"title": "...", '
         '"severity": "info|low|medium|high|critical", "evidence": "...", "tool": "...", '
         '"command": "...", "recommendation": "..."}], '
         '"secrets": [{"label": "...", "value": "...", "target": "...", "tool": "...", '
         '"command": "...", "context": "..."}]} '
         "(include any credentials/keys/tokens you actually obtained in `secrets`, with full values; "
-        "omit the secrets array or leave it empty if none were captured)\n"
+        "omit the secrets array or leave it empty if none were captured)\n\n"
         "Return ONLY the JSON object."
     )
     return SYSTEM, user

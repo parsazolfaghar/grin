@@ -102,3 +102,20 @@ def test_build_step_prompt_documents_secrets_format():
     sys, usr = build_step_prompt("o", "127.0.0.1", j, ["passive", "active-scan"])
     assert "secrets" in usr.lower()        # the model is told how to report captured secrets
     assert "value" in usr.lower()
+
+
+def test_step_prompt_has_no_parroted_nmap_example_and_guides_exploitation():
+    from grin.prompts import build_step_prompt
+    from grin.journal import Journal
+    j = Journal(task_id="t", objective="o", target="10.0.0.1", engagement_path="e",
+                path="/tmp/j", max_steps=12)
+    system, user = build_step_prompt("capture the flag", "10.0.0.1", j, ["active-scan", "exploit"])
+    blob = (system + "\n" + user).lower()
+    # no runnable nmap -sV <target> example to parrot
+    assert "nmap -sv 10.0.0.1" not in blob
+    # phase/exploitation guidance present
+    assert "exploit" in blob
+    # anti-repeat guidance present
+    assert "repeat" in blob or "already" in blob
+    # the JSON action schema key is still documented (parse_step contract intact)
+    assert '"action"' in user and '"done"' in user
