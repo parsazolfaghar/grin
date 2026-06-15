@@ -2,7 +2,7 @@
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/sshd \
-    && useradd -m -s /bin/bash operator \
+    && useradd -m -s /bin/bash -g operator operator \
     && echo 'operator:operator123' | chpasswd
 COPY _generated/t1.flag /home/operator/flag.txt
 RUN chown operator:operator /home/operator/flag.txt && chmod 644 /home/operator/flag.txt
