@@ -61,7 +61,8 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 objectives_run: list, paused: list, plan_log: list, planner_client,
                 executor_client, runner, now: datetime, planner_model: str,
                 objective_models, base_model: str, max_objectives: int,
-                max_steps: int, engagement_path: str, secrets: list, loot) -> str:
+                max_steps: int, engagement_path: str, secrets: list, loot,
+                scope_targets: list) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
     passed-in lists; returns the final status (completed | budget_exhausted)."""
     while queue and len(objectives_run) < max_objectives:
@@ -82,7 +83,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                            "journal": res.journal.path})
             continue
         decision = replan(planner_client, planner_model, goal, findings,
-                          len(objectives_run), len(queue))
+                          len(objectives_run), len(queue), scope_targets)
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
         if decision.done:
@@ -114,7 +115,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                          runner=runner, now=now, planner_model=eff_planner,
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
-                         engagement_path=engagement_path, secrets=secrets, loot=loot)
+                         engagement_path=engagement_path, secrets=secrets, loot=loot,
+                         scope_targets=eng.scope.include)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)
 
@@ -162,7 +164,8 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
 
     queue: list = []
     if len(objectives_run) < max_objectives:
-        decision = replan(planner_client, eff_planner, goal, findings, len(objectives_run), 0)
+        decision = replan(planner_client, eff_planner, goal, findings, len(objectives_run), 0,
+                          eng.scope.include)
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
         if decision.done:
@@ -176,6 +179,7 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                          runner=runner, now=now, planner_model=eff_planner,
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
-                         engagement_path=engagement_path, secrets=secrets, loot=loot)
+                         engagement_path=engagement_path, secrets=secrets, loot=loot,
+                         scope_targets=eng.scope.include)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)

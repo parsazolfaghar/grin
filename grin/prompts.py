@@ -24,17 +24,50 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         f"Authorized target: {target}\n"
         f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
         f"History so far:\n{history}\n\n"
-        "Decide the SINGLE next action, or finish if the objective is met.\n"
-        'To act, reply EXACTLY: {"action": {"tool": "nmap", "command": "nmap -sV '
-        f'{target}", "target": "{target}", "declared_class": "active-scan", '
-        '"why": "short reason"}}\n'
-        'To finish, reply EXACTLY: {"done": true, "findings": [{"title": "...", '
+        "## Phase progression\n"
+        "Work through these phases in order:\n"
+        "  1. Recon — discover open ports and running services (one scan is enough).\n"
+        "  2. Identify the specific weakness — version-based vuln, weak credentials, injectable param, etc.\n"
+        "  3. Exploit it — use the appropriate tool to gain access or extract the proof.\n"
+        "  4. Capture proof — read the flag file, dump credentials, or confirm the shell.\n"
+        "The objective is NOT complete until exploitation has been attempted and the requested proof captured.\n\n"
+        "## Anti-repeat rule\n"
+        "Do NOT repeat any command already shown in History. "
+        "Once a port or service is identified, move on to exploiting it — do not re-scan.\n\n"
+        "## Exploit-tool reference (use what fits the situation)\n"
+        "- Weak SSH credentials: curated credential lists are present on the runner at "
+        "`/usr/share/wordlists/users.txt` (usernames) and `/usr/share/wordlists/passwords.txt` "
+        "(passwords). Use them with `hydra -L /usr/share/wordlists/users.txt "
+        "-P /usr/share/wordlists/passwords.txt ssh://<target>` (small + fast). Do NOT use rockyou as "
+        "a USERNAME list (-L). When hydra prints a line like `login: admin password: hunter2`, "
+        "take the ACTUAL username and password it found (NOT the literal letters from this example) "
+        "and log in: `sshpass -p <the-found-password> ssh <the-found-username>@<target> "
+        "'cat ~/flag.txt'`, then record the real `username:password` you obtained in `secrets`.\n"
+        "- Web command injection: test parameters with `curl` and chain shell metacharacters "
+        "(e.g. `; cat /flag`, `| id`)\n"
+        "- Once you have a shell or file-read primitive: `cat /flag`, `cat /root/secret`, etc.\n"
+        "- FTP anonymous login: `ftp <target>` with user `anonymous`\n"
+        "- SMB shares: `smbclient -L //<target> -N` then `smbclient //<target>/<share> -N`\n\n"
+        "Decide the SINGLE next action, or finish if the objective is met.\n\n"
+        "## Target field rule\n"
+        "The `target` field must be a HOST or IP from the authorized scope — NEVER a file path or directory.\n\n"
+        "## Credential-capture rule\n"
+        "The moment you obtain credentials (e.g. hydra reports a valid login, or you confirm a password), "
+        "IMMEDIATELY use them to log in (e.g. `sshpass -p <pw> ssh <user>@<target> 'cat <flagfile>'`) "
+        "and capture the proof. ALWAYS record any credentials you obtain in the `secrets` array "
+        "(with the full value) before finishing — a captured credential that is not recorded is lost.\n\n"
+        "To act, reply EXACTLY:\n"
+        '{"action": {"tool": "<tool>", "command": "<your command>", '
+        f'"target": "{target}", "declared_class": "<permitted-class>", '
+        '"why": "short reason"}}\n\n'
+        "To finish, reply EXACTLY:\n"
+        '{"done": true, "findings": [{"title": "...", '
         '"severity": "info|low|medium|high|critical", "evidence": "...", "tool": "...", '
         '"command": "...", "recommendation": "..."}], '
         '"secrets": [{"label": "...", "value": "...", "target": "...", "tool": "...", '
         '"command": "...", "context": "..."}]} '
         "(include any credentials/keys/tokens you actually obtained in `secrets`, with full values; "
-        "omit the secrets array or leave it empty if none were captured)\n"
+        "omit the secrets array or leave it empty if none were captured)\n\n"
         "Return ONLY the JSON object."
     )
     return SYSTEM, user
@@ -96,6 +129,15 @@ def _parse_findings(items, default_target) -> list:
 _CMD_RE = re.compile(r"(?im)^\s*[#>*\-\s]*\**\s*command\s*\**\s*:\s*(.+)$")
 
 
+def _maybe_prepend_tool(tool: str, command: str) -> str:
+    """If command's first token starts with '-' (binary was dropped), prepend the tool name."""
+    if tool and command:
+        first_token = command.split()[0] if command.split() else ""
+        if first_token.startswith("-"):
+            return f"{tool} {command}"
+    return command
+
+
 def parse_step(raw: str, default_target: str) -> StepDecision:
     data = _extract_json(raw)
     if isinstance(data, dict):
@@ -103,9 +145,11 @@ def parse_step(raw: str, default_target: str) -> StepDecision:
         if isinstance(act, dict) and str(act.get("tool", "")).strip() \
                 and str(act.get("command", "")).strip():
             dc = act.get("declared_class")
+            tool = str(act["tool"]).strip()
+            command = _maybe_prepend_tool(tool, str(act["command"]).strip())
             return StepDecision("action", action={
-                "tool": str(act["tool"]).strip(),
-                "command": str(act["command"]).strip(),
+                "tool": tool,
+                "command": command,
                 "target": str(act.get("target") or default_target).strip(),
                 "declared_class": str(dc).strip() if dc else None,
                 "why": str(act.get("why", "")).strip(),

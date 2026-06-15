@@ -3,7 +3,7 @@ each turn (render_history) and saved to disk so a paused task can resume. Distin
 SP1 audit log (tamper-evident evidence); the journal is mutable agent state."""
 import json
 import os
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from pathlib import Path
 
 from grin.finding import Finding
@@ -23,6 +23,7 @@ class Step:
     exit_code: int | None = None
     reason: str = ""
     pending_id: str | None = None
+    extracted: list = field(default_factory=list)  # [{label, value}] from auto-extraction
 
 
 class Journal:
@@ -56,6 +57,16 @@ class Journal:
                 s.exit_code = exit_code
         self.awaiting_pending_id = None
 
+    @staticmethod
+    def _clip(text: str, head: int = 500, tail: int = 1200) -> str:
+        """Show enough tool output for the model to act on. Tool results (e.g. hydra's
+        `login: X password: Y` line) often sit at the END after a long banner, so keep both
+        the head and the tail rather than a single front slice that hides the result."""
+        text = text or ""
+        if len(text) <= head + tail:
+            return text
+        return f"{text[:head]}\n...[{len(text) - head - tail} chars omitted]...\n{text[-tail:]}"
+
     def render_history(self) -> str:
         if not self.steps:
             return "(no actions taken yet)"
@@ -63,7 +74,13 @@ class Journal:
         for s in self.steps:
             cmd = s.action.get("command", "") if isinstance(s.action, dict) else ""
             if s.decision == "executed":
-                lines.append(f"- [executed] {cmd} -> {s.output[:300]}")
+                line = f"- [executed] {cmd} -> {self._clip(s.output)}"
+                if s.extracted:
+                    tags = ", ".join(
+                        f"{e['label']} {e['value']}" for e in s.extracted
+                    )
+                    line += f"\n  [auto-extracted: {tags}]"
+                lines.append(line)
             elif s.decision == "refused":
                 lines.append(f"- [refused] {cmd} ({s.reason})")
             elif s.decision == "pending":
@@ -71,6 +88,9 @@ class Journal:
             elif s.decision == "no_evidence":
                 lines.append("- [rejected: reported findings/secrets with no tool run yet — "
                              "run a tool to gather evidence first]")
+            elif s.decision == "duplicate":
+                lines.append(f"- [skipped: already ran {cmd} — "
+                             "choose a DIFFERENT action or finish]")
             else:
                 lines.append("- [unparseable model reply, retried]")
         return "\n".join(lines)
@@ -96,7 +116,8 @@ class Journal:
                 engagement_path=data["engagement_path"], path=data["path"],
                 max_steps=data.get("max_steps", 12))
         j.awaiting_pending_id = data.get("awaiting_pending_id")
-        j.steps = [Step(**s) for s in data.get("steps", [])]
+        j.steps = [Step(**{**s, "extracted": s.get("extracted", [])})
+                   for s in data.get("steps", [])]
         j.findings = [Finding(**f) for f in data.get("findings", [])]
         j.secrets = [Secret(**s) for s in data.get("secrets", [])]
         return j
