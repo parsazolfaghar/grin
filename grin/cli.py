@@ -35,6 +35,17 @@ from grin.labbench.runner import run_sweep
 from grin.labbench.report import aggregate, to_text as _labbench_to_text
 from grin.labbench.scorers import RunArtifact as _RunArtifact
 
+from pathlib import Path as _Path
+DEFAULT_CATALOG_PATH = str(_Path(__file__).resolve().parents[1] / "catalog" / "attack_catalog.yaml")
+
+
+def _load_catalog_or_none(path=DEFAULT_CATALOG_PATH):
+    try:
+        from grin.catalog import load_catalog
+        return load_catalog(path)
+    except Exception:  # noqa: BLE001 - a missing/broken catalog must not break a normal engage
+        return None
+
 
 def cmd_validate(path: str) -> int:
     try:
@@ -205,19 +216,26 @@ def _print_engagement_result(res) -> None:
 
 
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
-               max_steps: int, planner_model=None, recon_model=None, exploit_model=None) -> int:
+               max_steps: int, planner_model=None, recon_model=None, exploit_model=None,
+               aggressive: bool = False) -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
         print(f"INVALID: {e}", file=sys.stderr)
         return 1
     seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
+    aggressive = aggressive or getattr(eng, "aggressive", False)
+    catalog = _load_catalog_or_none() if aggressive else None
+    if aggressive:
+        from grin.aggressive import DEFAULT_AGGRESSIVE_BUDGET
+        max_objectives = max(max_objectives, DEFAULT_AGGRESSIVE_BUDGET["max_objectives"])
+        max_steps = max(max_steps, DEFAULT_AGGRESSIVE_BUDGET["max_steps"])
     res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
                       now=datetime.now(), model=model, planner_model=planner_model,
                       objective_models=_objective_models(recon_model, exploit_model),
                       max_objectives=max_objectives, max_steps=max_steps, seeds=seed_list,
-                      engagement_path=path)
+                      engagement_path=path, aggressive=aggressive, catalog=catalog)
     save_result(result_path(eng), res)
     _print_engagement_result(res)
     return 0
@@ -269,8 +287,19 @@ def cmd_report(path: str, *, out, model: str) -> int:
               file=sys.stderr)
         return 1
     summary = llm_summary(_make_client(eng), model, result)
+    _audit_records = []
+    _ap = _Path(eng.audit_log)
+    if _ap.exists():
+        for _ln in _ap.read_text().splitlines():
+            _ln = _ln.strip()
+            if _ln:
+                try:
+                    _audit_records.append(json.loads(_ln))
+                except json.JSONDecodeError:
+                    continue
     md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
-                       summary_text=summary)
+                       summary_text=summary, catalog=_load_catalog_or_none(),
+                       audit_records=_audit_records)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(md)
@@ -660,6 +689,8 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--exploit-model", default=DEFAULT_PINS["exploit"], dest="exploit_model",
                     help=f"model for exploit/post-exploit objectives (default: {DEFAULT_PINS['exploit']})")
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
+    g2.add_argument("--aggressive", action="store_true",
+        help="exhaustive mode: sweep the ATT&CK catalog (more attempts, same guardrails)")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
     rp.add_argument("file")
@@ -735,7 +766,7 @@ def main(argv=None) -> int:
         return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
                           max_objectives=args.max_objectives, max_steps=args.max_steps,
                           planner_model=args.planner_model, recon_model=args.recon_model,
-                          exploit_model=args.exploit_model)
+                          exploit_model=args.exploit_model, aggressive=args.aggressive)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model)
     if args.group == "loot":

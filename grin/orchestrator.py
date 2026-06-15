@@ -5,6 +5,7 @@ all execution flows through execute_task -> submit_action -> the SP1 gatekeeper.
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from grin.aggressive import sweep_objectives, discovered_services
 from grin.analyst import initial_plan, replan
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
@@ -62,9 +63,16 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 executor_client, runner, now: datetime, planner_model: str,
                 objective_models, base_model: str, max_objectives: int,
                 max_steps: int, engagement_path: str, secrets: list, loot,
-                scope_targets: list) -> str:
+                scope_targets: list, aggressive: bool = False, catalog=None,
+                seen: set = None) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
-    passed-in lists; returns the final status (completed | budget_exhausted)."""
+    passed-in lists; returns the final status (completed | budget_exhausted).
+
+    When aggressive=True and a catalog is provided, the loop re-sweeps for new techniques after
+    each objective (seeded from discovered services in findings) and ignores the planner's done
+    signal until the queue is exhausted / budget is hit."""
+    if seen is None:
+        seen = set()
     while queue and len(objectives_run) < max_objectives:
         obj = queue.pop(0)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
@@ -82,11 +90,18 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             paused.append({"objective": obj, "pending_id": res.pending_id,
                            "journal": res.journal.path})
             continue
+        if aggressive and catalog is not None:
+            svcs = discovered_services(findings)
+            for o in sweep_objectives(catalog, eng.scope.include, svcs):
+                key = (o.objective, o.target)
+                if key not in seen:
+                    seen.add(key)
+                    queue.append(o)
         decision = replan(planner_client, planner_model, goal, findings,
                           len(objectives_run), len(queue), scope_targets)
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
-        if decision.done:
+        if decision.done and not aggressive:
             return "completed"
         for o in decision.next_objectives:
             queue.append(o)
@@ -96,7 +111,8 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
 def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, runner,
                 now: datetime, model: str = DEFAULT_MODEL, planner_model: str | None = None,
                 objective_models=None, max_objectives: int = 10, max_steps: int = 12,
-                seeds=None, engagement_path: str = "") -> EngagementResult:
+                seeds=None, engagement_path: str = "", aggressive: bool = False,
+                catalog=None) -> EngagementResult:
     if not planner_client.is_up():
         return EngagementResult("model_unavailable", goal=goal)
 
@@ -109,6 +125,13 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
     secrets: list = []
     loot = LootStore(loot_dir(eng))
 
+    seen: set = set()
+    if aggressive and catalog is not None:
+        seed = sweep_objectives(catalog, eng.scope.include, {})
+        for o in seed:
+            seen.add((o.objective, o.target))
+        queue = seed + queue
+
     status = _drive_loop(eng, goal=goal, queue=queue, findings=findings,
                          objectives_run=objectives_run, paused=paused, plan_log=plan_log,
                          planner_client=planner_client, executor_client=executor_client,
@@ -116,7 +139,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
                          engagement_path=engagement_path, secrets=secrets, loot=loot,
-                         scope_targets=eng.scope.include)
+                         scope_targets=eng.scope.include, aggressive=aggressive,
+                         catalog=catalog, seen=seen)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)
 
