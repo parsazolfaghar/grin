@@ -57,6 +57,66 @@ class OllamaClient:
         return r.json().get("response", "")
 
 
+def active_backend() -> str:
+    """Which model backend is selected: 'openai' if GRIN_MODEL_BACKEND=openai, else 'ollama'."""
+    return "openai" if os.environ.get("GRIN_MODEL_BACKEND", "").lower() == "openai" else "ollama"
+
+
+class OpenAICompatClient:
+    """An OpenAI-compatible chat client (DeepSeek, OpenRouter, Groq, Gemini-compat, rented vLLM...).
+    Implements the same InferenceClient Protocol as OllamaClient so the engine is unchanged.
+    Cloud is opt-in by project charter; client-data exposure is warned + audited by the cli."""
+
+    def __init__(self, base_url: str, api_key: str, timeout: float = 600.0):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.timeout = timeout
+
+    def _headers(self) -> dict:
+        return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+
+    def is_up(self) -> bool:
+        try:
+            return httpx.get(f"{self.base_url}/models", headers=self._headers(),
+                             timeout=5.0).status_code == 200
+        except httpx.HTTPError:
+            return False
+
+    def installed_models(self) -> list[str]:
+        try:
+            data = httpx.get(f"{self.base_url}/models", headers=self._headers(), timeout=5.0).json()
+            return [m.get("id", "") for m in data.get("data", []) if m.get("id")]
+        except httpx.HTTPError:
+            return []
+
+    def generate(self, model: str, system: str, prompt: str, temperature: float = 0.3,
+                 keep_alive: str = "10m") -> str:
+        body = {"model": model, "stream": False, "temperature": temperature,
+                "messages": [{"role": "system", "content": system},
+                             {"role": "user", "content": prompt}]}
+        r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(),
+                       timeout=self.timeout)
+        r.raise_for_status()
+        data = r.json()
+        try:
+            return data["choices"][0]["message"]["content"] or ""
+        except (KeyError, IndexError, TypeError):
+            return ""
+
+
+def make_inference_client():
+    """Build the active model client from env. Local Ollama is the default; GRIN_MODEL_BACKEND=openai
+    selects the cloud client (requires GRIN_MODEL_URL + GRIN_MODEL_API_KEY). One factory so engine,
+    bench and doctor agree on the backend."""
+    if active_backend() == "openai":
+        url = os.environ.get("GRIN_MODEL_URL")
+        key = os.environ.get("GRIN_MODEL_API_KEY")
+        if not url or not key:
+            raise ValueError("GRIN_MODEL_BACKEND=openai requires GRIN_MODEL_URL and GRIN_MODEL_API_KEY")
+        return OpenAICompatClient(base_url=url, api_key=key)
+    return OllamaClient()
+
+
 class FakeClient:
     """Deterministic stand-in for tests + the Mac. Accepts a single reply or a SEQUENCE of
     replies (one per loop turn); after the last it sticks (so an over-long loop is bounded

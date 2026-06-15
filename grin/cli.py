@@ -11,7 +11,7 @@ import subprocess
 from grin.engagement import load_engagement, EngagementError, pending_path
 from grin.loot import LootStore, loot_dir
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
-from grin.inference import OllamaClient
+from grin.inference import OllamaClient, make_inference_client, active_backend
 from grin.orchestrator import orchestrate, resume_engagement
 from grin.journal import Journal
 from grin.pending import PendingStore
@@ -230,10 +230,12 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
         from grin.aggressive import DEFAULT_AGGRESSIVE_BUDGET
         max_objectives = max(max_objectives, DEFAULT_AGGRESSIVE_BUDGET["max_objectives"])
         max_steps = max(max_steps, DEFAULT_AGGRESSIVE_BUDGET["max_steps"])
+    pins = _resolve_pins(planner=planner_model, recon=recon_model, exploit=exploit_model)
+    _record_cloud_backend(eng, pins)
     res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
                       executor_client=_make_executor_client(eng), runner=_runner_for(eng),
-                      now=datetime.now(), model=model, planner_model=planner_model,
-                      objective_models=_objective_models(recon_model, exploit_model),
+                      now=datetime.now(), model=pins["planner"], planner_model=pins["planner"],
+                      objective_models=_objective_models(pins["recon"], pins["exploit"]),
                       max_objectives=max_objectives, max_steps=max_steps, seeds=seed_list,
                       engagement_path=path, aggressive=aggressive, catalog=catalog)
     save_result(result_path(eng), res)
@@ -369,9 +371,12 @@ def cmd_doctor(path, *, fix: bool, yes: bool, models, tools) -> int:
     if path:
         engagement = load_engagement(path)
         runner = build_runner(engagement.env)
-    report = run_doctor(platform=plat, ollama=OllamaClient(), engagement=engagement,
+    _backend = active_backend()
+    _client = make_inference_client() if _backend == "openai" else OllamaClient()
+    report = run_doctor(platform=plat, ollama=_client, engagement=engagement,
                         runner=runner, required_models=required, tools=tool_list,
-                        ssh_prober=_ssh_prober, docker_prober=_docker_prober)
+                        ssh_prober=_ssh_prober, docker_prober=_docker_prober,
+                        backend=_backend)
     print(f"grin doctor — {plat.os} (pkg mgr: {plat.host_pkg_mgr})\n")
     for c in report.checks:
         line = f"  {_STATUS_TAG.get(c.status, c.status)}  {c.name}: {c.detail}"
@@ -428,14 +433,14 @@ def _runner_for(eng):
 
 
 def _make_client(eng):
-    """The local model client. Separate function so tests can inject a FakeClient."""
-    return OllamaClient()
+    """The inference client for the active backend. Separate function so tests can inject a FakeClient."""
+    return make_inference_client()
 
 
 def _make_executor_client(eng):
-    """The Executor's model client. Separate factory so tests can inject a FakeClient and so a
+    """The Executor's inference client for the active backend. Separate factory so tests can inject a FakeClient and so a
     future SP can pin a different per-role model."""
-    return OllamaClient()
+    return make_inference_client()
 
 
 def _objective_models(recon_model, exploit_model):
@@ -465,6 +470,47 @@ DEFAULT_PINS = {
     "recon": "qwen2.5-coder:7b",
     "exploit": "qwen3:14b",
 }
+
+CLOUD_DEFAULT_PINS = {
+    "planner": "deepseek-chat",
+    "recon": "deepseek-chat",
+    "exploit": "deepseek-chat",
+}
+
+
+def _resolve_pins(*, planner=None, recon=None, exploit=None) -> dict:
+    """Per-role models for the active backend. Unset roles take the backend's default set
+    (CLOUD_DEFAULT_PINS for openai, DEFAULT_PINS for ollama); an explicit value always wins."""
+    base = CLOUD_DEFAULT_PINS if active_backend() == "openai" else DEFAULT_PINS
+    return {"planner": planner or base["planner"],
+            "recon": recon or base["recon"],
+            "exploit": exploit or base["exploit"]}
+
+
+def _record_cloud_backend(eng, pins) -> None:
+    """Cloud backend active: append a backend marker to the audit log (always) and, for client
+    engagements, print a loud warning that data goes to a third party (warn-only — the operator's
+    contract is the authorization)."""
+    if active_backend() != "openai":
+        return
+    import json as _json
+    import os as _os
+    from pathlib import Path as _Path
+    url = _os.environ.get("GRIN_MODEL_URL", "")
+    marker = {"event": "model-backend", "backend": "openai", "url": url,
+              "planner": pins["planner"], "recon": pins["recon"], "exploit": pins["exploit"]}
+    ap = _Path(eng.audit_log)
+    ap.parent.mkdir(parents=True, exist_ok=True)
+    with ap.open("a") as fh:
+        fh.write(_json.dumps(marker) + "\n")
+    if eng.mode == "client":
+        print("=" * 70, file=sys.stderr)
+        print("WARNING: cloud model backend active for a CLIENT engagement.", file=sys.stderr)
+        print("  Targets, findings, and credentials will be sent to a THIRD-PARTY endpoint:",
+              file=sys.stderr)
+        print(f"  {url}", file=sys.stderr)
+        print("  Ensure this is authorized in your engagement contract/ROE.", file=sys.stderr)
+        print("=" * 70, file=sys.stderr)
 
 DEFAULT_BENCH_MODELS = [
     "qwen3:14b", "qwen3:8b", "hermes3:8b",
@@ -682,12 +728,13 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
     g2.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
     g2.add_argument("--max-steps", type=int, default=12, dest="max_steps")
-    g2.add_argument("--planner-model", default=DEFAULT_PINS["planner"], dest="planner_model",
-                    help=f"model for the Orchestrator/Analyst (default: {DEFAULT_PINS['planner']})")
-    g2.add_argument("--recon-model", default=DEFAULT_PINS["recon"], dest="recon_model",
-                    help=f"model for passive/active-scan objectives (default: {DEFAULT_PINS['recon']})")
-    g2.add_argument("--exploit-model", default=DEFAULT_PINS["exploit"], dest="exploit_model",
-                    help=f"model for exploit/post-exploit objectives (default: {DEFAULT_PINS['exploit']})")
+    g2.add_argument("--planner-model", default=None, dest="planner_model",
+                    help="model for the Orchestrator/Analyst (default: per backend — "
+                         f"{DEFAULT_PINS['planner']} local / {CLOUD_DEFAULT_PINS['planner']} cloud)")
+    g2.add_argument("--recon-model", default=None, dest="recon_model",
+                    help="model for passive/active-scan objectives (default: per backend)")
+    g2.add_argument("--exploit-model", default=None, dest="exploit_model",
+                    help="model for exploit/post-exploit objectives (default: per backend)")
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
     g2.add_argument("--aggressive", action="store_true",
         help="exhaustive mode: sweep the ATT&CK catalog (more attempts, same guardrails)")
