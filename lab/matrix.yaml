@@ -1,0 +1,13 @@
+# lab/matrix.yaml — benchmark candidate models per role (edit freely). Sweep is one role at a
+# time: the swept role takes each candidate while the other two roles stay at default_pins.
+# NOTE: 13B models (e.g. whiterabbitneo:13b) spill to CPU on a 12GB GPU and are impractically
+# slow — excluded from defaults. Add them only on a bigger-VRAM host (e.g. a rented 48GB box).
+default_pins:
+  planner: hermes3:8b
+  recon: qwen2.5-coder:7b
+  exploit: qwen3:14b
+candidates:
+  planner: [hermes3:8b, qwen3:14b, qwen3:8b]
+  recon: [qwen2.5-coder:7b, hermes3:8b, qwen3:8b]
+  exploit: [qwen3:14b, dolphin3:8b, hf.co/mradermacher/Foundation-Sec-8B-Instruct-GGUF:Q4_K_M]
+repeats: 3
