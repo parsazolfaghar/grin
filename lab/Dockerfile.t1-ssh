@@ -1,9 +1,11 @@
 # lab/Dockerfile.t1-ssh — EASY: weak SSH credentials. Flag baked from generated file.
+# Password is a top-of-rockyou common weak password so a standard `hydra -l operator -P rockyou`
+# cracks it in a few attempts (fast + solvable with stock tooling; no answer-seeding).
 FROM debian:bookworm-slim
 RUN apt-get update && apt-get install -y openssh-server && rm -rf /var/lib/apt/lists/* \
     && mkdir -p /run/sshd \
     && useradd -m -s /bin/bash -g operator operator \
-    && echo 'operator:operator123' | chpasswd
+    && echo 'operator:password' | chpasswd
 COPY _generated/t1.flag /home/operator/flag.txt
 RUN chown operator:operator /home/operator/flag.txt && chmod 644 /home/operator/flag.txt
 EXPOSE 22
