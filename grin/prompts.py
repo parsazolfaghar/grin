@@ -43,6 +43,13 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         "- FTP anonymous login: `ftp <target>` with user `anonymous`\n"
         "- SMB shares: `smbclient -L //<target> -N` then `smbclient //<target>/<share> -N`\n\n"
         "Decide the SINGLE next action, or finish if the objective is met.\n\n"
+        "## Target field rule\n"
+        "The `target` field must be a HOST or IP from the authorized scope — NEVER a file path or directory.\n\n"
+        "## Credential-capture rule\n"
+        "The moment you obtain credentials (e.g. hydra reports a valid login, or you confirm a password), "
+        "IMMEDIATELY use them to log in (e.g. `sshpass -p <pw> ssh <user>@<target> 'cat <flagfile>'`) "
+        "and capture the proof. ALWAYS record any credentials you obtain in the `secrets` array "
+        "(with the full value) before finishing — a captured credential that is not recorded is lost.\n\n"
         "To act, reply EXACTLY:\n"
         '{"action": {"tool": "<tool>", "command": "<your command>", '
         f'"target": "{target}", "declared_class": "<permitted-class>", '
@@ -116,6 +123,15 @@ def _parse_findings(items, default_target) -> list:
 _CMD_RE = re.compile(r"(?im)^\s*[#>*\-\s]*\**\s*command\s*\**\s*:\s*(.+)$")
 
 
+def _maybe_prepend_tool(tool: str, command: str) -> str:
+    """If command's first token starts with '-' (binary was dropped), prepend the tool name."""
+    if tool and command:
+        first_token = command.split()[0] if command.split() else ""
+        if first_token.startswith("-"):
+            return f"{tool} {command}"
+    return command
+
+
 def parse_step(raw: str, default_target: str) -> StepDecision:
     data = _extract_json(raw)
     if isinstance(data, dict):
@@ -123,9 +139,11 @@ def parse_step(raw: str, default_target: str) -> StepDecision:
         if isinstance(act, dict) and str(act.get("tool", "")).strip() \
                 and str(act.get("command", "")).strip():
             dc = act.get("declared_class")
+            tool = str(act["tool"]).strip()
+            command = _maybe_prepend_tool(tool, str(act["command"]).strip())
             return StepDecision("action", action={
-                "tool": str(act["tool"]).strip(),
-                "command": str(act["command"]).strip(),
+                "tool": tool,
+                "command": command,
                 "target": str(act.get("target") or default_target).strip(),
                 "declared_class": str(dc).strip() if dc else None,
                 "why": str(act.get("why", "")).strip(),
