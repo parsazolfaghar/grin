@@ -58,8 +58,16 @@ class OllamaClient:
 
 
 def active_backend() -> str:
-    """Which model backend is selected: 'openai' if GRIN_MODEL_BACKEND=openai, else 'ollama'."""
-    return "openai" if os.environ.get("GRIN_MODEL_BACKEND", "").lower() == "openai" else "ollama"
+    """Resolve the model backend. Cloud-default when configured: an explicit GRIN_MODEL_BACKEND
+    (ollama|openai) always wins; otherwise cloud ('openai') if BOTH GRIN_MODEL_URL and
+    GRIN_MODEL_API_KEY are set, else local Ollama. No network probe here — reachability is surfaced
+    by is_up()/`grin doctor`."""
+    explicit = os.environ.get("GRIN_MODEL_BACKEND", "").lower()
+    if explicit in ("openai", "ollama"):
+        return explicit
+    if os.environ.get("GRIN_MODEL_URL") and os.environ.get("GRIN_MODEL_API_KEY"):
+        return "openai"
+    return "ollama"
 
 
 class OpenAICompatClient:
