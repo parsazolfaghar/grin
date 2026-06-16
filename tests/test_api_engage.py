@@ -50,3 +50,18 @@ def test_engage_text_no_target_errors(tmp_path):
     api = _api(tmp_path)
     res = api.engage_text("nothing here")
     assert "error" in res
+
+
+def test_set_stealth_flows_into_engagement(tmp_path, monkeypatch):
+    api = _api(tmp_path)
+    api.set_stealth("quiet")
+    captured = {}
+
+    def fake_start(file, goal, **opts):
+        from grin.engagement import load_engagement
+        captured["stealth"] = load_engagement(file).stealth
+        return {"started": True}
+
+    monkeypatch.setattr(api, "start_engagement", fake_start)
+    api.engage_text("www.test.com")
+    assert captured["stealth"] == "quiet"

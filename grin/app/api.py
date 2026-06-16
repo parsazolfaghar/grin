@@ -39,6 +39,11 @@ class GrinApi:
         # set lazily to avoid an import cycle at module load; real default wired in launch.py
         self._job_runner_factory = job_runner_factory
         self._tool_env = None   # active deployment profile's tool env (None -> use the engagement's)
+        self._stealth = "off"
+
+    def set_stealth(self, level):
+        """Set the stealth level applied to app-launched (ad-hoc) engagements (off|quiet|paranoid)."""
+        self._stealth = level
 
     def set_backend(self, tool_env):
         """Apply a deployment profile's backend: rebuild the Ollama client (re-reads
@@ -195,7 +200,7 @@ class GrinApi:
             if not intent.targets:
                 return {"error": "no target found in prompt"}
             eng, path = build_adhoc_engagement(
-                intent, now=self._now(), operator=self._who())
+                intent, now=self._now(), operator=self._who(), stealth=self._stealth)
             opts = {}
             if intent.bare_target:
                 opts["aggressive"] = True
