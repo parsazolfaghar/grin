@@ -152,6 +152,11 @@ def check_env(engagement, *, ssh_prober, docker_prober) -> list:
                                         f"docker run -d --name {cont} --network host "
                                         f"<image> sleep infinity", "advisory", "host")))
         return checks
+    if kind == "auto":
+        from grin.platform_info import host_has_arsenal
+        if host_has_arsenal():
+            return [Check("env: auto", "ok", "resolves to local arsenal (pentest host detected)")]
+        return [Check("env: auto", "ok", "resolves to docker arsenal (Kali/BlackArch containers)")]
     return [Check(f"env: {kind}", "broken", f"unknown env kind {kind!r}")]
 
 
