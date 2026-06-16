@@ -9,6 +9,7 @@ import re
 import uuid
 from datetime import datetime
 
+from grin.checkpoint import CHECKPOINT_DECISIONS
 from grin.engagement import load_engagement, EngagementError, pending_path
 from grin.inference import OllamaClient
 from grin.platform_info import detect_platform
@@ -278,6 +279,19 @@ class GrinApi:
             return {"error": f"unknown job {job_id!r}"}
         _file, job = entry
         return job.snapshot()
+
+    def resolve_checkpoint(self, job_id, decision):
+        """Answer a pending aggressive checkpoint (sweep|focus|next|stop). Never raises across the bridge."""
+        try:
+            if decision not in CHECKPOINT_DECISIONS:
+                return {"error": f"invalid decision {decision!r}"}
+            entry = self._jobs.get(job_id)
+            if entry is None:
+                return {"error": f"unknown job {job_id!r}"}
+            entry[1].resolve(decision)
+            return {"status": "resumed", "decision": decision}
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
 
     def _merged_snapshot(self, file):
         return {"objectives": [], "findings": self.findings(file), "audit": self.audit(file),
