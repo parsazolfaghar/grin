@@ -67,8 +67,12 @@ def install_grin(os_name: str, *, src: str, dest: str) -> dict:
     """Place the bundled Grin into `dest` (e.g. /Applications). Clean-replaces an existing copy.
     macOS: a .app is itself the launcher. (Linux .desktop / Windows shortcut: Phase 2.)"""
     import shutil
+    if not src or not src.strip("/"):
+        raise ValueError("install_grin: empty src (no Grin payload to install)")
     name = os.path.basename(src.rstrip("/"))
     target = os.path.join(dest, name)
+    if not name:   # defensive: never let target collapse to `dest` itself (would rmtree it)
+        raise ValueError(f"install_grin: cannot derive a bundle name from src {src!r}")
     if os.path.isdir(target):
         shutil.rmtree(target)
     elif os.path.exists(target):

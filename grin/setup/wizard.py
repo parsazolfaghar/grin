@@ -83,6 +83,8 @@ class GrinSetupWizard(QWizard):
         self._api_key = key
 
     def commit_key(self):
+        # blank key = use local Ollama: write no env at all (Grin defaults to local when ~/.grin/env
+        # is absent), so we only persist the cloud config when a key was actually entered
         if self._api_key:
             self.c.save_key(self._api_key)
 

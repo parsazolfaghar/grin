@@ -107,3 +107,12 @@ def test_provision_arsenal_runs_arsenal_up():
     class R: returncode = 0
     provision_arsenal(lambda cmd: calls.append(cmd) or R())
     assert any("arsenal" in c and "up" in c for c in calls)
+
+
+def test_install_grin_rejects_empty_src(tmp_path):
+    import pytest as _pt
+    dest = tmp_path / "Applications"; dest.mkdir()
+    (dest / "keep").write_text("safe")
+    with _pt.raises(ValueError):
+        install_grin("macos", src="", dest=str(dest))     # must NOT rmtree dest
+    assert (dest / "keep").exists()                        # dest untouched

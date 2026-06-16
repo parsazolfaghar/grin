@@ -45,8 +45,10 @@ def main(argv=None) -> int:
         app = QApplication.instance() or QApplication([])
         c = SetupController()
         payload = _payload_dir()
-        children = [os.path.join(payload, x) for x in os.listdir(payload)] if os.path.isdir(payload) else []
-        c.grin_src = children[0] if children else ""
+        # the bundled Grin (skip dotfiles / __MACOSX cruft so we don't pick the wrong entry)
+        names = [x for x in os.listdir(payload) if not x.startswith((".", "__"))] \
+            if os.path.isdir(payload) else []
+        c.grin_src = os.path.join(payload, names[0]) if names else ""
         c.grin_dest = _install_dest(c.os_name)
         wiz = build_wizard(c)
         wiz.show()
