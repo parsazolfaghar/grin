@@ -89,3 +89,13 @@ QScrollArea { border: none; background: transparent; }
 QScrollBar:vertical { background: #0a14cf; width: 8px; margin: 0; }
 QScrollBar::handle:vertical { background: rgba(246,246,244,0.30); min-height: 24px; }
 QScrollBar::add-line, QScrollBar::sub-line { height: 0; }
+
+QLineEdit#engagebox { background: rgba(246,246,244,0.04); border: 1px solid rgba(246,246,244,0.30);
+    color: #f6f6f4; padding: 8px 12px; font-family: "JetBrainsMono Nerd Font", monospace; }
+QLineEdit#engagebox:focus { border-color: #f3df33; }
+QPushButton#engagebtn { background: transparent; border: 1px solid #f3df33; color: #f3df33;
+    padding: 8px 18px; font-weight: bold; }
+QPushButton#engagebtn:hover { background: #f3df33; color: #0a0a0a; }
+QPushButton#engagebtn:disabled { border-color: rgba(246,246,244,0.20); color: rgba(246,246,244,0.30); }
+QLabel#engagepreview { color: rgba(246,246,244,0.70); font-family: "JetBrainsMono Nerd Font", monospace;
+    font-size: 11px; }
