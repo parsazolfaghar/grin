@@ -211,3 +211,48 @@ def test_execute_off_is_unchanged(tmp_path):
     _execute_and_audit(eng, target="t", tool="nmap", command="nmap -sV t",
                        action_class="active-scan", gated=False, approved_by=None, runner=r)
     assert r.cmd == "nmap -sV t"
+
+
+def test_apply_device_stealth_runs_and_audits(tmp_path, monkeypatch):
+    import json
+    from grin.spine import apply_device_stealth
+    from grin.engagement import Engagement, Scope, ROE
+
+    class CapRunner:
+        def __init__(self): self.cmds = []
+        def run(self, target, command, timeout=60):
+            self.cmds.append(command)
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    monkeypatch.setattr("grin.platform_info.host_has_arsenal", lambda *a, **k: True)
+    monkeypatch.setattr("shutil.which", lambda t: "/usr/bin/macchanger" if t == "macchanger" else None)
+
+    eng = Engagement(id="e", name="e", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active", stealth="paranoid")
+    r = CapRunner()
+    apply_device_stealth(eng, runner=r, iface="eth0")
+    assert any("macchanger" in c for c in r.cmds)
+    rec = json.loads(open(eng.audit_log).read().splitlines()[0])
+    assert rec["stealth"] == "paranoid"
+
+
+def test_apply_device_stealth_noop_when_incapable(tmp_path, monkeypatch):
+    from grin.spine import apply_device_stealth
+    from grin.engagement import Engagement, Scope, ROE
+    monkeypatch.setattr("grin.platform_info.host_has_arsenal", lambda *a, **k: False)
+
+    class CapRunner:
+        def __init__(self): self.cmds = []
+        def run(self, target, command, timeout=60):
+            self.cmds.append(command)
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    eng = Engagement(id="e", name="e", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active", stealth="paranoid")
+    r = CapRunner()
+    assert apply_device_stealth(eng, runner=r, iface="eth0") == []
+    assert r.cmds == []

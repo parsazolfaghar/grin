@@ -114,3 +114,22 @@ def deny_action(eng: Engagement, pending_id: str, *, approver: str) -> Outcome:
     return _audit_refuse(eng, target=entry["target"], tool=entry["tool"],
                          command=entry["command"], action_class=entry["resolved_class"],
                          gated=True, reason="operator denied", approved_by=approver)
+
+
+def apply_device_stealth(eng: Engagement, *, runner: Runner, iface: str = "eth0") -> list:
+    """Run the engagement's device-spoof setup (MAC/hostname) once, where it bites. Best-effort: a
+    failed step is audited and does NOT abort the engagement. No-op (returns []) off / behind NAT."""
+    import shutil
+    from grin.platform_info import host_has_arsenal
+    from grin.stealth import profile_for, device_setup, can_spoof_device
+    profile = profile_for(eng.stealth, os.environ)
+    caps = can_spoof_device(host_has_arsenal, shutil.which)
+    cmds = device_setup(profile, iface=iface, can_spoof=caps)
+    recs = []
+    for c in cmds:
+        res = runner.run("localhost", c, int(eng.env.get("timeout", 60)))
+        rec = audit(eng.audit_log, engagement=eng.id, target="localhost", tool=c.split()[0],
+                    command=c, action_class="passive", decision="allow", gated=False,
+                    exit_code=res.exit_code, reason="stealth-device-setup", stealth=eng.stealth)
+        recs.append(rec)
+    return recs
