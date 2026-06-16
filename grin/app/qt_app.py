@@ -347,6 +347,76 @@ class BootView(QWidget):
             self.open_engagement.emit(self._rows[self._sel][0])
 
 
+# ---------------------------------------------------------------- engage bar
+class EngageBar(QWidget):
+    """Free-text task launcher: prompt + ENGAGE + a live interpretation/manual preview. Pure logic
+    methods (set_text/refresh_preview/engage_enabled/_do_engage) so it's testable without clicks."""
+
+    def __init__(self, api, on_engage):
+        super().__init__()
+        self._api = api
+        self._on_engage = on_engage
+        self._preview = {"can_engage": False}
+        lay = QVBoxLayout(self); lay.setContentsMargins(28, 8, 28, 8); lay.setSpacing(6)
+        row = QHBoxLayout()
+        self.box = QLineEdit(); self.box.setObjectName("engagebox")
+        self.box.setPlaceholderText("Describe a task or a target — e.g. bypass login page for www.test.com")
+        self.btn = QPushButton("ENGAGE"); self.btn.setObjectName("engagebtn")
+        self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.btn.clicked.connect(self._do_engage)
+        row.addWidget(self.box, 1); row.addWidget(self.btn)
+        lay.addLayout(row)
+        self.preview = QLabel(""); self.preview.setObjectName("engagepreview")
+        self.preview.setWordWrap(True)
+        lay.addWidget(self.preview)
+        self._timer = QTimer(self); self._timer.setSingleShot(True); self._timer.setInterval(250)
+        self._timer.timeout.connect(self.refresh_preview)
+        self.box.textChanged.connect(lambda _t: self._timer.start())
+        self.btn.setEnabled(False)
+
+    def set_text(self, text):
+        self.box.setText(text)
+
+    def text(self):
+        return self.box.text().strip()
+
+    def refresh_preview(self):
+        out = self._api.interpret(self.text())
+        if out.get("error"):
+            self._preview = {"can_engage": False}
+            self.preview.setText(f"-> {out['error']}")
+            self.btn.setEnabled(False)
+            return
+        self._preview = out
+        self.btn.setEnabled(bool(out.get("can_engage")))
+        self.preview.setText(self._format(out))
+
+    def _format(self, out):
+        if not out.get("targets"):
+            return "-> type a task and a target (e.g. www.test.com)"
+        tgt = out["targets"][0]
+        mode = "full assessment (aggressive)" if out.get("bare_target") else f"goal: {out.get('goal','')}"
+        lines = [f"-> target: {tgt}  ·  type: {out.get('target_type')}  ·  {mode}",
+                 f"   actions: {', '.join(out.get('allowed_actions', []))}"]
+        man = out.get("manual") or {}
+        if man.get("header"):
+            lines.append(f"   {man['header']}")
+        for s in man.get("sections", []):
+            lines.append(f"   [{s['tactic']}] " + "; ".join(s["items"]))
+        return "\n".join(lines)
+
+    def preview_text(self):
+        return self.preview.text()
+
+    def engage_enabled(self):
+        return self.btn.isEnabled()
+
+    def _do_engage(self):
+        if not self._preview.get("can_engage"):
+            return
+        self._on_engage(self.text())
+
+
 # ---------------------------------------------------------------- live view
 class LiveView(QWidget):
     approve = pyqtSignal(str)   # pending id
@@ -695,6 +765,8 @@ class GrinWindow(QWidget):
         self.chrome = Chrome(self); root.addWidget(self.chrome)
 
         self.boot = BootView(); self.boot.open_engagement.connect(self.open_engagement)
+        self.engage_bar = EngageBar(self.api, on_engage=self._engage_text)
+        self.boot.layout().insertWidget(0, self.engage_bar)
         self.live = LiveView()
         self.live.approve.connect(self._approve); self.live.deny.connect(self._deny)
         self.live.copied.connect(self._on_copied)
@@ -895,6 +967,22 @@ class GrinWindow(QWidget):
         self.live.set_command(f'engage --goal "{goal}"')
         self._poll.start()
         return res
+
+    def _engage_text(self, text):
+        res = self.api.engage_text(text)
+        if res.get("error"):
+            self.engage_bar.preview.setText(f"-> {res['error']}")
+            return
+        self._job_id = res.get("job_id")
+        self._job_file = None
+        import time
+        self._run_start = time.monotonic()
+        self._last_sig = None
+        self._notified_pending = set()
+        self._notified_done = False
+        self.live.set_command(f'engage "{text}"')
+        self._poll.start()
+        self.stack.setCurrentWidget(self.live)
 
     def _tick(self):
         if not self._job_id:
