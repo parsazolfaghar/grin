@@ -94,9 +94,16 @@ def test_mode_toggle_switches_persists_and_rewires(tmp_path, monkeypatch):
 
     api = FakeApi()
     _app, w = build_app(api)
-    assert "LOCAL" in w.chrome.mode_btn.text()          # starts local
+    assert "CLOUD" in w.chrome.mode_btn.text()          # starts cloud (cloud-default posture)
+    assert api.tool_env["kind"] == "arsenal"            # cloud uses the local Docker arsenal
+    assert os.environ["GRIN_MODEL_BACKEND"] == "openai" # brain pinned to cloud
     w._toggle_mode()
-    assert "SPLIT" in w.chrome.mode_btn.text()          # toggled
+    assert "LOCAL" in w.chrome.mode_btn.text()          # cloud -> local
+    assert config.get_active()[0] == "local"            # persisted
+    assert api.tool_env["kind"] == "local"
+    assert os.environ["GRIN_MODEL_BACKEND"] == "ollama" # brain pinned local
+    w._toggle_mode()
+    assert "SPLIT" in w.chrome.mode_btn.text()          # local -> split
     assert config.get_active()[0] == "split"            # persisted
     assert "your-rig" in os.environ["GRIN_OLLAMA_URL"]   # inference rewired to rig
     assert api.tool_env["kind"] == "ssh"                # tools rewired to rig

@@ -135,8 +135,8 @@ class Chrome(QWidget):
         self.health.setToolTip("preflight health"); self.set_health(None)
         row.addWidget(self.health)
 
-        # deployment-mode toggle (roadmap R4): click to switch Local <-> Split(rig)
-        self.mode_btn = QPushButton("MODE: LOCAL"); self.mode_btn.setObjectName("modebtn")
+        # deployment-mode toggle (roadmap R4): click to cycle Cloud -> Local -> Split(rig)
+        self.mode_btn = QPushButton("MODE: CLOUD"); self.mode_btn.setObjectName("modebtn")
         self.mode_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.mode_btn.clicked.connect(self.mode_toggle.emit)
         _track(self.mode_btn, 1.6); row.addWidget(self.mode_btn)
