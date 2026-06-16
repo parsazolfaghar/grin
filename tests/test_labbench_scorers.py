@@ -54,3 +54,9 @@ def test_score_run_no_flag_and_refusal():
     assert s.flag_captured is False
     assert s.findings_recall == 0.0
     assert s.refusals == 1 and s.invalid_calls == 1
+
+
+def test_findings_recall_whitespace_fuzzy():
+    from grin.labbench.scorers import findings_recall
+    assert findings_recall(["admin:password"], "creds: ADMIN : PASSWORD here") == 1.0
+    assert findings_recall(["nope"], "nothing relevant") == 0.0

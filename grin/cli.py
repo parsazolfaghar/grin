@@ -226,7 +226,13 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
         print(f"INVALID: {e}", file=sys.stderr)
         return 1
     seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
-    aggressive = aggressive or getattr(eng, "aggressive", False)
+    # honor the engagement's strength level: aggressive levels trigger the sweep; budgets act as a
+    # floor (CLI flags / aggressive still win). Stealth is applied separately by the spine.
+    from grin.strength import strength_params
+    sp = strength_params(getattr(eng, "strength", "normal"))
+    aggressive = aggressive or sp.aggressive or getattr(eng, "aggressive", False)
+    max_objectives = max(max_objectives, sp.max_objectives)
+    max_steps = max(max_steps, sp.max_steps)
     catalog = _load_catalog_or_none() if aggressive else None
     if aggressive:
         from grin.aggressive import DEFAULT_AGGRESSIVE_BUDGET

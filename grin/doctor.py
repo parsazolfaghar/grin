@@ -199,9 +199,14 @@ def check_tools(engagement, runner, tools: list) -> list:
     for t in tools:
         # The runner's `target` arg is ignored by every concrete runner (each runs on its own
         # bound arsenal host); we pass a scope host only to satisfy the signature.
-        res = runner.run(engagement.scope.include[0] if engagement.scope.include else "localhost",
-                         f"command -v {t}")
-        present = res.exit_code == 0 and not res.timed_out
+        try:
+            res = runner.run(engagement.scope.include[0] if engagement.scope.include else "localhost",
+                             f"command -v {t}")
+            present = res.exit_code == 0 and not res.timed_out
+        except Exception as ex:  # noqa: BLE001 - a stopped/unreachable env must not crash the doctor
+            checks.append(Check(f"tool: {t}", "broken",
+                                f"env not reachable ({ex}) — is the container/host up?"))
+            continue
         if present:
             checks.append(Check(f"tool: {t}", "ok", "on PATH in the engagement env"))
         else:
