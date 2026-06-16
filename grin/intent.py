@@ -80,7 +80,9 @@ def parse_intent(text: str, client=None, model: str = "") -> Intent:
                 raw = client.generate(model=model, system=_SYSTEM, prompt=text, temperature=0.0)
                 data = extract_json(raw, want=("targets", "goal"))
                 if data:
-                    targets = [str(t) for t in (data.get("targets") or []) if str(t).strip()]
+                    # cap to a single target — scope locks to one host; extra model output
+                    # must not leak into the preview or scope (review finding)
+                    targets = [str(t) for t in (data.get("targets") or []) if str(t).strip()][:1]
                     goal = str(data.get("goal") or "").strip()
                     ttype = str(data.get("target_type") or "").strip() or (
                         classify_target(targets[0]) if targets else "unknown")

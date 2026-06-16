@@ -935,7 +935,7 @@ class GrinWindow(QWidget):
             e = rows.get(file, {})
             crumb = f"{e.get('id','engagement')} · {e.get('mode','')} · {e.get('autonomy','')}".upper()
         except Exception:  # noqa: BLE001
-            crumb = os.path.basename(file)
+            crumb = os.path.basename(file or "")
         self.chrome.set_breadcrumb(crumb)
         self.chrome.set_running(running)
         self.live.set_data(snap)
@@ -969,6 +969,9 @@ class GrinWindow(QWidget):
         return res
 
     def _engage_text(self, text):
+        if self._poll.isActive():           # a run is in flight — don't orphan it with a second job
+            self.engage_bar.preview.setText("-> a run is already in progress")
+            return
         res = self.api.engage_text(text)
         if res.get("error"):
             self.engage_bar.preview.setText(f"-> {res['error']}")

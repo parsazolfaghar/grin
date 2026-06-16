@@ -50,3 +50,12 @@ def test_parse_falls_back_when_client_down():
     i = parse_intent("scan 10.0.0.5", client=DownClient(), model="m")
     assert i.targets == ["10.0.0.5"]
     assert i.target_type == "ip-host"
+
+
+def test_parse_llm_caps_to_single_target():
+    class MultiClient:
+        def is_up(self): return True
+        def generate(self, **k):
+            return '{"targets": ["a.test.com", "b.test.com"], "goal": "x", "target_type": "web-url"}'
+    i = parse_intent("anything", client=MultiClient(), model="m")
+    assert i.targets == ["a.test.com"]   # extra targets dropped (scope locks to one)
