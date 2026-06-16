@@ -41,7 +41,7 @@ def _os_release_is_pentest(os_release_path: str) -> bool:
     for line in text.splitlines():
         if line.startswith("id=") or line.startswith("id_like="):
             val = line.split("=", 1)[1].strip().strip('"').strip("'")
-            if any(pid in val.split() or pid == val for pid in _PENTEST_IDS):
+            if any(pid in val.split() for pid in _PENTEST_IDS):
                 return True
     return False
 
