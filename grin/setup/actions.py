@@ -23,3 +23,41 @@ def docker_status(run, which) -> dict:
         return {"installed": False, "running": False}
     r = run(["docker", "info"])
     return {"installed": True, "running": r.returncode == 0}
+
+
+_DOCKER_URL = "https://www.docker.com/products/docker-desktop/"
+
+
+def docker_install_plan(os_name: str, which) -> dict:
+    """Decide how to install Docker per OS (pure, no execution). mode 'auto' -> run command (the OS
+    shows its own admin/sudo prompt); 'guide' -> the wizard shows note/URL for a manual step."""
+    if os_name == "macos":
+        if which("brew"):
+            return {"mode": "auto", "command": ["brew", "install", "--cask", "docker"],
+                    "note": "Installing Docker Desktop via Homebrew (you may be prompted)."}
+        return {"mode": "guide", "command": [],
+                "note": f"Install Docker Desktop for Mac: {_DOCKER_URL}"}
+    if os_name == "windows":
+        if which("winget"):
+            return {"mode": "auto",
+                    "command": ["winget", "install", "-e", "--id", "Docker.DockerDesktop"],
+                    "note": "Installing Docker Desktop via winget (accept the UAC prompt; "
+                            "Windows may need a reboot to finish WSL2 setup)."}
+        return {"mode": "guide", "command": [],
+                "note": f"Install Docker Desktop for Windows: {_DOCKER_URL}"}
+    if os_name == "linux":
+        if which("curl"):
+            return {"mode": "auto", "command": ["sh", "-c", "curl -fsSL https://get.docker.com | sudo sh"],
+                    "note": "Installing Docker Engine via the official script (you'll be asked for sudo). "
+                            "You may need to log out/in for the docker group to apply."}
+        return {"mode": "guide", "command": [],
+                "note": f"Install Docker for your distro: {_DOCKER_URL}"}
+    return {"mode": "guide", "command": [], "note": f"Install Docker: {_DOCKER_URL}"}
+
+
+def run_install_plan(plan: dict, run) -> dict:
+    """Execute an 'auto' plan; pass a 'guide' plan straight back for the wizard to display."""
+    if plan.get("mode") != "auto":
+        return {"status": "guide", "note": plan.get("note", "")}
+    r = run(plan["command"])
+    return {"status": "installed" if r.returncode == 0 else "failed", "note": plan.get("note", "")}
