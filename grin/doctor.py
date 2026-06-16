@@ -6,6 +6,7 @@ import os
 from dataclasses import dataclass
 
 from grin.platform_info import PlatformInfo
+from grin.arsenal import DEFAULT_ARSENALS
 
 
 @dataclass(frozen=True)
@@ -154,6 +155,20 @@ def check_env(engagement, *, ssh_prober, docker_prober) -> list:
     return [Check(f"env: {kind}", "broken", f"unknown env kind {kind!r}")]
 
 
+def check_arsenal(containers, *, running_probe) -> list:
+    """For env.kind == 'arsenal': each arsenal container must be running.
+    running_probe(name) -> bool is injected so this is pure + testable."""
+    checks = []
+    for c in containers:
+        if running_probe(c):
+            checks.append(Check(f"arsenal: {c}", "ok", "running"))
+        else:
+            checks.append(Check(f"arsenal: {c}", "broken", "not running",
+                                fix=Fix("provision arsenal", "grin arsenal up",
+                                        "advisory", "host")))
+    return checks
+
+
 def check_tools(engagement, runner, tools: list) -> list:
     env = engagement.env or {}
     image_hint = env.get("container", "")
@@ -187,9 +202,18 @@ def run_doctor(*, platform, ollama, engagement, runner, required_models, tools,
     else:
         checks += check_models(ollama, required_models)
     if engagement is not None:
-        env_checks = check_env(engagement, ssh_prober=ssh_prober, docker_prober=docker_prober)
-        checks += env_checks
-        env_ok = all(c.status in ("ok", "skipped") for c in env_checks)
+        env_kind = (engagement.env or {}).get("kind")
+        if env_kind == "arsenal":
+            containers = (engagement.env or {}).get("containers") or DEFAULT_ARSENALS
+            running_probe = (lambda c: (docker_prober(c) or {}).get("container", False)
+                             if docker_prober else lambda c: False)
+            arsenal_checks = check_arsenal(containers, running_probe=running_probe)
+            checks += arsenal_checks
+            env_ok = all(c.status in ("ok", "skipped") for c in arsenal_checks)
+        else:
+            env_checks = check_env(engagement, ssh_prober=ssh_prober, docker_prober=docker_prober)
+            checks += env_checks
+            env_ok = all(c.status in ("ok", "skipped") for c in env_checks)
         if env_ok and runner is not None:
             checks += check_tools(engagement, runner, tools)
         else:
