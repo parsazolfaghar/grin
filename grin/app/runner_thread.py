@@ -39,6 +39,8 @@ class JobRunner:
         return decision
 
     def resolve(self, decision):
+        if self._checkpoint is None:
+            return   # nothing pending — ignore a stale / double-click resolve (don't pre-arm)
         self._cp_decision = decision
         self._cp_event.set()
 
