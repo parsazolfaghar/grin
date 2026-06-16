@@ -165,3 +165,11 @@ def test_approve_tool_rejects_unsafe_name(tmp_path):
                                       root=str(tmp_path), tool_acquire="ask")
     out = api.approve_tool(path, "sqlmap; rm -rf /")
     assert "error" in out and "unsafe" in out["error"].lower()
+
+
+def test_engage_text_returns_file(tmp_path, monkeypatch):
+    api = _api(tmp_path)
+    monkeypatch.setattr(api, "start_engagement",
+                        lambda file, goal, **opts: {"job_id": "j1", "started": True})
+    res = api.engage_text("www.test.com")
+    assert res["file"].endswith(".yaml")     # GUI can bind to this engagement

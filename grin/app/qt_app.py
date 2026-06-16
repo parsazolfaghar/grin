@@ -1022,6 +1022,7 @@ class GrinWindow(QWidget):
                 "audit": self.api.audit(file), "blocked": self.api.blocked(file)}
         self._show_live(file, snap, running=False)
         self._last_sig = _snap_sig(snap)
+        self._refresh_tools()   # show any already-pending tool requests immediately, not on next tick
 
     def _show_live(self, file, snap, running):
         try:
@@ -1071,7 +1072,7 @@ class GrinWindow(QWidget):
             self.engage_bar.preview.setText(f"-> {res['error']}")
             return
         self._job_id = res.get("job_id")
-        self._job_file = None
+        self._job_file = res.get("file")   # bind so tool prompts surface for ad-hoc runs too
         import time
         self._run_start = time.monotonic()
         self._last_sig = None
@@ -1130,10 +1131,11 @@ class GrinWindow(QWidget):
             self._refresh_tools()
 
     def _refresh_tools(self):
-        if not self._job_file:
+        getter = getattr(self.api, "pending_tools", None)
+        if not self._job_file or getter is None:
             self.tool_strip.set_tools([])
             return
-        pend = self.api.pending_tools(self._job_file)
+        pend = getter(self._job_file)
         self.tool_strip.set_tools(pend if isinstance(pend, list) else [])
 
     def _approve(self, pid):
