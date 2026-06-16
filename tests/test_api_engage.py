@@ -196,3 +196,16 @@ def test_resolve_checkpoint_invalid(tmp_path):
     api._jobs["j1"] = ("f.yaml", FakeJob())
     assert "error" in api.resolve_checkpoint("j1", "bogus")
     assert "error" in api.resolve_checkpoint("nope", "focus")
+
+
+def test_stop_engagement(tmp_path):
+    api = _api(tmp_path)
+
+    class FakeJob:
+        def __init__(self): self.cancelled = False
+        def cancel(self): self.cancelled = True
+    job = FakeJob()
+    api._jobs["j1"] = ("f.yaml", job)
+    assert api.stop_engagement("j1").get("status") == "stopping"
+    assert job.cancelled is True
+    assert "error" in api.stop_engagement("nope")

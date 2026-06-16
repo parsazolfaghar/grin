@@ -30,14 +30,24 @@ UA_POOL = (
 )
 
 
+def _ua_pool() -> tuple:
+    """The active UA pool: GRIN_UA_POOL (comma- or newline-separated) if set, else the built-in pool.
+    Lets the operator refresh stale browser strings without a code change."""
+    import os
+    raw = os.environ.get("GRIN_UA_POOL", "")
+    custom = tuple(u.strip() for u in raw.replace("\n", ",").split(",") if u.strip())
+    return custom or UA_POOL
+
+
 def _pick_ua(seed) -> str:
     """Deterministically choose a UA from the pool for this run. A stable seed (the engagement id)
     keeps the UA constant within a run but different across engagements. No seed -> DEFAULT_UA."""
     if not seed:
         return DEFAULT_UA
     import hashlib
-    idx = int(hashlib.sha1(str(seed).encode()).hexdigest(), 16) % len(UA_POOL)
-    return UA_POOL[idx]
+    pool = _ua_pool()
+    idx = int(hashlib.sha1(str(seed).encode()).hexdigest(), 16) % len(pool)
+    return pool[idx]
 
 
 @dataclass(frozen=True)

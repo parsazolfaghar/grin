@@ -139,3 +139,10 @@ def test_spine_seeds_ua_per_engagement(tmp_path):
     _execute_and_audit(eng, target="t", tool="curl", command="curl http://t/",
                        action_class="active-scan", gated=False, approved_by=None, runner=r)
     assert any(ua in r.cmd for ua in UA_POOL)     # a pool UA was injected via the eng.id seed
+
+
+def test_ua_pool_env_override(monkeypatch):
+    from grin.stealth import profile_for
+    monkeypatch.setenv("GRIN_UA_POOL", "UA-One, UA-Two")
+    picks = {profile_for("quiet", {}, seed=f"e{i}").ua for i in range(20)}
+    assert picks <= {"UA-One", "UA-Two"} and len(picks) >= 1   # only the custom pool is used

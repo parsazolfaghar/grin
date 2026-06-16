@@ -293,6 +293,18 @@ class GrinApi:
         except Exception as ex:  # noqa: BLE001
             return {"error": str(ex)}
 
+    def stop_engagement(self, job_id):
+        """Operator Stop: cooperatively end a running engagement (the loop stops between objectives).
+        Never raises across the bridge."""
+        try:
+            entry = self._jobs.get(job_id)
+            if entry is None:
+                return {"error": f"unknown job {job_id!r}"}
+            entry[1].cancel()
+            return {"status": "stopping"}
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
+
     def _merged_snapshot(self, file):
         return {"objectives": [], "findings": self.findings(file), "audit": self.audit(file),
                 "blocked": self.blocked(file)}
