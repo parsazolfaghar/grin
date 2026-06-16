@@ -209,3 +209,29 @@ def test_stop_engagement(tmp_path):
     assert api.stop_engagement("j1").get("status") == "stopping"
     assert job.cancelled is True
     assert "error" in api.stop_engagement("nope")
+
+
+def test_doctor_uses_active_backend(tmp_path, monkeypatch):
+    import grin.app.api as apimod
+    captured = {}
+    def fake_run_doctor(**kw):
+        captured["backend"] = kw.get("backend")
+        return type("R", (), {"checks": [], "ok": True})()
+    monkeypatch.setattr(apimod, "run_doctor", fake_run_doctor)
+    monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
+    monkeypatch.setenv("GRIN_MODEL_URL", "http://x")
+    monkeypatch.setenv("GRIN_MODEL_API_KEY", "k")
+    apimod.GrinApi(engagements_dir=str(tmp_path)).doctor()
+    assert captured["backend"] == "openai"          # GUI preflight checks the cloud brain, not Ollama
+
+
+def test_doctor_local_backend_default(tmp_path, monkeypatch):
+    import grin.app.api as apimod
+    captured = {}
+    monkeypatch.setattr(apimod, "run_doctor",
+                        lambda **kw: captured.update(backend=kw.get("backend")) or
+                        type("R", (), {"checks": [], "ok": True})())
+    for v in ("GRIN_MODEL_BACKEND", "GRIN_MODEL_URL", "GRIN_MODEL_API_KEY"):
+        monkeypatch.delenv(v, raising=False)
+    apimod.GrinApi(engagements_dir=str(tmp_path)).doctor()
+    assert captured["backend"] == "ollama"          # no cloud config -> local check as before
