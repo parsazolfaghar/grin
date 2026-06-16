@@ -27,6 +27,8 @@ from grin.bench.tasks import default_cases
 from grin.bench.runner import run_bench
 from grin.bench.report import to_text, to_json
 from grin.lab.control import run_up, run_down, run_reset, run_status
+from grin.arsenal import (run_up as arsenal_up, run_down as arsenal_down,
+                          run_status as arsenal_status, run_add as arsenal_add)
 from grin.lab.answers import load_answers as _load_lab_answers
 from grin.lab.engagements import engagement_dict
 from grin.lab.control import LAB_DIR as _LAB_DIR
@@ -613,6 +615,22 @@ def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali") -> int:
     return 2
 
 
+def cmd_arsenal(action: str, tool: str = None) -> int:
+    if action == "up":
+        return arsenal_up()
+    if action == "down":
+        return arsenal_down()
+    if action == "status":
+        return arsenal_status()
+    if action == "add":
+        if not tool:
+            print("usage: grin arsenal add <tool>", file=sys.stderr)
+            return 2
+        return arsenal_add(tool)
+    print(f"unknown arsenal action {action!r}", file=sys.stderr)
+    return 2
+
+
 def _clear_engagement_artifacts(eng):
     """Remove this engagement's append-only artifacts so a benchmark run is scored clean."""
     import glob
@@ -795,6 +813,10 @@ def build_parser() -> argparse.ArgumentParser:
     p_lb.add_argument("--out", default="lab/results/ranking.txt")
     p_lb.add_argument("--runner", default="grin-kali")
 
+    p_ars = sub.add_parser("arsenal", help="provision/manage the Kali+BlackArch tool arsenals")
+    p_ars.add_argument("action", choices=["up", "down", "status", "add"])
+    p_ars.add_argument("tool", nargs="?", default=None, help="(add) tool to install")
+
     return parser
 
 
@@ -848,6 +870,8 @@ def main(argv=None) -> int:
         return cmd_lab(args.action, out_dir=args.out_dir, runner=args.runner)
     if args.group == "labbench":
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
+    if args.group == "arsenal":
+        return cmd_arsenal(args.action, tool=args.tool)
     return 2
 
 
