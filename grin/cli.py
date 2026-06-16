@@ -821,6 +821,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None) -> int:
+    from grin.config import load_env_file
+    load_env_file()
     args = build_parser().parse_args(argv)
     if args.group == "engagement" and args.action == "validate":
         return cmd_validate(args.file)

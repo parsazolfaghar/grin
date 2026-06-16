@@ -5,6 +5,8 @@ import sys
 
 
 def main(argv=None) -> int:
+    from grin.config import load_env_file
+    load_env_file()
     argv = argv if argv is not None else sys.argv[1:]
     engagements_dir = argv[0] if argv else "."
     try:
