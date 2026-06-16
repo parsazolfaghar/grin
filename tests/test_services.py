@@ -1,4 +1,4 @@
-from grin.services import Service, extract_services
+from grin.services import extract_services
 
 
 NMAP = """Starting Nmap 7.99 ( https://nmap.org )

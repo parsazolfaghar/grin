@@ -1,4 +1,3 @@
-import pytest
 from grin.classes import (
     ACTION_CLASSES, class_rank, resolve_class, UNKNOWN_FLOOR,
 )

@@ -1,4 +1,4 @@
-from grin.prompts import build_step_prompt, parse_step, StepDecision
+from grin.prompts import build_step_prompt, parse_step
 from grin.finding import Finding
 from grin.journal import Journal, Step
 

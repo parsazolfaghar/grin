@@ -1,4 +1,4 @@
-from grin.installer import apply_fixes, FixResult
+from grin.installer import apply_fixes
 from grin.doctor import Fix
 
 def _auto(runner="ollama", cmd="ollama pull x"):

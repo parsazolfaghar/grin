@@ -1,4 +1,3 @@
-import json
 from grin.secret import Secret
 from grin.loot import loot_dir, LootStore
 from grin.engagement import validate_engagement

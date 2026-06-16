@@ -1,5 +1,5 @@
 from grin.labbench.scorers import RunScore
-from grin.labbench.report import aggregate, ModelAgg, to_text
+from grin.labbench.report import aggregate, to_text
 
 
 def _rs(tid, flag, recall, refusals=0, invalid=0, dur=10.0):

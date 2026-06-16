@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer, QSettings, QObject, QRect, pyqtSignal
 from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadialGradient, QIcon)
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
-    QGridLayout, QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSplitter, QLineEdit,
+    QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSplitter, QLineEdit,
     QDialog,
 )
 

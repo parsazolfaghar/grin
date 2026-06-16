@@ -20,7 +20,7 @@ def test_doctor_fix_yes_pulls_missing_model(monkeypatch, capsys):
     monkeypatch.setattr(cli, "OllamaClient", lambda *a, **k: FakeClient(up=True, models=[]))
     pulled = []
     monkeypatch.setattr(cli, "_run_ollama_pull", lambda cmd: (pulled.append(cmd) or ("done", True)))
-    rc = cli.cmd_doctor(None, fix=True, yes=True, models=["qwen3:14b"], tools=None)
+    cli.cmd_doctor(None, fix=True, yes=True, models=["qwen3:14b"], tools=None)
     out = capsys.readouterr().out
     assert any("qwen3:14b" in c for c in pulled)
     assert "applied" in out.lower() or "done" in out.lower()

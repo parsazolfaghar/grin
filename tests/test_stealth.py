@@ -1,4 +1,4 @@
-from grin.stealth import STEALTH_LEVELS, profile_for, apply, StealthProfile
+from grin.stealth import STEALTH_LEVELS, profile_for, apply
 
 
 def test_levels():

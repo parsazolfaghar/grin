@@ -7,14 +7,12 @@ never mentions them in its `done` reply.
 import json
 from datetime import datetime
 
-import pytest
 
 from grin.engagement import validate_engagement
-from grin.executor import execute_task, MAX_NOPROGRESS
+from grin.executor import execute_task
 from grin.inference import FakeClient
 from grin.journal import Journal, Step
 from grin.runner import ExecResult
-from grin.secret import Secret
 
 NOW = datetime(2026, 1, 1)
 

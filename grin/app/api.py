@@ -305,7 +305,7 @@ def _catalog():
 
 
 def save_result_for(eng, res):
-    from grin.report_store import save_result, result_path
+    from grin.report_store import result_path
     save_result(result_path(eng), res)
 
 

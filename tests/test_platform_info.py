@@ -1,4 +1,4 @@
-from grin.platform_info import detect_platform, PlatformInfo
+from grin.platform_info import detect_platform
 
 def test_macos_maps_to_brew():
     p = detect_platform(system=lambda: "Darwin", which=lambda c: "/x" if c == "brew" else None)

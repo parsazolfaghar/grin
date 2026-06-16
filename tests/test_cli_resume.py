@@ -2,8 +2,7 @@ import json
 from datetime import datetime
 from grin.cli import cmd_engage_resume, build_parser, main
 import grin.cli as cli
-from grin.orchestrator import orchestrate, EngagementResult
-from grin.objective import Objective
+from grin.orchestrator import orchestrate
 from grin.engagement import load_engagement
 from grin.report_store import save_result, load_result, result_path
 from grin.results import ResultStore, results_path

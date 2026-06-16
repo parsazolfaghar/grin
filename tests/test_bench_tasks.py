@@ -1,4 +1,4 @@
-from grin.bench.tasks import default_cases, _StubJournal, BenchCase
+from grin.bench.tasks import default_cases, _StubJournal
 
 def test_stub_journal_returns_canned_history():
     j = _StubJournal("OUTPUT: 22/tcp open ssh")

@@ -1,4 +1,4 @@
-from grin.intent import classify_target, parse_intent, Intent
+from grin.intent import classify_target, parse_intent
 
 
 def test_classify_target_table():

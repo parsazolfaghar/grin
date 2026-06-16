@@ -9,13 +9,12 @@ Three scenarios:
 import json
 from datetime import datetime
 
-import pytest
 
 from grin.engagement import validate_engagement
-from grin.executor import execute_task, MAX_NOPROGRESS
+from grin.executor import execute_task
 from grin.inference import FakeClient
 from grin.journal import Journal, Step
-from grin.runner import FakeRunner, ExecResult
+from grin.runner import ExecResult
 
 NOW = datetime(2026, 1, 1)
 
@@ -135,9 +134,8 @@ def test_distinct_commands_each_execute(tmp_path):
 def test_render_history_marks_duplicate(tmp_path):
     """Journal.render_history() must include the duplicate-skip marker text
     for steps recorded with decision='duplicate'."""
-    eng = make_eng(tmp_path)
+    make_eng(tmp_path)
     task_id = "deadbeef"
-    from grin.journal import journal_path
     j = Journal(
         task_id=task_id,
         objective="test",
