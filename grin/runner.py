@@ -122,6 +122,8 @@ class ArsenalRunner:
                              else os.environ.get("GRIN_ARSENAL_AUTOINSTALL") == "1")
 
     def _probe(self, container: str, tool: str) -> bool:
+        if self._client is None:
+            return False
         try:
             code, _ = self._client.containers.get(container).exec_run(
                 ["sh", "-lc", f"command -v {tool}"], demux=False)
@@ -138,6 +140,8 @@ class ArsenalRunner:
         return c
 
     def _install(self, tool: str):
+        if self._client is None:
+            return None
         for c in self._containers:
             try:
                 code, _ = self._client.containers.get(c).exec_run(
