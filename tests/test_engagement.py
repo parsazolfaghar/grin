@@ -122,3 +122,20 @@ def test_adhoc_is_a_valid_mode(tmp_path):
     }))
     eng = load_engagement(str(p))
     assert eng.mode == "adhoc"
+
+
+def test_stealth_defaults_off_and_validates(tmp_path):
+    import yaml
+    from grin.engagement import load_engagement, EngagementError
+    base = {"id": "s", "name": "s", "mode": "adhoc", "scope": {"in": ["t"]},
+            "roe": {"allowed_actions": ["passive"]}, "autonomy": "autonomous",
+            "env": {"kind": "local"}, "audit_log": str(tmp_path / "a.jsonl"), "state": "active"}
+    p = tmp_path / "e.yaml"; p.write_text(yaml.safe_dump(base))
+    assert load_engagement(str(p)).stealth == "off"
+    p.write_text(yaml.safe_dump({**base, "stealth": "paranoid"}))
+    assert load_engagement(str(p)).stealth == "paranoid"
+    p.write_text(yaml.safe_dump({**base, "stealth": "bogus"}))
+    try:
+        load_engagement(str(p)); assert False, "expected EngagementError"
+    except EngagementError:
+        pass

@@ -116,6 +116,10 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
     if not planner_client.is_up():
         return EngagementResult("model_unavailable", goal=goal)
 
+    if eng.stealth != "off":
+        from grin.spine import apply_device_stealth
+        apply_device_stealth(eng, runner=runner)
+
     eff_planner = planner_model or model
     queue = initial_plan(planner_client, eff_planner, goal, eng.scope.include, seeds or [])
     findings: list = []

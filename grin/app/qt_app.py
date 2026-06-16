@@ -103,6 +103,7 @@ class Chrome(QWidget):
     """Frameless custom title bar: brand, breadcrumb, chips, window controls. Draggable."""
 
     mode_toggle = pyqtSignal()
+    stealth_toggle = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -141,6 +142,12 @@ class Chrome(QWidget):
         self.mode_btn.clicked.connect(self.mode_toggle.emit)
         _track(self.mode_btn, 1.6); row.addWidget(self.mode_btn)
 
+        # stealth toggle: default OFF every launch; cycles OFF -> QUIET -> PARANOID
+        self.stealth_btn = QPushButton("STEALTH: OFF"); self.stealth_btn.setObjectName("modebtn")
+        self.stealth_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stealth_btn.clicked.connect(self.stealth_toggle.emit)
+        _track(self.stealth_btn, 1.6); row.addWidget(self.stealth_btn)
+
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
                                  ("✕", "wcclose", window.close)):
@@ -159,6 +166,9 @@ class Chrome(QWidget):
 
     def set_mode_label(self, text):
         self.mode_btn.setText(f"MODE: {text}")
+
+    def set_stealth_label(self, text):
+        self.stealth_btn.setText(f"STEALTH: {text}")
 
     def set_health(self, ok):
         """Doctor health dot: green ok / amber issues / dim unknown (checking)."""
@@ -800,6 +810,8 @@ class GrinWindow(QWidget):
         self._poll = QTimer(self); self._poll.setInterval(1500); self._poll.timeout.connect(self._tick)
 
         self.chrome.mode_toggle.connect(self._toggle_mode)
+        self._stealth_level = "off"
+        self.chrome.stealth_toggle.connect(self._toggle_stealth)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -868,6 +880,12 @@ class GrinWindow(QWidget):
         config.set_active(config.next_profile(name))
         self._apply_active_profile()
         self.refresh_boot()                          # re-check doctor at the new endpoint
+
+    def _toggle_stealth(self):
+        order = ["off", "quiet", "paranoid"]
+        self._stealth_level = order[(order.index(self._stealth_level) + 1) % len(order)]
+        self.api.set_stealth(self._stealth_level)
+        self.chrome.set_stealth_label(self._stealth_level.upper())
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()

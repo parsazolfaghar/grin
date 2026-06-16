@@ -31,7 +31,7 @@ def _slug(s: str) -> str:
 
 
 def build_adhoc_engagement(intent: Intent, *, now: datetime,
-                           operator: str, root: str = DEFAULT_ROOT):
+                           operator: str, root: str = DEFAULT_ROOT, stealth: str = "off"):
     if not intent.targets:
         raise ValueError("no target in intent")
     target = normalize_target(intent.targets[0])
@@ -52,6 +52,7 @@ def build_adhoc_engagement(intent: Intent, *, now: datetime,
         "audit_log": audit_log,
         "state": "active",
         "aggressive": bool(intent.bare_target),
+        "stealth": stealth,
     }
     path = os.path.join(root, f"{eid}.yaml")
     with open(path, "w") as fh:

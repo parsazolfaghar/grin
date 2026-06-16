@@ -12,7 +12,8 @@ def result_digest(output: str) -> str:
 
 def audit(path, *, engagement: str, target: str, tool: str, command: str,
           action_class: str, decision: str, gated: bool, approved_by=None,
-          exit_code=None, result_digest=None, duration_s=None, reason=None) -> dict:
+          exit_code=None, result_digest=None, duration_s=None, reason=None,
+          stealth=None) -> dict:
     """Append exactly one audit line and return the record. Fields beyond the core
     set (reason/exit_code/...) are included only when provided."""
     record = {
@@ -34,6 +35,8 @@ def audit(path, *, engagement: str, target: str, tool: str, command: str,
         record["duration_s"] = round(duration_s, 3)
     if reason is not None:
         record["reason"] = reason
+    if stealth is not None:
+        record["stealth"] = stealth
 
     p = Path(path)
     p.parent.mkdir(parents=True, exist_ok=True)

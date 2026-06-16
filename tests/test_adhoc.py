@@ -40,3 +40,14 @@ def test_build_bare_target_sets_aggressive(tmp_path):
     assert eng.aggressive is True
     assert load_engagement(path).aggressive is True
     assert load_engagement(path).env == {"kind": "auto"}
+
+
+def test_build_carries_stealth(tmp_path):
+    from datetime import datetime
+    from grin.engagement import load_engagement
+    from grin.intent import parse_intent
+    from grin.adhoc import build_adhoc_engagement
+    intent = parse_intent("www.test.com")
+    _eng, path = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
+                                        operator="op", root=str(tmp_path), stealth="paranoid")
+    assert load_engagement(path).stealth == "paranoid"

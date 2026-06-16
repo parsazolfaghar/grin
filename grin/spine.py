@@ -1,6 +1,7 @@
 """The engagement spine — the SOLE path to execution. Every action goes
 resolve_class -> authorize -> gate -> (execute | enqueue) -> audit, fail-closed.
 There is no other function in Grin that runs a command or writes an allow line."""
+import os
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from grin.gate import gate
 from grin.pending import PendingStore
 from grin.runner import ExecResult, Runner
 from grin.safety import is_self_destructive, destructive_allowed
+from grin.stealth import profile_for, apply as apply_stealth
 
 
 @dataclass
@@ -32,11 +34,15 @@ def _execute_and_audit(eng: Engagement, *, target, tool, command, action_class,
                              action_class=action_class, gated=gated, approved_by=approved_by,
                              reason="blocked: self-destructive command (R3 self-guard); "
                                     "set GRIN_ALLOW_DESTRUCTIVE=1 to override")
+    profile = profile_for(eng.stealth, os.environ)
+    command = apply_stealth(profile, tool, command)
+    stealth_level = eng.stealth if eng.stealth != "off" else None
     res = runner.run(target, command, int(eng.env.get("timeout", 60)))
     rec = audit(eng.audit_log, engagement=eng.id, target=target, tool=tool,
                 command=command, action_class=action_class, decision="allow",
                 gated=gated, approved_by=approved_by, exit_code=res.exit_code,
-                result_digest=result_digest(res.output), duration_s=res.duration_s)
+                result_digest=result_digest(res.output), duration_s=res.duration_s,
+                stealth=stealth_level)
     return Outcome(status="executed", result=res, record=rec)
 
 
@@ -108,3 +114,22 @@ def deny_action(eng: Engagement, pending_id: str, *, approver: str) -> Outcome:
     return _audit_refuse(eng, target=entry["target"], tool=entry["tool"],
                          command=entry["command"], action_class=entry["resolved_class"],
                          gated=True, reason="operator denied", approved_by=approver)
+
+
+def apply_device_stealth(eng: Engagement, *, runner: Runner, iface: str = "eth0") -> list:
+    """Run the engagement's device-spoof setup (MAC/hostname) once, where it bites. Best-effort: a
+    failed step is audited and does NOT abort the engagement. No-op (returns []) off / behind NAT."""
+    import shutil
+    from grin.platform_info import host_has_arsenal
+    from grin.stealth import profile_for, device_setup, can_spoof_device
+    profile = profile_for(eng.stealth, os.environ)
+    caps = can_spoof_device(host_has_arsenal, shutil.which)
+    cmds = device_setup(profile, iface=iface, can_spoof=caps)
+    recs = []
+    for c in cmds:
+        res = runner.run("localhost", c, int(eng.env.get("timeout", 60)))
+        rec = audit(eng.audit_log, engagement=eng.id, target="localhost", tool=c.split()[0],
+                    command=c, action_class="passive", decision="allow", gated=False,
+                    exit_code=res.exit_code, reason="stealth-device-setup", stealth=eng.stealth)
+        recs.append(rec)
+    return recs
