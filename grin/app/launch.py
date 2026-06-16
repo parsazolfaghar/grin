@@ -23,6 +23,22 @@ def _logger():
     return log
 
 
+def resolve_engagements_dir(argv) -> str:
+    """Where the GUI looks for engagements. An explicit arg wins; else $GRIN_ENGAGEMENTS; else the
+    first existing of ~/.grin/engagements or ~/grin/examples; else '.'. Lets a Finder/launcher-clicked
+    app (cwd '/') still show engagements instead of an empty list."""
+    import os
+    if argv:
+        return argv[0]
+    env = os.environ.get("GRIN_ENGAGEMENTS")
+    if env:
+        return env
+    for cand in (os.path.expanduser("~/.grin/engagements"), os.path.expanduser("~/grin/examples")):
+        if os.path.isdir(cand):
+            return cand
+    return "."
+
+
 def main(argv=None) -> int:
     log = _logger()
     log(f"launch.main start (sys.argv={sys.argv})")
@@ -32,7 +48,7 @@ def main(argv=None) -> int:
         argv = argv if argv is not None else sys.argv[1:]
         # ignore macOS process-serial / -NS* launch args so the dir stays sane
         argv = [a for a in argv if not a.startswith("-psn_") and not a.startswith("-NS")]
-        engagements_dir = argv[0] if argv else "."
+        engagements_dir = resolve_engagements_dir(argv)
         log(f"engagements_dir={engagements_dir!r}")
         try:
             from grin.app.qt_app import run
