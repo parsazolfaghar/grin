@@ -485,6 +485,46 @@ class ToolStrip(QWidget):
             self._on_allow(self._tools[0])
 
 
+# ---------------------------------------------------------------- checkpoint bar
+class CheckpointBar(QWidget):
+    """Aggressive capture checkpoint: shows the captured flag + Keep/Focus/Next/Stop. Pure helpers
+    (set_checkpoint/clear/choose/is_active/text) keep it testable without simulating clicks."""
+
+    _BUTTONS = (("KEEP SWEEPING", "sweep"), ("FOCUS THIS TARGET", "focus"),
+                ("NEXT TARGET", "next"), ("STOP", "stop"))
+
+    def __init__(self, on_decision):
+        super().__init__()
+        self._on_decision = on_decision
+        lay = QVBoxLayout(self); lay.setContentsMargins(16, 8, 16, 8); lay.setSpacing(6)
+        self._label = QLabel(""); self._label.setObjectName("engagepreview"); self._label.setWordWrap(True)
+        lay.addWidget(self._label)
+        row = QHBoxLayout(); row.setSpacing(8)
+        for text, decision in self._BUTTONS:
+            b = QPushButton(text)
+            b.setObjectName("engagebtn" if decision != "stop" else "modebtn")
+            b.clicked.connect(lambda _c=False, d=decision: self.choose(d))
+            row.addWidget(b)
+        lay.addLayout(row)
+        self.hide()
+
+    def set_checkpoint(self, cp):
+        self._label.setText(f"CAPTURED {cp.get('flag','?')} on {cp.get('target','?')} — continue?")
+        self.show()
+
+    def clear(self):
+        self.hide()
+
+    def is_active(self):
+        return self.isVisible()
+
+    def text(self):
+        return self._label.text()
+
+    def choose(self, decision):
+        self._on_decision(decision)
+
+
 # ---------------------------------------------------------------- live view
 class LiveView(QWidget):
     approve = pyqtSignal(str)   # pending id
@@ -840,6 +880,8 @@ class GrinWindow(QWidget):
         self.live.copied.connect(self._on_copied)
         self.tool_strip = ToolStrip(on_allow=self._allow_tool, on_deny=self._deny_tool)
         self.live.layout().insertWidget(1, self.tool_strip)
+        self.checkpoint_bar = CheckpointBar(on_decision=self._resolve_checkpoint)
+        self.live.layout().insertWidget(2, self.checkpoint_bar)
 
         from PyQt6.QtWidgets import QStackedWidget
         self.stack = QStackedWidget()
@@ -1096,6 +1138,11 @@ class GrinWindow(QWidget):
         else:
             self._update_status(snap, running)  # still tick the elapsed clock / counters
         self._refresh_tools()
+        cp = snap.get("checkpoint") if isinstance(snap, dict) else None
+        if cp:
+            self.checkpoint_bar.set_checkpoint(cp)
+        else:
+            self.checkpoint_bar.clear()
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()
@@ -1119,6 +1166,11 @@ class GrinWindow(QWidget):
         if not running and not self._notified_done:
             self._notified_done = True
             self._notify("GRIN — engagement finished", f"status: {snap.get('status', 'done')}")
+
+    def _resolve_checkpoint(self, decision):
+        if self._job_id:
+            self.api.resolve_checkpoint(self._job_id, decision)
+            self.checkpoint_bar.clear()
 
     def _allow_tool(self, tool):
         if self._job_file:
