@@ -265,7 +265,10 @@ class GrinApi:
                 cat = _catalog()
                 if cat is not None:
                     opts["catalog"] = cat
-            return self.start_engagement(path, intent.goal, **opts)
+            res = self.start_engagement(path, intent.goal, **opts)
+            if isinstance(res, dict) and "error" not in res:
+                res["file"] = path   # let the GUI bind to this engagement (tool prompts, etc.)
+            return res
         except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 
