@@ -78,3 +78,32 @@ def test_run_install_plan_auto_failure():
     class R: returncode = 7
     out = run_install_plan({"mode": "auto", "command": ["x"], "note": ""}, lambda _c: R())
     assert out["status"] == "failed"
+
+
+from grin.setup.actions import install_grin, provision_arsenal
+
+
+def test_install_grin_copies_into_dest(tmp_path):
+    src = tmp_path / "Grin.app"; (src / "Contents").mkdir(parents=True)
+    (src / "Contents" / "marker").write_text("x")
+    dest = tmp_path / "Applications"; dest.mkdir()
+    out = install_grin("macos", src=str(src), dest=str(dest))
+    placed = dest / "Grin.app"
+    assert placed.exists() and (placed / "Contents" / "marker").read_text() == "x"
+    assert out["installed_to"] == str(placed)
+
+
+def test_install_grin_replaces_existing(tmp_path):
+    src = tmp_path / "Grin.app"; src.mkdir(); (src / "new").write_text("new")
+    dest = tmp_path / "Applications"; (dest / "Grin.app").mkdir(parents=True)
+    (dest / "Grin.app" / "old").write_text("old")
+    install_grin("macos", src=str(src), dest=str(dest))
+    assert (dest / "Grin.app" / "new").exists()
+    assert not (dest / "Grin.app" / "old").exists()
+
+
+def test_provision_arsenal_runs_arsenal_up():
+    calls = []
+    class R: returncode = 0
+    provision_arsenal(lambda cmd: calls.append(cmd) or R())
+    assert any("arsenal" in c and "up" in c for c in calls)

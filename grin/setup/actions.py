@@ -61,3 +61,27 @@ def run_install_plan(plan: dict, run) -> dict:
         return {"status": "guide", "note": plan.get("note", "")}
     r = run(plan["command"])
     return {"status": "installed" if r.returncode == 0 else "failed", "note": plan.get("note", "")}
+
+
+def install_grin(os_name: str, *, src: str, dest: str) -> dict:
+    """Place the bundled Grin into `dest` (e.g. /Applications). Clean-replaces an existing copy.
+    macOS: a .app is itself the launcher. (Linux .desktop / Windows shortcut: Phase 2.)"""
+    import shutil
+    name = os.path.basename(src.rstrip("/"))
+    target = os.path.join(dest, name)
+    if os.path.isdir(target):
+        shutil.rmtree(target)
+    elif os.path.exists(target):
+        os.remove(target)
+    os.makedirs(dest, exist_ok=True)
+    if os.path.isdir(src):
+        shutil.copytree(src, target)
+    else:
+        shutil.copy2(src, target)
+    return {"installed_to": target}
+
+
+def provision_arsenal(run) -> dict:
+    """Pull the Kali/BlackArch arsenal containers (`grin arsenal up`)."""
+    r = run(["grin", "arsenal", "up"])
+    return {"status": "ok" if r.returncode == 0 else "failed"}
