@@ -15,6 +15,29 @@ _IFACE_RE = re.compile(r"[A-Za-z0-9:._-]+")
 NETWORK_TOOLS = ("nmap", "curl", "wget", "nikto", "hydra", "sqlmap", "gobuster", "ffuf")
 # a believable, non-default browser UA (deterministic for tests; rotation is a later refinement)
 DEFAULT_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:115.0) Gecko/20100101 Firefox/115.0"
+# a small pool of believable desktop browser UAs; one is picked per run (stable within a run,
+# varying across runs) so a fixed UA never becomes a cross-engagement tell. Refresh periodically —
+# a UA that names an old browser version is itself a fingerprint.
+UA_POOL = (
+    DEFAULT_UA,
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) "
+    "Version/17.4 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/123.0.0.0 Safari/537.36",
+)
+
+
+def _pick_ua(seed) -> str:
+    """Deterministically choose a UA from the pool for this run. A stable seed (the engagement id)
+    keeps the UA constant within a run but different across engagements. No seed -> DEFAULT_UA."""
+    if not seed:
+        return DEFAULT_UA
+    import hashlib
+    idx = int(hashlib.sha1(str(seed).encode()).hexdigest(), 16) % len(UA_POOL)
+    return UA_POOL[idx]
 
 
 @dataclass(frozen=True)
@@ -36,17 +59,18 @@ def _resolve_egress(env) -> str:
     return ""
 
 
-def profile_for(level: str, env) -> StealthProfile:
+def profile_for(level: str, env, seed=None) -> StealthProfile:
     level = level if level in STEALTH_LEVELS else "off"
     if level == "off":
         return StealthProfile(level="off")
     egress = _resolve_egress(env)
+    ua = _pick_ua(seed)   # per-run UA (stable within a run); DEFAULT_UA when no seed
     if level == "quiet":
         return StealthProfile(level="quiet", egress=egress, timing="-T2", decoys=False,
-                              ua=DEFAULT_UA, device=False)
+                              ua=ua, device=False)
     return StealthProfile(level="paranoid", egress=egress,
                           timing="-T1 --scan-delay 1s --max-rate 50", decoys=True,
-                          ua=DEFAULT_UA, device=True)
+                          ua=ua, device=True)
 
 
 def apply(profile: StealthProfile, tool: str, command: str) -> str:

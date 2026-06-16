@@ -34,7 +34,7 @@ def _execute_and_audit(eng: Engagement, *, target, tool, command, action_class,
                              action_class=action_class, gated=gated, approved_by=approved_by,
                              reason="blocked: self-destructive command (R3 self-guard); "
                                     "set GRIN_ALLOW_DESTRUCTIVE=1 to override")
-    profile = profile_for(eng.stealth, os.environ)
+    profile = profile_for(eng.stealth, os.environ, seed=eng.id)
     command = apply_stealth(profile, tool, command)
     stealth_level = eng.stealth if eng.stealth != "off" else None
     res = runner.run(target, command, int(eng.env.get("timeout", 60)))
@@ -122,7 +122,7 @@ def apply_device_stealth(eng: Engagement, *, runner: Runner, iface: str = "eth0"
     import shutil
     from grin.platform_info import host_has_arsenal
     from grin.stealth import profile_for, device_setup, can_spoof_device
-    profile = profile_for(eng.stealth, os.environ)
+    profile = profile_for(eng.stealth, os.environ, seed=eng.id)
     caps = can_spoof_device(host_has_arsenal, shutil.which)
     cmds = device_setup(profile, iface=iface, can_spoof=caps)
     recs = []

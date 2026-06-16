@@ -98,3 +98,44 @@ def test_device_setup_rejects_unsafe_iface():
     import pytest as _pt
     with _pt.raises(ValueError):
         device_setup(p, iface="eth0; rm -rf /", can_spoof=True)
+
+
+def test_ua_no_seed_is_default():
+    from grin.stealth import profile_for, DEFAULT_UA
+    assert profile_for("quiet", {}).ua == DEFAULT_UA
+
+
+def test_ua_seed_picks_from_pool_and_is_stable():
+    from grin.stealth import profile_for, UA_POOL
+    a = profile_for("quiet", {}, seed="eng-1").ua
+    b = profile_for("quiet", {}, seed="eng-1").ua
+    assert a == b                 # stable within a run (same engagement)
+    assert a in UA_POOL
+
+
+def test_ua_rotates_across_engagements():
+    from grin.stealth import profile_for
+    seen = {profile_for("paranoid", {}, seed=f"eng-{i}").ua for i in range(20)}
+    assert len(seen) > 1          # different engagements get different UAs
+
+
+def test_spine_seeds_ua_per_engagement(tmp_path):
+    # the spine seeds profile_for with eng.id, so a curl command carries a pool UA, run-stable
+    from grin.spine import _execute_and_audit
+    from grin.engagement import Engagement, Scope, ROE
+    from grin.stealth import UA_POOL
+
+    class CapRunner:
+        def __init__(self): self.cmd = None
+        def run(self, target, command, timeout=60):
+            self.cmd = command
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    eng = Engagement(id="eng-xyz", name="e", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active", stealth="quiet")
+    r = CapRunner()
+    _execute_and_audit(eng, target="t", tool="curl", command="curl http://t/",
+                       action_class="active-scan", gated=False, approved_by=None, runner=r)
+    assert any(ua in r.cmd for ua in UA_POOL)     # a pool UA was injected via the eng.id seed
