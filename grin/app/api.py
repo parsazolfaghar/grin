@@ -18,6 +18,9 @@ from grin.pending import PendingStore
 from grin.runner import build_runner
 from grin.spine import approve_action, deny_action
 from grin.executor import DEFAULT_MODEL
+from grin.intent import parse_intent
+from grin.manual import manual_for, allowed_actions_for
+from grin.adhoc import build_adhoc_engagement
 from grin.app.serialize import to_jsonable
 from grin.app.runner_thread import JobRunner
 
@@ -165,6 +168,45 @@ class GrinApi:
         self._jobs[job_id] = (file, job)
         return {"job_id": job_id, "started": True}
 
+    def interpret(self, text):
+        """Parse free text -> {goal, targets, target_type, bare_target, can_engage, allowed_actions,
+        manual}. Used for the live preview as the operator types. Never raises across the bridge."""
+        try:
+            intent = parse_intent(text, client=self._ollama, model=DEFAULT_MODEL)
+            cat = _catalog() or []
+            man = manual_for(intent.target_type, cat)
+            return {
+                "goal": intent.goal, "targets": intent.targets,
+                "target_type": intent.target_type, "bare_target": intent.bare_target,
+                "can_engage": bool(intent.targets),
+                "allowed_actions": allowed_actions_for(intent.target_type),
+                "manual": {"header": man.header,
+                           "sections": [{"tactic": s.tactic, "items": s.items}
+                                        for s in man.sections]},
+            }
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
+            return {"error": str(ex)}
+
+    def engage_text(self, text):
+        """Build a scope-locked ad-hoc engagement from free text and start it (aggressive for a bare
+        target). Reuses start_engagement — no new execution path. Never raises across the bridge."""
+        try:
+            intent = parse_intent(text, client=self._ollama, model=DEFAULT_MODEL)
+            if not intent.targets:
+                return {"error": "no target found in prompt"}
+            eng, path = build_adhoc_engagement(
+                intent, profile_env=self._tool_env or {"kind": "local"},
+                now=self._now(), operator=self._who())
+            opts = {}
+            if intent.bare_target:
+                opts["aggressive"] = True
+                cat = _catalog()
+                if cat is not None:
+                    opts["catalog"] = cat
+            return self.start_engagement(path, intent.goal, **opts)
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
+            return {"error": str(ex)}
+
     def engagement_state(self, job_id):
         entry = self._jobs.get(job_id)
         if entry is None:
@@ -175,6 +217,12 @@ class GrinApi:
     def _merged_snapshot(self, file):
         return {"objectives": [], "findings": self.findings(file), "audit": self.audit(file),
                 "blocked": self.blocked(file)}
+
+
+def _catalog():
+    """Load the ATT&CK catalog for the manual / aggressive runs; None if unreadable."""
+    from grin.cli import _load_catalog_or_none
+    return _load_catalog_or_none()
 
 
 def save_result_for(eng, res):
