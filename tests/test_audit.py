@@ -46,3 +46,17 @@ def test_result_digest_format():
     d = result_digest("hello")
     assert d.startswith("sha256:")
     assert len(d) == len("sha256:") + 64
+
+
+def test_audit_records_stealth_when_given(tmp_path):
+    import json
+    from grin.audit import audit
+    log = tmp_path / "a.jsonl"
+    audit(str(log), engagement="e", target="t", tool="nmap", command="nmap t",
+          action_class="active-scan", decision="allow", gated=False, stealth="paranoid")
+    rec = json.loads(log.read_text().splitlines()[0])
+    assert rec["stealth"] == "paranoid"
+    audit(str(log), engagement="e", target="t", tool="nmap", command="nmap t",
+          action_class="active-scan", decision="allow", gated=False)
+    rec2 = json.loads(log.read_text().splitlines()[1])
+    assert "stealth" not in rec2

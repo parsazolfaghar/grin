@@ -11,6 +11,7 @@ from grin.classes import ACTION_CLASSES
 MODES = ("own-lab", "client", "adhoc")
 AUTONOMY = ("autonomous", "action-gated", "phase-gated")
 STATES = ("active", "paused", "done")
+STEALTH_LEVELS = ("off", "quiet", "paranoid")
 
 
 class EngagementError(Exception):
@@ -47,6 +48,7 @@ class Engagement:
     audit_log: str
     state: str
     aggressive: bool = False
+    stealth: str = "off"
 
 
 def _require(data: dict, key: str):
@@ -107,9 +109,14 @@ def validate_engagement(data: dict) -> Engagement:
 
     audit_log = str(_require(data, "audit_log"))
 
+    stealth = str(data.get("stealth", "off") or "off")
+    if stealth not in STEALTH_LEVELS:
+        raise EngagementError(f"invalid stealth {stealth!r}; expected one of {STEALTH_LEVELS}")
+
     return Engagement(id=eid, name=name, mode=mode, scope=scope, roe=roe,
                       autonomy=autonomy, env=dict(env), audit_log=audit_log, state=state,
-                      aggressive=bool(data.get("aggressive", False)))
+                      aggressive=bool(data.get("aggressive", False)),
+                      stealth=stealth)
 
 
 def load_engagement(path: str) -> Engagement:
