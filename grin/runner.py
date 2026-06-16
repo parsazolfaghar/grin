@@ -182,6 +182,16 @@ class ArsenalRunner:
                           duration_s=round(time.monotonic() - t0, 3), timed_out=False)
 
 
+def _arsenal_from_env(env: dict, timeout: int) -> "ArsenalRunner":
+    """Build an ArsenalRunner, threading tool-acquire policy + request store from env."""
+    from grin.toolrequest import ToolRequestStore
+    acquire = env.get("tool_acquire")
+    req_path = env.get("tool_requests")
+    requests = ToolRequestStore(req_path) if req_path else None
+    return ArsenalRunner(env.get("containers") or DEFAULT_ARSENALS, default_timeout=timeout,
+                         acquire=acquire, requests=requests)
+
+
 def build_runner(env: dict) -> Runner:
     """Build the runner for an engagement's bound environment."""
     kind = (env or {}).get("kind", "local")
@@ -193,10 +203,10 @@ def build_runner(env: dict) -> Runner:
     if kind == "docker":
         return DockerRunner(env["container"], default_timeout=timeout)
     if kind == "arsenal":
-        return ArsenalRunner(env.get("containers") or DEFAULT_ARSENALS, default_timeout=timeout)
+        return _arsenal_from_env(env, timeout)
     if kind == "auto":
         from grin.platform_info import host_has_arsenal
         if host_has_arsenal():
             return LocalRunner(default_timeout=timeout)
-        return ArsenalRunner(env.get("containers") or DEFAULT_ARSENALS, default_timeout=timeout)
+        return _arsenal_from_env(env, timeout)
     raise ValueError(f"unknown env kind: {kind!r}")
