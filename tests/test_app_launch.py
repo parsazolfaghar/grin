@@ -33,10 +33,11 @@ def test_resolve_engagements_dir_defaults_to_dot(monkeypatch):
     assert resolve_engagements_dir([]) == "."
 
 
-def test_launch_without_pyqt_returns_hint(monkeypatch, capsys):
+def test_launch_without_pyqt_returns_hint(monkeypatch, capsys, tmp_path):
     """If PyQt6 isn't installed, `grin app` must fail soft with the install hint."""
     import builtins
     import sys
+    monkeypatch.setenv("GRIN_APP_LOG", str(tmp_path / "app.log"))  # don't pollute the real ~/.grin log
     monkeypatch.delitem(sys.modules, "grin.app.qt_app", raising=False)
     monkeypatch.delitem(sys.modules, "PyQt6", raising=False)
     real_import = builtins.__import__
