@@ -5,6 +5,7 @@ collaborators are injectable so the bridge is unit-tested with fakes (no pywebvi
 import glob
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -174,6 +175,10 @@ class GrinApi:
         try:
             from grin.arsenal import run_add
             from grin.audit import audit
+            # tool is interpolated into a docker-exec shell command by run_add — only allow a real
+            # package-name charset so a crafted tool token can't inject shell into the container
+            if not re.fullmatch(r"[A-Za-z0-9_.+-]+", tool or ""):
+                return {"error": f"refusing unsafe tool name {tool!r}"}
             eng = self._load(file)
             rc = run_add(tool)
             if rc != 0:

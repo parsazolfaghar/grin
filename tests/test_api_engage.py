@@ -153,3 +153,15 @@ def test_engage_text_passes_tool_acquire(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "start_engagement", fake_start)
     api.engage_text("www.test.com")
     assert captured["env"]["tool_acquire"] == "never"
+
+
+def test_approve_tool_rejects_unsafe_name(tmp_path):
+    from datetime import datetime
+    from grin.adhoc import build_adhoc_engagement
+    from grin.intent import parse_intent
+    api = _api(tmp_path)
+    _e, path = build_adhoc_engagement(parse_intent("www.test.com"),
+                                      now=datetime(2026, 6, 15, 12, 0, 0), operator="op",
+                                      root=str(tmp_path), tool_acquire="ask")
+    out = api.approve_tool(path, "sqlmap; rm -rf /")
+    assert "error" in out and "unsafe" in out["error"].lower()
