@@ -42,7 +42,7 @@ def test_engage_text_builds_and_starts(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "start_engagement", fake_start)
     res = api.engage_text("www.test.com")
     assert res["started"] is True
-    assert calls["opts"].get("aggressive") is True
+    assert calls["opts"].get("aggressive") is False
     assert calls["file"].endswith(".yaml")
 
 
@@ -65,3 +65,39 @@ def test_set_stealth_flows_into_engagement(tmp_path, monkeypatch):
     monkeypatch.setattr(api, "start_engagement", fake_start)
     api.engage_text("www.test.com")
     assert captured["stealth"] == "quiet"
+
+
+def test_set_strength_drives_orchestrate_opts(tmp_path, monkeypatch):
+    api = _api(tmp_path)
+    api.set_strength("max")
+    captured = {}
+
+    def fake_start(file, goal, **opts):
+        from grin.engagement import load_engagement
+        captured["opts"] = opts
+        captured["strength"] = load_engagement(file).strength
+        return {"started": True}
+
+    monkeypatch.setattr(api, "start_engagement", fake_start)
+    api.engage_text("www.test.com")
+    assert captured["strength"] == "max"
+    assert captured["opts"]["aggressive"] is True
+    assert captured["opts"]["max_objectives"] == 40
+    assert captured["opts"]["max_steps"] == 20
+    assert "catalog" in captured["opts"]
+
+
+def test_recon_strength_not_aggressive(tmp_path, monkeypatch):
+    api = _api(tmp_path)
+    api.set_strength("recon")
+    captured = {}
+
+    def fake_start(file, goal, **opts):
+        captured["opts"] = opts
+        return {"started": True}
+
+    monkeypatch.setattr(api, "start_engagement", fake_start)
+    api.engage_text("www.test.com")
+    assert captured["opts"]["aggressive"] is False
+    assert captured["opts"]["max_objectives"] == 5
+    assert "catalog" not in captured["opts"]
