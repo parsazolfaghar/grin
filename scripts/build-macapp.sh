@@ -17,10 +17,19 @@ if [ ! -f "$ICNS" ]; then
   iconutil -c icns "$ICONSET" -o "$ICNS"
 fi
 
-# 2. build deps + PyInstaller (argv[0] == "pyinstaller", on PATH after install)
-python3 -m pip install --quiet pyinstaller pyqt6 docker pyyaml httpx
-ARGS=$(python3 -c "from grin.packaging import pyinstaller_argv; print(' '.join(pyinstaller_argv(icon='grin/app/assets/grin.icns')))")
+# 2. isolated build venv (PEP 668: don't touch the system/Homebrew Python). Install grin (so
+#    PyInstaller can analyze the package) + the GUI + build deps into it.
+# Prefer python3.12: PyInstaller's macOS windowed bootloader is flaky on bleeding-edge 3.14.
+PYBUILD="${GRIN_BUILD_PYTHON:-$(command -v python3.12 || command -v python3)}"
+echo "build python: $("$PYBUILD" --version)"
+VENV=.build-venv
+rm -rf "$VENV"
+"$PYBUILD" -m venv "$VENV"
+"$VENV/bin/pip" install --quiet --upgrade pip
+"$VENV/bin/pip" install --quiet -e . pyinstaller pyqt6 docker
+# argv[0] == "pyinstaller"; run the venv's pyinstaller (on PATH via the venv bin)
+ARGS=$("$VENV/bin/python" -c "from grin.packaging import pyinstaller_argv; print(' '.join(pyinstaller_argv(icon='grin/app/assets/grin.icns')))")
 # shellcheck disable=SC2086
-$ARGS --collect-all PyQt6
+PATH="$PWD/$VENV/bin:$PATH" $ARGS --collect-all PyQt6
 
 echo "built dist/Grin.app — drag to /Applications. First launch: right-click -> Open."

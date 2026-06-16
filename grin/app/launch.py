@@ -1,18 +1,55 @@
 """`grin app` — open the native PyQt6 window over the engine. PyQt6 is imported lazily (via
 qt_app) so the engine, CLI, and tests never need it; a clear hint is printed if the [app]
-extra is missing."""
+extra is missing. A clicked .app has no console, so startup + any fatal error is logged to
+~/.grin/app.log for diagnosis."""
 import sys
 
 
-def main(argv=None) -> int:
-    from grin.config import load_env_file
-    load_env_file()
-    argv = argv if argv is not None else sys.argv[1:]
-    engagements_dir = argv[0] if argv else "."
+def _logger():
+    import os
+    import datetime
+    path = os.path.expanduser("~/.grin/app.log")
     try:
-        from grin.app.qt_app import run
-    except ImportError:
-        print("grin app needs PyQt6 — install it with:  pip install 'grin[app]'",
-              file=sys.stderr)
-        return 1
-    return run(engagements_dir=engagements_dir)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+    except OSError:
+        pass
+
+    def log(msg: str) -> None:
+        try:
+            with open(path, "a") as fh:
+                fh.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} {msg}\n")
+        except OSError:
+            pass
+    return log
+
+
+def main(argv=None) -> int:
+    log = _logger()
+    log(f"launch.main start (sys.argv={sys.argv})")
+    try:
+        from grin.config import load_env_file
+        load_env_file()
+        argv = argv if argv is not None else sys.argv[1:]
+        # ignore macOS process-serial / -NS* launch args so the dir stays sane
+        argv = [a for a in argv if not a.startswith("-psn_") and not a.startswith("-NS")]
+        engagements_dir = argv[0] if argv else "."
+        log(f"engagements_dir={engagements_dir!r}")
+        try:
+            from grin.app.qt_app import run
+        except ImportError as e:
+            log(f"PyQt6 import failed: {e}")
+            print("grin app needs PyQt6 — install it with:  pip install 'grin[app]'",
+                  file=sys.stderr)
+            return 1
+        log("calling run()")
+        rc = run(engagements_dir=engagements_dir)
+        log(f"run() returned {rc}")
+        return rc
+    except BaseException as e:  # noqa: BLE001 - log fatal startup errors (no console in a .app)
+        import traceback
+        log("FATAL: " + "".join(traceback.format_exception(type(e), e, e.__traceback__)))
+        raise
+
+
+if __name__ == "__main__":   # PyInstaller runs this file as the bundle entry
+    sys.exit(main())
