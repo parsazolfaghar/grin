@@ -33,12 +33,14 @@ def test_build_writes_valid_engagement_and_authorization(tmp_path):
     assert rec["scope"] == ["www.test.com"]
 
 
-def test_build_bare_target_sets_aggressive(tmp_path):
+def test_build_bare_target_defaults_not_aggressive_env_auto(tmp_path):
+    # the bare-target -> aggressive heuristic is retired; aggression now follows strength
+    # (default "normal" => not aggressive). env still self-selects via auto.
     intent = parse_intent("www.test.com")
     eng, path = build_adhoc_engagement(
         intent, now=datetime(2026, 6, 15, 19, 30, 0), operator="op", root=str(tmp_path))
-    assert eng.aggressive is True
-    assert load_engagement(path).aggressive is True
+    assert eng.aggressive is False
+    assert load_engagement(path).aggressive is False
     assert load_engagement(path).env == {"kind": "auto"}
 
 
@@ -77,3 +79,17 @@ def test_build_aggressive_keeps_actions(tmp_path):
     e = load_engagement(path)
     assert e.strength == "aggressive"
     assert "exploit" in e.roe.allowed_actions
+
+
+def test_build_aggressive_flag_follows_strength(tmp_path):
+    from datetime import datetime
+    from grin.engagement import load_engagement
+    from grin.intent import parse_intent
+    from grin.adhoc import build_adhoc_engagement
+    intent = parse_intent("www.test.com")               # bare target (old heuristic would force True)
+    _e, p_norm = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
+                                        operator="op", root=str(tmp_path / "n"), strength="normal")
+    assert load_engagement(p_norm).aggressive is False  # strength normal -> not aggressive on disk
+    _e2, p_agg = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
+                                        operator="op", root=str(tmp_path / "a"), strength="max")
+    assert load_engagement(p_agg).aggressive is True

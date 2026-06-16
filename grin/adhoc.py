@@ -56,7 +56,9 @@ def build_adhoc_engagement(intent: Intent, *, now: datetime,
         "env": {"kind": "auto"},
         "audit_log": audit_log,
         "state": "active",
-        "aggressive": bool(intent.bare_target),
+        # aggression follows the strength level (the bare-target heuristic is retired) so the
+        # on-disk aggressive flag never disagrees with strength
+        "aggressive": strength_params(strength).aggressive,
         "stealth": stealth,
         "strength": strength,
     }

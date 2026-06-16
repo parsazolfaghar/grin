@@ -199,8 +199,8 @@ class GrinApi:
             return {"error": str(ex)}
 
     def engage_text(self, text):
-        """Build a scope-locked ad-hoc engagement from free text and start it (aggressive for a bare
-        target). Reuses start_engagement — no new execution path. Never raises across the bridge."""
+        """Build a scope-locked ad-hoc engagement from free text and start it (aggression/budgets per
+        the strength level). Reuses start_engagement — no new execution path. Never raises across the bridge."""
         try:
             intent = parse_intent(text, client=self._ollama, model=DEFAULT_MODEL)
             if not intent.targets:
