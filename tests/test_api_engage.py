@@ -173,3 +173,26 @@ def test_engage_text_returns_file(tmp_path, monkeypatch):
                         lambda file, goal, **opts: {"job_id": "j1", "started": True})
     res = api.engage_text("www.test.com")
     assert res["file"].endswith(".yaml")     # GUI can bind to this engagement
+
+
+def test_resolve_checkpoint(tmp_path):
+    api = _api(tmp_path)
+
+    class FakeJob:
+        def __init__(self): self.resolved = None
+        def resolve(self, d): self.resolved = d
+    job = FakeJob()
+    api._jobs["j1"] = ("f.yaml", job)
+    out = api.resolve_checkpoint("j1", "focus")
+    assert out.get("status") == "resumed" and out.get("decision") == "focus"
+    assert job.resolved == "focus"
+
+
+def test_resolve_checkpoint_invalid(tmp_path):
+    api = _api(tmp_path)
+
+    class FakeJob:
+        def resolve(self, d): raise AssertionError("must not be called")
+    api._jobs["j1"] = ("f.yaml", FakeJob())
+    assert "error" in api.resolve_checkpoint("j1", "bogus")
+    assert "error" in api.resolve_checkpoint("nope", "focus")

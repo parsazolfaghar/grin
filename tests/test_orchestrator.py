@@ -169,3 +169,71 @@ def test_honeypot_advisory_emitted_in_loop_but_does_not_block(tmp_path):
     assert "Suspected honeypot/decoy (advisory)" in titles   # advisory emitted
     assert any("SSH" in t for t in titles)                   # original finding kept (not removed)
     assert res.status == "completed"                         # never blocked the engagement
+
+
+def test_drive_loop_checkpoint_stop(monkeypatch):
+    import grin.orchestrator as orch
+    from grin.orchestrator import _drive_loop
+    from grin.secret import Secret
+    from collections import namedtuple
+    Obj = namedtuple("Obj", "objective target")
+
+    class Res:
+        status = "completed"; findings = []; pending_id = None
+        secrets = [Secret(label="flag", value="GRIN{a}", target="t1", tool="x",
+                          command="c", context="ctx")]
+        class journal: path = "j"
+
+    monkeypatch.setattr(orch, "execute_task", lambda *a, **k: Res())
+    monkeypatch.setattr(orch, "replan", lambda *a, **k: type("D", (), {"done": False, "reason": "",
+                                                                       "next_objectives": []})())
+
+    class Loot:
+        def record(self, *a, **k): pass
+
+    calls = []
+    def cp(flag, target):
+        calls.append((flag, target)); return "stop"
+
+    q = [Obj("o1", "t1"), Obj("o2", "t1")]
+    status = _drive_loop(
+        type("E", (), {"scope": type("S", (), {"include": ["t1"]})()})(),
+        goal="g", queue=q, findings=[], objectives_run=[], paused=[], plan_log=[],
+        planner_client=None, executor_client=None, runner=None, now=None, planner_model="m",
+        objective_models=None, base_model="m", max_objectives=10, max_steps=5,
+        engagement_path="", secrets=[], loot=Loot(), scope_targets=["t1"],
+        aggressive=True, catalog=None, checkpoint_fn=cp)
+    assert calls == [("GRIN{a}", "t1")]
+    assert status == "completed"
+    assert q == []
+
+
+def test_drive_loop_no_checkpoint_when_not_aggressive(monkeypatch):
+    import grin.orchestrator as orch
+    from grin.orchestrator import _drive_loop
+    from grin.secret import Secret
+    from collections import namedtuple
+    Obj = namedtuple("Obj", "objective target")
+
+    class Res:
+        status = "completed"; findings = []; pending_id = None
+        secrets = [Secret(label="flag", value="GRIN{a}", target="t1", tool="x",
+                          command="c", context="ctx")]
+        class journal: path = "j"
+
+    monkeypatch.setattr(orch, "execute_task", lambda *a, **k: Res())
+    monkeypatch.setattr(orch, "replan", lambda *a, **k: type("D", (), {"done": True, "reason": "",
+                                                                       "next_objectives": []})())
+
+    class Loot:
+        def record(self, *a, **k): pass
+
+    fired = []
+    _drive_loop(
+        type("E", (), {"scope": type("S", (), {"include": ["t1"]})()})(),
+        goal="g", queue=[Obj("o1", "t1")], findings=[], objectives_run=[], paused=[], plan_log=[],
+        planner_client=None, executor_client=None, runner=None, now=None, planner_model="m",
+        objective_models=None, base_model="m", max_objectives=10, max_steps=5,
+        engagement_path="", secrets=[], loot=Loot(), scope_targets=["t1"],
+        aggressive=False, catalog=None, checkpoint_fn=lambda *a: fired.append(a) or "stop")
+    assert fired == []
