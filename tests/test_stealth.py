@@ -91,3 +91,10 @@ def test_device_setup_empty_when_not_capable_or_disabled():
     assert device_setup(p, iface="eth0", can_spoof=False) == []
     q = profile_for("quiet", {})
     assert device_setup(q, iface="eth0", can_spoof=True) == []
+
+
+def test_device_setup_rejects_unsafe_iface():
+    p = profile_for("paranoid", {})
+    import pytest as _pt
+    with _pt.raises(ValueError):
+        device_setup(p, iface="eth0; rm -rf /", can_spoof=True)

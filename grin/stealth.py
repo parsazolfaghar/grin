@@ -2,9 +2,14 @@
 scan timing, fingerprint) applied at the spine chokepoint, plus device-spoof setup builders. Pure +
 default-OFF: an 'off' profile is an identity transform. Never raises. Target-facing only; the audit
 records the as-run command and the active level, so the operator trail stays truthful."""
+import re
 from dataclasses import dataclass
 
 STEALTH_LEVELS = ("off", "quiet", "paranoid")
+
+# interface names are interpolated into a shell command — only allow real iface charset (defense in
+# depth; today the sole caller passes a hardcoded "eth0", but never trust a future caller)
+_IFACE_RE = re.compile(r"[A-Za-z0-9:._-]+")
 
 # tools whose traffic actually leaves the host — only these get egress/fingerprint treatment
 NETWORK_TOOLS = ("nmap", "curl", "wget", "nikto", "hydra", "sqlmap", "gobuster", "ffuf")
@@ -79,5 +84,7 @@ def device_setup(profile: StealthProfile, *, iface: str, can_spoof: bool) -> lis
     enables device spoofing AND the host can actually do it."""
     if not (profile.device and can_spoof):
         return []
+    if not _IFACE_RE.fullmatch(iface or ""):
+        raise ValueError(f"refusing to spoof unsafe interface name {iface!r}")
     return [f"macchanger -r {iface}",
             "hostnamectl set-hostname localhost"]
