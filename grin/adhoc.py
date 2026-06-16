@@ -33,7 +33,7 @@ def _slug(s: str) -> str:
 
 def build_adhoc_engagement(intent: Intent, *, now: datetime,
                            operator: str, root: str = DEFAULT_ROOT, stealth: str = "off",
-                           strength: str = "normal"):
+                           strength: str = "normal", tool_acquire: str = "ask"):
     if not intent.targets:
         raise ValueError("no target in intent")
     target = normalize_target(intent.targets[0])
@@ -53,7 +53,8 @@ def build_adhoc_engagement(intent: Intent, *, now: datetime,
         "autonomy": "autonomous",
         # adhoc engagements self-select tools per host (LocalRunner on a pentest box, else Docker
         # arsenal). The deployment profile still governs the brain; only tool execution auto-selects.
-        "env": {"kind": "auto"},
+        "env": {"kind": "auto", "tool_acquire": tool_acquire,
+                "tool_requests": os.path.join(root, f"{eid}.tools.json")},
         "audit_log": audit_log,
         "state": "active",
         # aggression follows the strength level (the bare-target heuristic is retired) so the

@@ -101,3 +101,55 @@ def test_recon_strength_not_aggressive(tmp_path, monkeypatch):
     assert captured["opts"]["aggressive"] is False
     assert captured["opts"]["max_objectives"] == 5
     assert "catalog" not in captured["opts"]
+
+
+def test_pending_and_approve_tool(tmp_path, monkeypatch):
+    from datetime import datetime
+    from grin.adhoc import build_adhoc_engagement
+    from grin.intent import parse_intent
+    from grin.toolrequest import ToolRequestStore, tool_requests_path
+    from grin.engagement import load_engagement
+    api = _api(tmp_path)
+    _e, path = build_adhoc_engagement(parse_intent("www.test.com"),
+                                      now=datetime(2026, 6, 15, 12, 0, 0), operator="op",
+                                      root=str(tmp_path), tool_acquire="ask")
+    eng = load_engagement(path)
+    ToolRequestStore(tool_requests_path(eng)).request("sqlmap")
+    assert api.pending_tools(path) == ["sqlmap"]
+    installs = []
+    monkeypatch.setattr("grin.arsenal.run_add", lambda t: installs.append(t) or 0)
+    out = api.approve_tool(path, "sqlmap")
+    assert out.get("status") == "installed"
+    assert installs == ["sqlmap"]
+    assert api.pending_tools(path) == []
+
+
+def test_deny_tool(tmp_path):
+    from datetime import datetime
+    from grin.adhoc import build_adhoc_engagement
+    from grin.intent import parse_intent
+    from grin.toolrequest import ToolRequestStore, tool_requests_path
+    from grin.engagement import load_engagement
+    api = _api(tmp_path)
+    _e, path = build_adhoc_engagement(parse_intent("www.test.com"),
+                                      now=datetime(2026, 6, 15, 12, 0, 0), operator="op",
+                                      root=str(tmp_path), tool_acquire="ask")
+    eng = load_engagement(path)
+    ToolRequestStore(tool_requests_path(eng)).request("hydra")
+    assert api.deny_tool(path, "hydra").get("status") == "denied"
+    assert api.pending_tools(path) == []
+
+
+def test_engage_text_passes_tool_acquire(tmp_path, monkeypatch):
+    api = _api(tmp_path)
+    api.set_tool_acquire("never")
+    captured = {}
+
+    def fake_start(file, goal, **opts):
+        from grin.engagement import load_engagement
+        captured["env"] = load_engagement(file).env
+        return {"started": True}
+
+    monkeypatch.setattr(api, "start_engagement", fake_start)
+    api.engage_text("www.test.com")
+    assert captured["env"]["tool_acquire"] == "never"
