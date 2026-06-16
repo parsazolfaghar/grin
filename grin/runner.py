@@ -182,4 +182,9 @@ def build_runner(env: dict) -> Runner:
         return DockerRunner(env["container"], default_timeout=timeout)
     if kind == "arsenal":
         return ArsenalRunner(env.get("containers") or DEFAULT_ARSENALS, default_timeout=timeout)
+    if kind == "auto":
+        from grin.platform_info import host_has_arsenal
+        if host_has_arsenal():
+            return LocalRunner(default_timeout=timeout)
+        return ArsenalRunner(env.get("containers") or DEFAULT_ARSENALS, default_timeout=timeout)
     raise ValueError(f"unknown env kind: {kind!r}")
