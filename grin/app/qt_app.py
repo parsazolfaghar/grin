@@ -105,6 +105,7 @@ class Chrome(QWidget):
     mode_toggle = pyqtSignal()
     stealth_toggle = pyqtSignal()
     strength_toggle = pyqtSignal()
+    tools_toggle = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -155,6 +156,12 @@ class Chrome(QWidget):
         self.strength_btn.clicked.connect(self.strength_toggle.emit)
         _track(self.strength_btn, 1.6); row.addWidget(self.strength_btn)
 
+        # tool-acquire policy: default ASK; cycles ASK -> AUTO -> NEVER
+        self.tools_btn = QPushButton("TOOLS: ASK"); self.tools_btn.setObjectName("modebtn")
+        self.tools_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tools_btn.clicked.connect(self.tools_toggle.emit)
+        _track(self.tools_btn, 1.6); row.addWidget(self.tools_btn)
+
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
                                  ("✕", "wcclose", window.close)):
@@ -179,6 +186,9 @@ class Chrome(QWidget):
 
     def set_strength_label(self, text):
         self.strength_btn.setText(f"STRENGTH: {text}")
+
+    def set_tools_label(self, text):
+        self.tools_btn.setText(f"TOOLS: {text}")
 
     def set_health(self, ok):
         """Doctor health dot: green ok / amber issues / dim unknown (checking)."""
@@ -824,6 +834,8 @@ class GrinWindow(QWidget):
         self.chrome.stealth_toggle.connect(self._toggle_stealth)
         self._strength_level = "normal"
         self.chrome.strength_toggle.connect(self._toggle_strength)
+        self._tool_acquire = "ask"
+        self.chrome.tools_toggle.connect(self._toggle_tools)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -904,6 +916,12 @@ class GrinWindow(QWidget):
         self._strength_level = order[(order.index(self._strength_level) + 1) % len(order)]
         self.api.set_strength(self._strength_level)
         self.chrome.set_strength_label(self._strength_level.upper())
+
+    def _toggle_tools(self):
+        order = ["ask", "auto", "never"]
+        self._tool_acquire = order[(order.index(self._tool_acquire) + 1) % len(order)]
+        self.api.set_tool_acquire(self._tool_acquire)
+        self.chrome.set_tools_label(self._tool_acquire.upper())
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
