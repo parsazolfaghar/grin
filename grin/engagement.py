@@ -8,7 +8,7 @@ import yaml
 
 from grin.classes import ACTION_CLASSES
 
-MODES = ("own-lab", "client")
+MODES = ("own-lab", "client", "adhoc")
 AUTONOMY = ("autonomous", "action-gated", "phase-gated")
 STATES = ("active", "paused", "done")
 

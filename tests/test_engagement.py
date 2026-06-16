@@ -107,3 +107,18 @@ def test_load_missing_file_refused(tmp_path):
 def test_pending_path_derives_from_audit_log():
     eng = validate_engagement(VALID)
     assert pending_path(eng) == "./audit/acme.state.json"
+
+
+def test_adhoc_is_a_valid_mode(tmp_path):
+    import yaml
+    from grin.engagement import load_engagement
+    p = tmp_path / "e.yaml"
+    p.write_text(yaml.safe_dump({
+        "id": "adhoc-x", "name": "x", "mode": "adhoc",
+        "scope": {"in": ["10.0.0.1"]},
+        "roe": {"allowed_actions": ["passive"]},
+        "autonomy": "autonomous", "env": {"kind": "local"},
+        "audit_log": str(tmp_path / "a.jsonl"), "state": "active",
+    }))
+    eng = load_engagement(str(p))
+    assert eng.mode == "adhoc"
