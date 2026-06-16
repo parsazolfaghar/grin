@@ -107,7 +107,7 @@ class ArsenalRunner:
     GRIN_ARSENAL_AUTOINSTALL=1 (install then retry). Live only ([docker] extra)."""
 
     def __init__(self, containers=DEFAULT_ARSENALS, default_timeout: int = 60, client=None,
-                 autoinstall: bool | None = None):
+                 autoinstall: bool | None = None, acquire: str | None = None, requests=None):
         if client is None:
             try:
                 import docker
@@ -118,8 +118,14 @@ class ArsenalRunner:
         self._containers = list(containers)
         self._timeout = default_timeout
         self._cache: dict[str, str] = {}
-        self._autoinstall = (autoinstall if autoinstall is not None
-                             else os.environ.get("GRIN_ARSENAL_AUTOINSTALL") == "1")
+        self._requests = requests
+        if acquire in ("auto", "ask", "never"):
+            self._acquire = acquire
+        elif autoinstall is True or os.environ.get("GRIN_ARSENAL_AUTOINSTALL") == "1":
+            self._acquire = "auto"
+        else:
+            self._acquire = "ask"
+        self._autoinstall = self._acquire == "auto"   # back-compat for any reader
 
     def _probe(self, container: str, tool: str) -> bool:
         if self._client is None:
@@ -157,8 +163,14 @@ class ArsenalRunner:
         parts = command.split()
         tool = parts[0] if parts else ""
         container = self._resolve(tool)
-        if container is None and self._autoinstall:
-            container = self._install(tool)
+        if container is None:
+            if self._acquire == "auto":
+                container = self._install(tool)
+            elif self._acquire == "ask" and self._requests is not None:
+                self._requests.request(tool)
+                return ExecResult(
+                    output=f"tool '{tool}' not in arsenal — awaiting approval in the app",
+                    exit_code=127, duration_s=0.0, timed_out=False)
         if container is None:
             return ExecResult(output=f"tool '{tool}' not in arsenal — run `grin arsenal add {tool}`",
                               exit_code=127, duration_s=0.0, timed_out=False)
