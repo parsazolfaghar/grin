@@ -1,5 +1,4 @@
 import json
-from pathlib import Path
 from grin.app.api import GrinApi
 from grin.spine import Outcome
 

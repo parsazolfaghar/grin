@@ -74,3 +74,29 @@ def test_engage_yaml_strength_normal_not_aggressive(tmp_path, monkeypatch):
     monkeypatch.setattr(cli, "save_result", lambda *a, **k: None)
     cli.main(["engage", _write_eng_strength(tmp_path, "normal"), "--goal", "x"])
     assert captured.get("aggressive") in (False, None)
+
+
+def test_engage_cli_strength_overrides_yaml(tmp_path, monkeypatch):
+    captured = {}
+    def fake_orchestrate(eng, **kw):
+        captured.update(kw); captured["strength"] = eng.strength
+        from grin.orchestrator import EngagementResult
+        return EngagementResult("completed", [], [], [], [], goal=kw.get("goal", ""))
+    monkeypatch.setattr(cli, "orchestrate", fake_orchestrate)
+    monkeypatch.setattr(cli, "save_result", lambda *a, **k: None)
+    cli.main(["engage", _write_eng_strength(tmp_path, "normal"), "--goal", "x", "--strength", "max"])
+    assert captured["strength"] == "max"          # CLI flag overrode the YAML's normal
+    assert captured["aggressive"] is True
+    assert captured["max_objectives"] >= 40
+
+
+def test_engage_cli_stealth_overrides_yaml(tmp_path, monkeypatch):
+    captured = {}
+    def fake_orchestrate(eng, **kw):
+        captured["stealth"] = eng.stealth
+        from grin.orchestrator import EngagementResult
+        return EngagementResult("completed", [], [], [], [], goal=kw.get("goal", ""))
+    monkeypatch.setattr(cli, "orchestrate", fake_orchestrate)
+    monkeypatch.setattr(cli, "save_result", lambda *a, **k: None)
+    cli.main(["engage", _write_eng_strength(tmp_path, "normal"), "--goal", "x", "--stealth", "paranoid"])
+    assert captured["stealth"] == "paranoid"

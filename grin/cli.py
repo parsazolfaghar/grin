@@ -219,15 +219,21 @@ def _print_engagement_result(res) -> None:
 
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
                max_steps: int, planner_model=None, recon_model=None, exploit_model=None,
-               aggressive: bool = False) -> int:
+               aggressive: bool = False, strength=None, stealth=None) -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
         print(f"INVALID: {e}", file=sys.stderr)
         return 1
+    # CLI --strength/--stealth override the engagement's own fields (frozen -> rebuild)
+    import dataclasses
+    if strength is not None:
+        eng = dataclasses.replace(eng, strength=strength)
+    if stealth is not None:
+        eng = dataclasses.replace(eng, stealth=stealth)
     seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
     # honor the engagement's strength level: aggressive levels trigger the sweep; budgets act as a
-    # floor (CLI flags / aggressive still win). Stealth is applied separately by the spine.
+    # floor (the --aggressive flag still wins). Stealth is applied separately by the spine (eng.stealth).
     from grin.strength import strength_params
     sp = strength_params(getattr(eng, "strength", "normal"))
     aggressive = aggressive or sp.aggressive or getattr(eng, "aggressive", False)
@@ -775,6 +781,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="model for passive/active-scan objectives (default: per backend)")
     g2.add_argument("--exploit-model", default=None, dest="exploit_model",
                     help="model for exploit/post-exploit objectives (default: per backend)")
+    g2.add_argument("--strength", default=None, choices=["recon", "normal", "aggressive", "max"],
+                    help="attack strength (overrides the engagement's strength)")
+    g2.add_argument("--stealth", default=None, choices=["off", "quiet", "paranoid"],
+                    help="stealth level (overrides the engagement's stealth)")
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
     g2.add_argument("--aggressive", action="store_true",
         help="exhaustive mode: sweep the ATT&CK catalog (more attempts, same guardrails)")
@@ -859,7 +869,8 @@ def main(argv=None) -> int:
         return cmd_engage(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
                           max_objectives=args.max_objectives, max_steps=args.max_steps,
                           planner_model=args.planner_model, recon_model=args.recon_model,
-                          exploit_model=args.exploit_model, aggressive=args.aggressive)
+                          exploit_model=args.exploit_model, aggressive=args.aggressive,
+                          strength=args.strength, stealth=args.stealth)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model)
     if args.group == "loot":

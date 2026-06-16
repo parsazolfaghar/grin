@@ -1,126 +1,172 @@
-# Grin — SP1: the engagement spine
+# Grin
 
-Multi-agent autonomous red-team orchestrator. SP1 is the fail-closed
-authorization + scoped-execution spine: the sole path to executing any action.
+A multi-agent autonomous red-team orchestrator for **authorized** engagements. An LLM brain (cloud or
+local) plans and drives offensive tools, but **every action is forced through a fail-closed spine** —
+the sole path that resolves the action class, authorizes it against the engagement scope/ROE, gates it
+by autonomy level, executes it on the bound arsenal, and appends an append-only audit record. The
+orchestrator can go fully autonomous or pause for your approval; it never widens scope or runs an
+out-of-scope/out-of-window action.
 
-## Install
+> Authorized engagements only. The operator-side audit trail is always intact — it is for
+> accountability, never to dodge authorization or attribution.
+
+## Quickstart — the desktop app (standalone)
+
+Three things make a full Grin on one machine: the **app**, a **brain**, and an **arsenal**.
+
+1. **Install / build the app** — see [Desktop app](#desktop-app). On macOS you get a clickable
+   `Grin.app`.
+2. **Brain** — put your cloud key in `~/.grin/env` (loaded at startup):
+   ```
+   GRIN_MODEL_BACKEND=openai
+   GRIN_MODEL_URL=https://api.deepseek.com
+   GRIN_MODEL_API_KEY=sk-...
+   ```
+   (Or run a local Ollama and leave these unset.)
+3. **Arsenal** — install **Docker**; Grin provisions its own Kali/BlackArch tool containers
+   (`grin arsenal up`), or auto-detects a local pentest host. See [Arsenal](#arsenal).
+
+Then open the app, type a task or a target in the **Engage bar**, set the dashboard toggles, and go.
+
+## Install (CLI / dev)
 ```bash
-pip install -e ".[dev]"        # add ",docker" for the docker runner
+pip install -e ".[dev]"            # add ",docker" for the docker/arsenal runners, ",app" for the GUI
 ```
 
-## Use
+## The spine (authorization core)
 ```bash
 grin engagement validate examples/acme-extnet.yaml
 grin run examples/acme-extnet.yaml      # submit: tool | command | target [| class]
 grin gate examples/acme-extnet.yaml     # approve/deny pending intrusive actions
 grin audit examples/acme-extnet.yaml    # print the evidence trail
 ```
+Every action runs `resolve_class → authorize → gate → execute → audit`, fail-closed. The spine sets
+the action class (anti-spoof); out-of-scope, excluded, disallowed-class, out-of-window, and
+non-active-engagement actions are refused and logged. There is no other code path that runs a command
+or writes an allow line.
 
-Every action runs `resolve_class -> authorize -> gate -> execute -> audit`,
-fail-closed. The spine sets the action class (anti-spoof); out-of-scope, excluded,
-disallowed-class, out-of-window, and non-active-engagement actions are refused and
-logged. See `docs/superpowers/specs/2026-06-13-engagement-spine-design.md`.
-
-## The Executor (SP2)
+## The Executor
 
 Run the AI agent on one objective (drives Kali/BlackArch tools through the spine):
 ```bash
 grin execute examples/lab-recon.yaml --task "find web services" --target 10.0.0.5
 grin execute --resume ./audit/home-lab-recon.<task-id>.journal.json   # after `grin gate`
 ```
-The Executor asks the configured model for the next action, the spine authorizes/gates/runs
-it on the bound Kali/BlackArch box, and the loop continues until the objective is met, the
-step budget runs out, or a gated action needs `grin gate` approval (then `--resume`).
-Set the model with `--model` (default `qwen3:14b`); see "Model backends" below.
+The Executor asks the model for the next action, the spine authorizes/gates/runs it on the bound
+arsenal, and the loop continues until the objective is met, the step budget runs out, or a gated
+action needs `grin gate` approval (then `--resume`). **Evidence-gated findings:** a finding is only
+reported if a real command actually ran in that task.
 
-### Evidence-gated findings (SP7)
-
-The Executor will not report findings unless at least one tool actually ran in that task. If the
-model tries to declare findings with no command executed, it's rejected and re-prompted to gather
-evidence first — so every reported finding is backed by a real command + output (and a task that
-runs nothing simply reports no findings).
-
-## The Orchestrator (SP3)
+## The Orchestrator
 
 Run a whole engagement from one high-level goal (adaptive, lead-chasing):
 ```bash
 grin engage examples/external-net.yaml --goal "assess the external network"
 grin engage examples/external-net.yaml --goal "find and verify web vulns" --seeds 10.0.0.5
 ```
-The Orchestrator plans objectives, runs each through an SP2 Executor (which drives Kali/BlackArch
-tools via the spine), an Analyst reads the findings and proposes follow-ups, and the loop runs
-until the goal is met or the objective budget (`--max-objectives`, default 10) is hit. In a gated
-(client) engagement, intrusive objectives pause for `grin gate` approval and are reported at the
-end.
+The Orchestrator plans objectives, runs each through an Executor, an Analyst reads findings and
+proposes follow-ups, and the loop runs until the goal is met or the objective budget
+(`--max-objectives`, default 10) is hit. Gated (client) engagements pause intrusive objectives for
+`grin gate` approval and report them at the end.
 
-### Resuming a gated engagement (SP5)
-
-For client (gated) engagements, intrusive objectives pause for approval. Approve, then resume:
+**Strength + stealth from the CLI** (also dashboard toggles / YAML fields):
 ```bash
-grin engage examples/external-net.yaml --goal "assess the external network"   # pauses intrusive objectives
-grin gate examples/external-net.yaml                                          # approve/deny
-grin engage examples/external-net.yaml --resume                               # continue the approved ones
+grin engage examples/external-net.yaml --goal "..." --strength aggressive --stealth quiet
+```
+- `--strength recon|normal|aggressive|max` — recon (scan only, no exploit) → normal → aggressive
+  (full ATT&CK sweep) → max (sweep + deeper budget).
+- `--stealth off|quiet|paranoid` — applied at the spine: egress proxy/Tor, slow timing, rotated UA,
+  and MAC/hostname spoof where it bites. See [Stealth](#stealth).
+
+**Resuming a gated engagement:**
+```bash
+grin engage examples/external-net.yaml --goal "..."     # pauses intrusive objectives
+grin gate examples/external-net.yaml                    # approve/deny
+grin engage examples/external-net.yaml --resume         # continue the approved ones
+```
+
+**Per-role models** — route by objective type (`--recon-model`, `--exploit-model`,
+`--planner-model`), each falling back to `--model`. The action-class tag drives model choice only; the
+spine still authorizes every command.
+
+## The Reporter
+```bash
 grin report examples/external-net.yaml -o report.md
 ```
-`--resume` resumes every approved blocked objective (detected via the results store), merges their
-findings, keeps the adaptive loop going, and re-saves the result. Denied / not-yet-approved
-objectives stay blocked; if nothing is approved yet it reports "nothing to resume."
+Groups findings by severity (with evidence, the exact command, remediation), lists the methodology,
+and appends an audit-trail + blocked-actions summary. The executive summary is deterministic, or a
+short model narrative if a brain is up.
 
-### Per-role models (SP6)
+## Loot — captured secrets
 
-Route models by objective type (default is one `--model` for everything):
-```bash
-grin engage examples/external-net.yaml --goal "assess the external network" \
-  --recon-model qwen3:8b --exploit-model hermes3:8b --planner-model qwen3:14b
-```
-Recon/passive objectives run on `--recon-model`, exploit/post-exploit objectives on
-`--exploit-model`, planning on `--planner-model` — each falling back to `--model`. The action-class
-tag drives model choice only; the spine still resolves and authorizes every command.
-
-## The Reporter (SP4)
-
-Turn a finished engagement into a Markdown report:
-```bash
-grin engage examples/external-net.yaml --goal "assess the external network"   # saves the result
-grin report examples/external-net.yaml -o report.md                            # renders it
-```
-The report groups findings by severity (with evidence, the exact command, and remediation), lists
-the methodology the Orchestrator followed, and appends an audit-trail + blocked-actions summary.
-The executive summary is deterministic by default; if a local model is up it writes a short
-narrative instead (and falls back to deterministic if the model is unavailable).
-
-## Loot — captured secrets (SP8)
-
-Secrets the Executor obtains (credentials, keys, tokens, hashes) are captured in full to a
-per-engagement loot folder, `audit/<engagement>.loot/` — a structured `secrets.jsonl` plus a
-labeled, human-readable `secrets.md` (value, context, tool, command, objective, timestamp). They
-also appear in full in the report's Secrets section. No redaction — the point is concrete proof of
-what was exposed. Print them with `grin loot <engagement.yaml>`. (Loot files hold live secrets in
-plaintext; handle as sensitive. Everything stays local.)
+Secrets the Executor obtains (credentials, keys, tokens, flags) are captured in full to
+`audit/<engagement>.loot/` (`secrets.jsonl` + a readable `secrets.md`) and in the report's Secrets
+section. No redaction — the point is concrete proof of exposure. Print with
+`grin loot <engagement.yaml>`. (Loot holds live secrets in plaintext; handle as sensitive.
+Everything stays local.)
 
 ## Model backends
 
-Grin is cloud-default when configured: set `GRIN_MODEL_BACKEND=openai`, `GRIN_MODEL_URL`,
-and `GRIN_MODEL_API_KEY` to use any OpenAI-compatible endpoint (e.g. DeepSeek, Groq,
-OpenRouter). When those vars are absent, Grin falls back to local Ollama. An explicit
-`GRIN_MODEL_BACKEND` (ollama|openai) always wins over auto-detection. Client-mode
-engagements warn and audit whenever a cloud backend is active.
+Cloud-default when configured: set `GRIN_MODEL_BACKEND=openai`, `GRIN_MODEL_URL`, and
+`GRIN_MODEL_API_KEY` to use any OpenAI-compatible endpoint (DeepSeek, Groq, OpenRouter, …). Absent →
+local Ollama. An explicit `GRIN_MODEL_BACKEND` (ollama|openai) always wins. Client-mode engagements
+warn and audit whenever a cloud backend is active.
+
+## Arsenal
+
+The offensive tools run in an **environment** bound to each engagement (`env.kind` in the YAML):
+- `local` — tools on this host. `ssh` — a remote box. `docker` — a named container.
+- `arsenal` — Grin's **self-provisioning** Kali + BlackArch containers (`grin arsenal up/down/status/add`)
+  on any local Docker. A missing tool can be auto-installed or **asked for** (see the TOOLS toggle).
+- `auto` — use local tools when running **on** a pentest host (Kali/Parrot/BlackArch, or the offensive
+  tools are on PATH), else fall back to the Docker arsenal. App-launched engagements default to this,
+  so the same task runs locally on a Kali laptop and in Docker on a Mac.
 
 ## Desktop app
 
-The native GUI (`grin app`) can be installed as a clickable, icon-bearing app:
+`grin app` opens the native PyQt6 dashboard. Install it as a clickable, icon-bearing app:
+- **macOS:** `scripts/build-macapp.sh` → `dist/Grin.app` (PyInstaller, unsigned). Drag to
+  `/Applications`; first launch **right-click → Open** (Gatekeeper).
+- **Linux:** `scripts/install-desktop.sh` installs a `.desktop` entry + icon (needs `grin` on PATH;
+  NixOS is declarative).
 
-- **macOS:** `scripts/build-macapp.sh` builds `dist/Grin.app` (PyInstaller, unsigned). Drag it to
-  `/Applications` — it shows in Launchpad/Dock/Spotlight with the Grin icon. **First launch:
-  right-click → Open** (macOS Gatekeeper flags unsigned apps; signing needs an Apple cert).
-- **Linux:** `scripts/install-desktop.sh` installs a `.desktop` entry + icon into your launcher
-  (needs `grin` on `PATH`, e.g. `pip install -e .`). On NixOS it's already declarative.
+A launcher-clicked app has no shell env — put cloud config in `~/.grin/env` (it never overrides a var
+already set). The brain is cloud/local, the arsenal is Docker/host — neither is bundled into the app.
 
-A launcher-clicked app has no shell env, so put your cloud config in `~/.grin/env` (the same
-`GRIN_MODEL_*` lines) — Grin loads it at startup (it never overrides a var already set in the real
-environment). The model is cloud, the arsenal is Docker/host — neither is bundled into the app.
+### Dashboard
 
-## Test
+- **Engage bar** — type a task (`bypass login page for www.test.com`) or a bare target
+  (`www.test.com`); Grin parses the target + goal, shows the per-target menu of techniques/tools, and
+  launches a scope-locked engagement. Typing the prompt is your authorization (recorded verbatim in
+  the audit log).
+- **MODE** — Cloud / Local / Split(rig): the brain + tool topology.
+- **STRENGTH** — Recon / Normal / Aggressive / Max.
+- **STEALTH** — Off / Quiet / Paranoid (see below).
+- **TOOLS** — Ask / Auto / Never: when a run needs a tool not in the arsenal, Ask surfaces an
+  Allow/Deny prompt (then installs on Allow), Auto installs on demand, Never fails.
+- **Capture checkpoints** — in an aggressive run, each new flag pauses the sweep and asks: Keep
+  sweeping / Focus this target / Next target / Stop.
+
+## Stealth
+
+Default-OFF, opt-in, target-facing only; every command is still audited as-run with the active level
+recorded. Levels: `quiet` (egress + rotated UA + slower timing) and `paranoid` (+ nmap decoys, very
+slow/low timing, MAC/hostname spoof where it bites — auto-skipped behind NAT). Source-IP egress uses
+`GRIN_PROXY=socks5://…` or `GRIN_EGRESS=tor`; with neither set, egress is skipped and the doctor warns
+(Grin never pretends you're hidden). Stealth only changes *how* an already-authorized command is
+issued — never *what* is allowed.
+
+## Doctor
 ```bash
-python3 -m pytest -v
+grin doctor [engagement.yaml] [--fix] [--yes]
 ```
+Preflight of Grin's runtime: engine deps, the model backend, arsenal containers, env reachability,
+required tools, and the active stealth/egress posture. Read-only by default; `--fix` installs only
+auto-fixable misses with per-item consent.
+
+## Develop / test
+```bash
+ruff check grin/ tests/
+QT_QPA_PLATFORM=offscreen pytest -q
+```
+CI runs ruff + the full suite on every push/PR (`.github/workflows/ci.yml`).

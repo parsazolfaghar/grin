@@ -1,6 +1,6 @@
 import json
 from datetime import datetime
-from grin.executor import execute_task, resume_task, TaskResult, DEFAULT_MODEL
+from grin.executor import execute_task, resume_task, TaskResult
 from grin.engagement import validate_engagement
 from grin.inference import FakeClient
 from grin.runner import FakeRunner, ExecResult

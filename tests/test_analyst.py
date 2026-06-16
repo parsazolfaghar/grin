@@ -63,7 +63,6 @@ def test_replan_parse_miss_is_fail_soft():
 def test_initial_plan_parses_action_class():
     import json
     from grin.analyst import initial_plan
-    from grin.objective import Objective
     from grin.inference import FakeClient
     reply = json.dumps({"objectives": [
         {"objective": "enumerate", "target": "h", "action_class": "active-scan"},

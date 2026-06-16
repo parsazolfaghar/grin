@@ -35,7 +35,6 @@ def test_list_engagements_valid_and_invalid(tmp_path):
     (tmp_path / "broken.yaml").write_text("id: only-id\n")
     api = GrinApi(engagements_dir=str(tmp_path))
     rows = api.list_engagements()
-    by = {r.get("id") or r.get("file"): r for r in rows}
     valid = [r for r in rows if r.get("valid")]
     assert any(r["id"] == "t-app" and r["mode"] == "own-lab" for r in valid)
     assert any(r.get("valid") is False for r in rows)  # broken.yaml

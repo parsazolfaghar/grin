@@ -59,7 +59,7 @@ def test_load_missing_file_raises(tmp_path):
 
 
 def test_goal_roundtrips(tmp_path):
-    from grin.report_store import result_path, save_result, load_result
+    from grin.report_store import save_result, load_result
     from grin.orchestrator import EngagementResult
     path = str(tmp_path / "e.engagement.json")
     save_result(path, EngagementResult(status="completed", goal="assess the network"))
