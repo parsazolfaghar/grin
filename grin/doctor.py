@@ -205,8 +205,12 @@ def run_doctor(*, platform, ollama, engagement, runner, required_models, tools,
         env_kind = (engagement.env or {}).get("kind")
         if env_kind == "arsenal":
             containers = (engagement.env or {}).get("containers") or DEFAULT_ARSENALS
-            running_probe = (lambda c: (docker_prober(c) or {}).get("container", False)
-                             if docker_prober else lambda c: False)
+            if docker_prober:
+                def running_probe(c):
+                    return bool((docker_prober(c) or {}).get("container", False))
+            else:
+                def running_probe(c):
+                    return False
             arsenal_checks = check_arsenal(containers, running_probe=running_probe)
             checks += arsenal_checks
             env_ok = all(c.status in ("ok", "skipped") for c in arsenal_checks)
