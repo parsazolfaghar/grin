@@ -58,3 +58,17 @@ def test_ssh_runner_builds_expected_argv(monkeypatch):
     assert res.exit_code == 0
     assert captured["argv"][0] == "ssh" and "kali@10.0.0.50" in captured["argv"]
     assert "nmap -sV 10.0.0.7" in captured["argv"][-1]
+
+
+def test_build_runner_auto_local_when_host_has_arsenal(monkeypatch):
+    import grin.runner as r
+    from grin.runner import LocalRunner
+    monkeypatch.setattr("grin.platform_info.host_has_arsenal", lambda *a, **k: True)
+    assert isinstance(r.build_runner({"kind": "auto"}), LocalRunner)
+
+
+def test_build_runner_auto_arsenal_when_not(monkeypatch):
+    import grin.runner as r
+    from grin.runner import ArsenalRunner
+    monkeypatch.setattr("grin.platform_info.host_has_arsenal", lambda *a, **k: False)
+    assert isinstance(r.build_runner({"kind": "auto"}), ArsenalRunner)
