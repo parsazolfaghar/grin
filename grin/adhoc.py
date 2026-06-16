@@ -30,7 +30,7 @@ def _slug(s: str) -> str:
     return re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-') or "target"
 
 
-def build_adhoc_engagement(intent: Intent, *, profile_env: dict, now: datetime,
+def build_adhoc_engagement(intent: Intent, *, now: datetime,
                            operator: str, root: str = DEFAULT_ROOT):
     if not intent.targets:
         raise ValueError("no target in intent")
@@ -46,7 +46,9 @@ def build_adhoc_engagement(intent: Intent, *, profile_env: dict, now: datetime,
         "scope": {"in": [target], "exclude": []},
         "roe": {"allowed_actions": allowed_actions_for(intent.target_type)},
         "autonomy": "autonomous",
-        "env": dict(profile_env or {"kind": "local"}),
+        # adhoc engagements self-select tools per host (LocalRunner on a pentest box, else Docker
+        # arsenal). The deployment profile still governs the brain; only tool execution auto-selects.
+        "env": {"kind": "auto"},
         "audit_log": audit_log,
         "state": "active",
         "aggressive": bool(intent.bare_target),

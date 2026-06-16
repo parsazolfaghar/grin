@@ -195,8 +195,7 @@ class GrinApi:
             if not intent.targets:
                 return {"error": "no target found in prompt"}
             eng, path = build_adhoc_engagement(
-                intent, profile_env=self._tool_env or {"kind": "local"},
-                now=self._now(), operator=self._who())
+                intent, now=self._now(), operator=self._who())
             opts = {}
             if intent.bare_target:
                 opts["aggressive"] = True
