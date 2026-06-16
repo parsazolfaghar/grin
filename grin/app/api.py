@@ -97,8 +97,11 @@ class GrinApi:
             runner = self._runner_factory(eng.env) if eng else None
             required = models or [DEFAULT_MODEL]
             tool_list = tools or ["nmap"]
+            from grin.inference import active_backend
+            # check the ACTIVE brain (cloud when configured) — not always Ollama, which would show
+            # a misleading amber for cloud users with no local Ollama running
             rep = run_doctor(platform=plat, ollama=self._ollama, engagement=eng, runner=runner,
-                             required_models=required, tools=tool_list)
+                             required_models=required, tools=tool_list, backend=active_backend())
             return {"platform": {"os": plat.os, "pkg_mgr": plat.host_pkg_mgr},
                     "checks": [to_jsonable(c) for c in rep.checks], "ok": rep.ok}
         except Exception as ex:  # noqa: BLE001
