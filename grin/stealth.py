@@ -63,3 +63,21 @@ def apply(profile: StealthProfile, tool: str, command: str) -> str:
     if profile.egress and is_net and "proxychains" not in cmd:
         cmd = f"proxychains -q {cmd}"
     return cmd
+
+
+def can_spoof_device(host_has_arsenal_fn, which) -> bool:
+    """Device (MAC/hostname) spoofing only bites on a LOCAL pentest host with macchanger present.
+    Behind NAT (Docker-on-Mac) host_has_arsenal_fn() is False -> skip (it would be cosmetic)."""
+    try:
+        return bool(host_has_arsenal_fn()) and bool(which("macchanger"))
+    except Exception:  # noqa: BLE001 - detection never raises
+        return False
+
+
+def device_setup(profile: StealthProfile, *, iface: str, can_spoof: bool) -> list:
+    """Commands to spoof the bound interface's identity at engagement start. Empty unless the profile
+    enables device spoofing AND the host can actually do it."""
+    if not (profile.device and can_spoof):
+        return []
+    return [f"macchanger -r {iface}",
+            "hostnamectl set-hostname localhost"]

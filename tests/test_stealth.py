@@ -65,3 +65,29 @@ def test_apply_curl_user_agent():
     out = apply(p, "curl", "curl http://t/")
     assert "-A " in out
     assert apply(p, "curl", 'curl -A "x" http://t/').count("-A ") == 1
+
+
+from grin.stealth import can_spoof_device, device_setup
+
+
+def _wh(present):
+    return lambda t: ("/usr/bin/" + t) if t in present else None
+
+
+def test_can_spoof_requires_local_host_and_macchanger():
+    assert can_spoof_device(lambda: True, _wh({"macchanger"})) is True
+    assert can_spoof_device(lambda: True, _wh(set())) is False
+    assert can_spoof_device(lambda: False, _wh({"macchanger"})) is False
+
+
+def test_device_setup_returns_commands_when_enabled_and_capable():
+    p = profile_for("paranoid", {})
+    cmds = device_setup(p, iface="eth0", can_spoof=True)
+    assert any(c.startswith("macchanger") and "eth0" in c for c in cmds)
+
+
+def test_device_setup_empty_when_not_capable_or_disabled():
+    p = profile_for("paranoid", {})
+    assert device_setup(p, iface="eth0", can_spoof=False) == []
+    q = profile_for("quiet", {})
+    assert device_setup(q, iface="eth0", can_spoof=True) == []
