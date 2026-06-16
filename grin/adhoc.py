@@ -1,0 +1,61 @@
+"""Turn a parsed Intent into a real, scope-locked Engagement written to ~/.grin/engagements/. The
+operator's verbatim prompt is recorded in the audit log as the authorization record. No new execution
+path — the GUI then runs the written YAML through the existing start_engagement/orchestrator/spine."""
+import json
+import os
+import re
+from datetime import datetime
+
+import yaml
+
+from grin.engagement import load_engagement
+from grin.intent import Intent
+from grin.manual import allowed_actions_for
+
+DEFAULT_ROOT = os.path.expanduser("~/.grin/engagements")
+_SCHEME = re.compile(r'^[a-z]+://', re.I)
+
+
+def normalize_target(token: str) -> str:
+    """A URL collapses to its host (scope is host-level); IP/CIDR/hostnames pass through."""
+    t = (token or "").strip()
+    had_scheme = bool(_SCHEME.match(t))
+    t = _SCHEME.sub("", t)          # strip scheme
+    if had_scheme:
+        t = t.split("/", 1)[0]      # strip URL path; leave CIDR notation intact
+    return t
+
+
+def _slug(s: str) -> str:
+    return re.sub(r'[^a-z0-9]+', '-', s.lower()).strip('-') or "target"
+
+
+def build_adhoc_engagement(intent: Intent, *, profile_env: dict, now: datetime,
+                           operator: str, root: str = DEFAULT_ROOT):
+    if not intent.targets:
+        raise ValueError("no target in intent")
+    target = normalize_target(intent.targets[0])
+    stamp = now.strftime("%Y%m%d-%H%M%S")
+    eid = f"adhoc-{_slug(target)}-{stamp}"
+    os.makedirs(root, exist_ok=True)
+    audit_log = os.path.join(root, f"{eid}.jsonl")
+    doc = {
+        "id": eid,
+        "name": intent.goal or f"assessment of {target}",
+        "mode": "adhoc",
+        "scope": {"in": [target], "exclude": []},
+        "roe": {"allowed_actions": allowed_actions_for(intent.target_type)},
+        "autonomy": "autonomous",
+        "env": dict(profile_env or {"kind": "local"}),
+        "audit_log": audit_log,
+        "state": "active",
+        "aggressive": bool(intent.bare_target),
+    }
+    path = os.path.join(root, f"{eid}.yaml")
+    with open(path, "w") as fh:
+        yaml.safe_dump(doc, fh, sort_keys=False)
+    with open(audit_log, "a") as fh:
+        fh.write(json.dumps({
+            "ts": now.isoformat(timespec="seconds"), "operator": operator,
+            "event": "authorized", "prompt": intent.raw, "scope": [target]}) + "\n")
+    return load_engagement(path), path
