@@ -86,7 +86,13 @@ def check_model_backend(client, backend: str) -> Check:
         if not os.environ.get("GRIN_MODEL_API_KEY"):
             return Check("model backend: openai", "broken", "GRIN_MODEL_API_KEY not set",
                          fix=Fix("set API key", "export GRIN_MODEL_API_KEY=...", "advisory", "env"))
-        if not client.is_up():
+        # probe the CLOUD client, not the passed-in Ollama one (which would ping localhost:11434)
+        from grin.inference import make_inference_client
+        try:
+            cloud_up = make_inference_client().is_up()
+        except Exception:  # noqa: BLE001 - any client/build error = not reachable, never crash
+            cloud_up = False
+        if not cloud_up:
             url = os.environ.get("GRIN_MODEL_URL", "(unset)")
             return Check("model backend: openai", "broken", f"endpoint not reachable at {url}",
                          fix=Fix("check GRIN_MODEL_URL / network", "", "advisory", "env"))
