@@ -90,6 +90,23 @@ class GrinApi:
                 rows.append({"valid": False, "file": path, "error": str(ex)})
         return rows
 
+    def clear_engagements(self):
+        """Delete auto-generated ad-hoc engagements (adhoc-*) + their audit/tool siblings from the
+        engagements dir. Hand-written / sample engagements are left untouched. Never raises."""
+        try:
+            cleared = 0
+            for path in glob.glob(os.path.join(self.engagements_dir, "adhoc-*.yaml")):
+                base = path[:-len(".yaml")]
+                for f in (path, base + ".jsonl", base + ".tools.json"):
+                    try:
+                        os.remove(f)
+                    except OSError:
+                        pass
+                cleared += 1
+            return {"cleared": cleared}
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
+            return {"error": str(ex)}
+
     def doctor(self, file=None, models=None, tools=None):
         try:
             plat = detect_platform()

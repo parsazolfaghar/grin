@@ -235,3 +235,19 @@ def test_doctor_local_backend_default(tmp_path, monkeypatch):
         monkeypatch.delenv(v, raising=False)
     apimod.GrinApi(engagements_dir=str(tmp_path)).doctor()
     assert captured["backend"] == "ollama"          # no cloud config -> local check as before
+
+
+def test_clear_engagements_removes_adhoc_only(tmp_path):
+    # two adhoc engagements (+ siblings) and one hand-written engagement
+    (tmp_path / "adhoc-x-1.yaml").write_text("id: x1\n")
+    (tmp_path / "adhoc-x-1.jsonl").write_text("{}\n")
+    (tmp_path / "adhoc-x-1.tools.json").write_text("{}\n")
+    (tmp_path / "adhoc-x-2.yaml").write_text("id: x2\n")
+    (tmp_path / "client-real.yaml").write_text("id: real\n")
+    from grin.app.api import GrinApi
+    out = GrinApi(engagements_dir=str(tmp_path)).clear_engagements()
+    assert out["cleared"] == 2
+    assert not (tmp_path / "adhoc-x-1.yaml").exists()
+    assert not (tmp_path / "adhoc-x-1.jsonl").exists()
+    assert not (tmp_path / "adhoc-x-1.tools.json").exists()
+    assert (tmp_path / "client-real.yaml").exists()   # hand-written engagement untouched

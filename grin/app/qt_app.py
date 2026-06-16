@@ -243,6 +243,7 @@ class StatusBar(QWidget):
 # ---------------------------------------------------------------- boot view
 class BootView(QWidget):
     open_engagement = pyqtSignal(str)   # emits the engagement file path
+    clear = pyqtSignal()                # clear auto-generated ad-hoc engagements
 
     def __init__(self):
         super().__init__()
@@ -277,8 +278,16 @@ class BootView(QWidget):
         self.log = QVBoxLayout(); self.log.setContentsMargins(28, 2, 28, 16); self.log.setSpacing(6)
         logw = QWidget(); logw.setLayout(self.log); outer.addWidget(logw)
 
+        sechdr = QWidget(); sh = QHBoxLayout(sechdr)
+        sh.setContentsMargins(28, 6, 28, 4); sh.setSpacing(8)
         sec = QLabel("[ ENGAGEMENTS ]"); _role(sec, "sec"); _track(sec, 3.0)
-        sec.setContentsMargins(28, 6, 28, 4); outer.addWidget(sec)
+        sh.addWidget(sec); sh.addStretch(1)
+        self.clear_btn = QPushButton("CLEAR"); self.clear_btn.setObjectName("modebtn")
+        self.clear_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.clear_btn.setToolTip("delete auto-generated ad-hoc engagements")
+        self.clear_btn.clicked.connect(self.clear.emit)
+        _track(self.clear_btn, 1.6); sh.addWidget(self.clear_btn)
+        outer.addWidget(sechdr)
 
         self.elist = QVBoxLayout(); self.elist.setContentsMargins(22, 4, 22, 14); self.elist.setSpacing(0)
         elw = QWidget(); elw.setLayout(self.elist); outer.addWidget(elw)
@@ -880,6 +889,7 @@ class GrinWindow(QWidget):
         self.chrome = Chrome(self); root.addWidget(self.chrome)
 
         self.boot = BootView(); self.boot.open_engagement.connect(self.open_engagement)
+        self.boot.clear.connect(self._clear_engagements)
         self.engage_bar = EngageBar(self.api, on_engage=self._engage_text)
         self.boot.layout().insertWidget(0, self.engage_bar)
         self.live = LiveView()
@@ -1016,6 +1026,11 @@ class GrinWindow(QWidget):
     def _stop_engagement(self):
         if self._job_id and hasattr(self.api, "stop_engagement"):
             self.api.stop_engagement(self._job_id)
+
+    def _clear_engagements(self):
+        if hasattr(self.api, "clear_engagements"):
+            self.api.clear_engagements()
+        self.refresh_boot()   # re-render the (now-empty) engagements list
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
