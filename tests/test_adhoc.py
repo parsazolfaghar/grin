@@ -51,3 +51,29 @@ def test_build_carries_stealth(tmp_path):
     _eng, path = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
                                         operator="op", root=str(tmp_path), stealth="paranoid")
     assert load_engagement(path).stealth == "paranoid"
+
+
+def test_build_recon_caps_actions_and_records_strength(tmp_path):
+    from datetime import datetime
+    from grin.engagement import load_engagement
+    from grin.intent import parse_intent
+    from grin.adhoc import build_adhoc_engagement
+    intent = parse_intent("www.test.com")
+    _eng, path = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
+                                        operator="op", root=str(tmp_path), strength="recon")
+    e = load_engagement(path)
+    assert e.strength == "recon"
+    assert e.roe.allowed_actions == ["passive", "active-scan"]
+
+
+def test_build_aggressive_keeps_actions(tmp_path):
+    from datetime import datetime
+    from grin.engagement import load_engagement
+    from grin.intent import parse_intent
+    from grin.adhoc import build_adhoc_engagement
+    intent = parse_intent("www.test.com")
+    _eng, path = build_adhoc_engagement(intent, now=datetime(2026, 6, 15, 12, 0, 0),
+                                        operator="op", root=str(tmp_path), strength="aggressive")
+    e = load_engagement(path)
+    assert e.strength == "aggressive"
+    assert "exploit" in e.roe.allowed_actions
