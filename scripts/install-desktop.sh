@@ -8,6 +8,6 @@ ICONS="$HOME/.local/share/icons/hicolor/256x256/apps"
 mkdir -p "$APPS" "$ICONS"
 python3 -c "from grin.packaging import desktop_file_content; print(desktop_file_content(), end='')" \
   > "$APPS/grin.desktop"
-cp assets/icon.png "$ICONS/grin.png"
+cp grin/app/assets/icon.png "$ICONS/grin.png"
 update-desktop-database "$APPS" 2>/dev/null || true
 echo "installed grin.desktop -> appears in your app launcher (Exec=grin app; needs grin on PATH)"

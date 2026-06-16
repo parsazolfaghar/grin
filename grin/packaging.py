@@ -4,7 +4,7 @@ build commands unit-testable."""
 
 
 def pyinstaller_argv(entry: str = "grin/app/launch.py", name: str = "Grin",
-                     icon: str = "assets/grin.icns") -> list:
+                     icon: str = "grin/app/assets/grin.icns") -> list:
     """The macOS `.app` build command (argv[0] == 'pyinstaller', on PATH after pip install).
     --windowed produces a .app; --collect-all grin bundles the package (incl. app/assets)."""
     return ["pyinstaller", "--noconfirm", "--windowed", "--name", name,

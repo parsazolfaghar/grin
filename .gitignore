@@ -12,4 +12,4 @@ lab/results/
 dist/
 build/
 *.spec
-assets/grin.icns
+grin/app/assets/grin.icns
