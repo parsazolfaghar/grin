@@ -37,11 +37,18 @@ def flag_in_blob(flag: str, blob: str) -> bool:
     return bool(flag) and flag in (blob or "")
 
 
+def _norm(s) -> str:
+    """Lowercase + collapse all whitespace so minor formatting (e.g. 'admin : pass' vs
+    'admin:pass' is moot; spacing differences in tool output don't cost recall."""
+    import re
+    return re.sub(r"\s+", "", str(s).lower())
+
+
 def findings_recall(expected: list, finding_text: str) -> float:
     if not expected:
         return 1.0
-    ft = (finding_text or "").lower()
-    hit = sum(1 for e in expected if str(e).lower() in ft)
+    ft = _norm(finding_text)
+    hit = sum(1 for e in expected if _norm(e) in ft)
     return round(hit / len(expected), 3)
 
 

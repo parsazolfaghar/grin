@@ -38,3 +38,39 @@ def test_engage_without_flag_not_aggressive(tmp_path, monkeypatch):
     assert rc == 0
     assert captured.get("aggressive") in (False, None)
     assert captured.get("catalog") is None
+
+
+def _write_eng_strength(tmp_path, level):
+    import yaml
+    doc = {"id": "s", "name": "s", "mode": "adhoc", "scope": {"in": ["t"]},
+           "roe": {"allowed_actions": ["passive", "active-scan", "exploit"]},
+           "autonomy": "autonomous", "env": {"kind": "local"},
+           "audit_log": str(tmp_path / "a.jsonl"), "state": "active", "strength": level}
+    p = tmp_path / "e.yaml"; p.write_text(yaml.safe_dump(doc))
+    return str(p)
+
+
+def test_engage_honors_yaml_strength_aggressive(tmp_path, monkeypatch):
+    captured = {}
+    def fake_orchestrate(eng, **kw):
+        captured.update(kw)
+        from grin.orchestrator import EngagementResult
+        return EngagementResult("completed", [], [], [], [], goal=kw.get("goal", ""))
+    monkeypatch.setattr(cli, "orchestrate", fake_orchestrate)
+    monkeypatch.setattr(cli, "save_result", lambda *a, **k: None)
+    rc = cli.main(["engage", _write_eng_strength(tmp_path, "aggressive"), "--goal", "x"])
+    assert rc == 0
+    assert captured.get("aggressive") is True          # strength=aggressive triggers the sweep
+    assert captured.get("max_objectives") >= 24        # strength budget floor applied
+
+
+def test_engage_yaml_strength_normal_not_aggressive(tmp_path, monkeypatch):
+    captured = {}
+    def fake_orchestrate(eng, **kw):
+        captured.update(kw)
+        from grin.orchestrator import EngagementResult
+        return EngagementResult("completed", [], [], [], [], goal=kw.get("goal", ""))
+    monkeypatch.setattr(cli, "orchestrate", fake_orchestrate)
+    monkeypatch.setattr(cli, "save_result", lambda *a, **k: None)
+    cli.main(["engage", _write_eng_strength(tmp_path, "normal"), "--goal", "x"])
+    assert captured.get("aggressive") in (False, None)

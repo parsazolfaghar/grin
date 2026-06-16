@@ -160,3 +160,19 @@ def test_check_stealth_reports_egress():
                      stealth="paranoid")
     checks = check_stealth(eng, env={"GRIN_PROXY": "socks5://1.2.3.4:1080"})
     assert any("1.2.3.4" in c.detail for c in checks)
+
+
+def test_check_tools_handles_runner_that_raises():
+    from grin.doctor import check_tools
+    from grin.engagement import Engagement, Scope, ROE
+
+    class BoomRunner:
+        def run(self, target, command, timeout=60):
+            raise RuntimeError("409 container not running")
+
+    eng = Engagement(id="x", name="x", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "docker", "container": "c"},
+                     audit_log="a", state="active")
+    checks = check_tools(eng, BoomRunner(), ["nmap"])     # must not raise
+    assert checks[0].status == "broken"
+    assert "not reachable" in checks[0].detail.lower()
