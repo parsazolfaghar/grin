@@ -132,3 +132,31 @@ def test_check_env_auto_reports_docker(monkeypatch):
                      autonomy="autonomous", env={"kind": "auto"}, audit_log="a", state="active")
     checks = check_env(eng, ssh_prober=None, docker_prober=None)
     assert any("auto" in c.name and "docker" in c.detail.lower() for c in checks)
+
+
+def test_check_stealth_warns_without_egress():
+    from grin.doctor import check_stealth
+    from grin.engagement import Engagement, Scope, ROE
+    eng = Engagement(id="x", name="x", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"}, audit_log="a", state="active",
+                     stealth="quiet")
+    checks = check_stealth(eng, env={})
+    assert any(c.status == "warn" or "no egress" in c.detail.lower() for c in checks)
+
+
+def test_check_stealth_off_is_skipped():
+    from grin.doctor import check_stealth
+    from grin.engagement import Engagement, Scope, ROE
+    eng = Engagement(id="x", name="x", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"}, audit_log="a", state="active")
+    assert check_stealth(eng, env={}) == []
+
+
+def test_check_stealth_reports_egress():
+    from grin.doctor import check_stealth
+    from grin.engagement import Engagement, Scope, ROE
+    eng = Engagement(id="x", name="x", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"}, audit_log="a", state="active",
+                     stealth="paranoid")
+    checks = check_stealth(eng, env={"GRIN_PROXY": "socks5://1.2.3.4:1080"})
+    assert any("1.2.3.4" in c.detail for c in checks)

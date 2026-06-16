@@ -160,6 +160,24 @@ def check_env(engagement, *, ssh_prober, docker_prober) -> list:
     return [Check(f"env: {kind}", "broken", f"unknown env kind {kind!r}")]
 
 
+def check_stealth(engagement, *, env) -> list:
+    """Report stealth posture for an engagement (empty when off). Warns when stealth is on but no
+    egress is configured (IP not hidden); reports the egress source otherwise."""
+    from grin.stealth import profile_for
+    level = getattr(engagement, "stealth", "off")
+    if level == "off":
+        return []
+    prof = profile_for(level, env)
+    checks = [Check("stealth", "ok", f"level {level}")]
+    if prof.egress:
+        checks.append(Check("stealth: egress", "ok", f"routing via {prof.egress}"))
+    else:
+        checks.append(Check("stealth: egress", "warn",
+                            "stealth on but no egress (set GRIN_PROXY or GRIN_EGRESS=tor) — "
+                            "source IP not hidden"))
+    return checks
+
+
 def check_arsenal(containers, *, running_probe) -> list:
     """For env.kind == 'arsenal': each arsenal container must be running.
     running_probe(name) -> bool is injected so this is pure + testable."""
@@ -223,6 +241,7 @@ def run_doctor(*, platform, ollama, engagement, runner, required_models, tools,
             env_checks = check_env(engagement, ssh_prober=ssh_prober, docker_prober=docker_prober)
             checks += env_checks
             env_ok = all(c.status in ("ok", "skipped") for c in env_checks)
+        checks += check_stealth(engagement, env=os.environ)
         if env_ok and runner is not None:
             checks += check_tools(engagement, runner, tools)
         else:
