@@ -447,6 +447,44 @@ class EngageBar(QWidget):
         self._on_engage(self.text())
 
 
+# ---------------------------------------------------------------- tool-acquire strip
+class ToolStrip(QWidget):
+    """Pending tool-acquire requests: one row per tool with ALLOW/DENY. Pure helpers
+    (set_tools/tool_count/allow_first) keep it testable without simulating clicks."""
+
+    def __init__(self, on_allow, on_deny):
+        super().__init__()
+        self._on_allow = on_allow
+        self._on_deny = on_deny
+        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(16, 6, 16, 6); self._lay.setSpacing(4)
+        self._rows = []
+        self._tools = []
+        self.hide()
+
+    def set_tools(self, tools):
+        for w in self._rows:
+            w.setParent(None)
+        self._rows = []
+        self._tools = list(tools)
+        for t in tools:
+            row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(10)
+            lab = QLabel(f"TOOL NEEDED: {t}  (not in arsenal)"); lab.setObjectName("engagepreview")
+            allow = QPushButton("ALLOW"); allow.setObjectName("engagebtn")
+            deny = QPushButton("DENY"); deny.setObjectName("modebtn")
+            allow.clicked.connect(lambda _c=False, tool=t: self._on_allow(tool))
+            deny.clicked.connect(lambda _c=False, tool=t: self._on_deny(tool))
+            h.addWidget(lab, 1); h.addWidget(allow); h.addWidget(deny)
+            self._lay.addWidget(row); self._rows.append(row)
+        self.setVisible(bool(tools))
+
+    def tool_count(self):
+        return len(self._rows)
+
+    def allow_first(self):
+        if self._tools:
+            self._on_allow(self._tools[0])
+
+
 # ---------------------------------------------------------------- live view
 class LiveView(QWidget):
     approve = pyqtSignal(str)   # pending id
@@ -800,6 +838,8 @@ class GrinWindow(QWidget):
         self.live = LiveView()
         self.live.approve.connect(self._approve); self.live.deny.connect(self._deny)
         self.live.copied.connect(self._on_copied)
+        self.tool_strip = ToolStrip(on_allow=self._allow_tool, on_deny=self._deny_tool)
+        self.live.layout().insertWidget(1, self.tool_strip)
 
         from PyQt6.QtWidgets import QStackedWidget
         self.stack = QStackedWidget()
@@ -1054,6 +1094,7 @@ class GrinWindow(QWidget):
             self._last_sig = sig
         else:
             self._update_status(snap, running)  # still tick the elapsed clock / counters
+        self._refresh_tools()
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()
@@ -1077,6 +1118,23 @@ class GrinWindow(QWidget):
         if not running and not self._notified_done:
             self._notified_done = True
             self._notify("GRIN — engagement finished", f"status: {snap.get('status', 'done')}")
+
+    def _allow_tool(self, tool):
+        if self._job_file:
+            self.api.approve_tool(self._job_file, tool)
+            self._refresh_tools()
+
+    def _deny_tool(self, tool):
+        if self._job_file:
+            self.api.deny_tool(self._job_file, tool)
+            self._refresh_tools()
+
+    def _refresh_tools(self):
+        if not self._job_file:
+            self.tool_strip.set_tools([])
+            return
+        pend = self.api.pending_tools(self._job_file)
+        self.tool_strip.set_tools(pend if isinstance(pend, list) else [])
 
     def _approve(self, pid):
         if self._job_file:
