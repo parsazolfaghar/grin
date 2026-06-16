@@ -167,3 +167,47 @@ def test_deny_unknown_id_is_audited(tmp_path):
     rec = _audit_lines(eng)[0]
     assert rec["decision"] == "refuse"
     assert "unknown pending id" in rec["reason"]
+
+
+def test_execute_applies_stealth_and_audits_level(tmp_path):
+    import json
+    from grin.spine import _execute_and_audit
+    from grin.engagement import Engagement, Scope, ROE
+
+    class CapRunner:
+        def __init__(self): self.cmd = None
+        def run(self, target, command, timeout=60):
+            self.cmd = command
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    eng = Engagement(id="e", name="e", mode="adhoc", scope=Scope(["10.0.0.1"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active", stealth="quiet")
+    r = CapRunner()
+    _execute_and_audit(eng, target="10.0.0.1", tool="nmap", command="nmap -sV 10.0.0.1",
+                       action_class="active-scan", gated=False, approved_by=None, runner=r)
+    assert "-T2" in r.cmd
+    rec = json.loads(open(eng.audit_log).read().splitlines()[0])
+    assert rec["command"] == r.cmd
+    assert rec["stealth"] == "quiet"
+
+
+def test_execute_off_is_unchanged(tmp_path):
+    from grin.spine import _execute_and_audit
+    from grin.engagement import Engagement, Scope, ROE
+
+    class CapRunner:
+        def __init__(self): self.cmd = None
+        def run(self, target, command, timeout=60):
+            self.cmd = command
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    eng = Engagement(id="e", name="e", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active")
+    r = CapRunner()
+    _execute_and_audit(eng, target="t", tool="nmap", command="nmap -sV t",
+                       action_class="active-scan", gated=False, approved_by=None, runner=r)
+    assert r.cmd == "nmap -sV t"

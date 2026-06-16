@@ -1,6 +1,7 @@
 """The engagement spine — the SOLE path to execution. Every action goes
 resolve_class -> authorize -> gate -> (execute | enqueue) -> audit, fail-closed.
 There is no other function in Grin that runs a command or writes an allow line."""
+import os
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -12,6 +13,7 @@ from grin.gate import gate
 from grin.pending import PendingStore
 from grin.runner import ExecResult, Runner
 from grin.safety import is_self_destructive, destructive_allowed
+from grin.stealth import profile_for, apply as apply_stealth
 
 
 @dataclass
@@ -32,11 +34,15 @@ def _execute_and_audit(eng: Engagement, *, target, tool, command, action_class,
                              action_class=action_class, gated=gated, approved_by=approved_by,
                              reason="blocked: self-destructive command (R3 self-guard); "
                                     "set GRIN_ALLOW_DESTRUCTIVE=1 to override")
+    profile = profile_for(eng.stealth, os.environ)
+    command = apply_stealth(profile, tool, command)
+    stealth_level = eng.stealth if eng.stealth != "off" else None
     res = runner.run(target, command, int(eng.env.get("timeout", 60)))
     rec = audit(eng.audit_log, engagement=eng.id, target=target, tool=tool,
                 command=command, action_class=action_class, decision="allow",
                 gated=gated, approved_by=approved_by, exit_code=res.exit_code,
-                result_digest=result_digest(res.output), duration_s=res.duration_s)
+                result_digest=result_digest(res.output), duration_s=res.duration_s,
+                stealth=stealth_level)
     return Outcome(status="executed", result=res, record=rec)
 
 
