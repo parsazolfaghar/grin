@@ -105,6 +105,7 @@ class Chrome(QWidget):
     mode_toggle = pyqtSignal()
     stealth_toggle = pyqtSignal()
     strength_toggle = pyqtSignal()
+    tools_toggle = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -155,6 +156,12 @@ class Chrome(QWidget):
         self.strength_btn.clicked.connect(self.strength_toggle.emit)
         _track(self.strength_btn, 1.6); row.addWidget(self.strength_btn)
 
+        # tool-acquire policy: default ASK; cycles ASK -> AUTO -> NEVER
+        self.tools_btn = QPushButton("TOOLS: ASK"); self.tools_btn.setObjectName("modebtn")
+        self.tools_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.tools_btn.clicked.connect(self.tools_toggle.emit)
+        _track(self.tools_btn, 1.6); row.addWidget(self.tools_btn)
+
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
                                  ("✕", "wcclose", window.close)):
@@ -179,6 +186,9 @@ class Chrome(QWidget):
 
     def set_strength_label(self, text):
         self.strength_btn.setText(f"STRENGTH: {text}")
+
+    def set_tools_label(self, text):
+        self.tools_btn.setText(f"TOOLS: {text}")
 
     def set_health(self, ok):
         """Doctor health dot: green ok / amber issues / dim unknown (checking)."""
@@ -435,6 +445,44 @@ class EngageBar(QWidget):
         if not self._preview.get("can_engage"):
             return
         self._on_engage(self.text())
+
+
+# ---------------------------------------------------------------- tool-acquire strip
+class ToolStrip(QWidget):
+    """Pending tool-acquire requests: one row per tool with ALLOW/DENY. Pure helpers
+    (set_tools/tool_count/allow_first) keep it testable without simulating clicks."""
+
+    def __init__(self, on_allow, on_deny):
+        super().__init__()
+        self._on_allow = on_allow
+        self._on_deny = on_deny
+        self._lay = QVBoxLayout(self); self._lay.setContentsMargins(16, 6, 16, 6); self._lay.setSpacing(4)
+        self._rows = []
+        self._tools = []
+        self.hide()
+
+    def set_tools(self, tools):
+        for w in self._rows:
+            w.setParent(None)
+        self._rows = []
+        self._tools = list(tools)
+        for t in tools:
+            row = QWidget(); h = QHBoxLayout(row); h.setContentsMargins(0, 0, 0, 0); h.setSpacing(10)
+            lab = QLabel(f"TOOL NEEDED: {t}  (not in arsenal)"); lab.setObjectName("engagepreview")
+            allow = QPushButton("ALLOW"); allow.setObjectName("engagebtn")
+            deny = QPushButton("DENY"); deny.setObjectName("modebtn")
+            allow.clicked.connect(lambda _c=False, tool=t: self._on_allow(tool))
+            deny.clicked.connect(lambda _c=False, tool=t: self._on_deny(tool))
+            h.addWidget(lab, 1); h.addWidget(allow); h.addWidget(deny)
+            self._lay.addWidget(row); self._rows.append(row)
+        self.setVisible(bool(tools))
+
+    def tool_count(self):
+        return len(self._rows)
+
+    def allow_first(self):
+        if self._tools:
+            self._on_allow(self._tools[0])
 
 
 # ---------------------------------------------------------------- live view
@@ -790,6 +838,8 @@ class GrinWindow(QWidget):
         self.live = LiveView()
         self.live.approve.connect(self._approve); self.live.deny.connect(self._deny)
         self.live.copied.connect(self._on_copied)
+        self.tool_strip = ToolStrip(on_allow=self._allow_tool, on_deny=self._deny_tool)
+        self.live.layout().insertWidget(1, self.tool_strip)
 
         from PyQt6.QtWidgets import QStackedWidget
         self.stack = QStackedWidget()
@@ -824,6 +874,8 @@ class GrinWindow(QWidget):
         self.chrome.stealth_toggle.connect(self._toggle_stealth)
         self._strength_level = "normal"
         self.chrome.strength_toggle.connect(self._toggle_strength)
+        self._tool_acquire = "ask"
+        self.chrome.tools_toggle.connect(self._toggle_tools)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -904,6 +956,12 @@ class GrinWindow(QWidget):
         self._strength_level = order[(order.index(self._strength_level) + 1) % len(order)]
         self.api.set_strength(self._strength_level)
         self.chrome.set_strength_label(self._strength_level.upper())
+
+    def _toggle_tools(self):
+        order = ["ask", "auto", "never"]
+        self._tool_acquire = order[(order.index(self._tool_acquire) + 1) % len(order)]
+        self.api.set_tool_acquire(self._tool_acquire)
+        self.chrome.set_tools_label(self._tool_acquire.upper())
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
@@ -1036,6 +1094,7 @@ class GrinWindow(QWidget):
             self._last_sig = sig
         else:
             self._update_status(snap, running)  # still tick the elapsed clock / counters
+        self._refresh_tools()
         self._notify_transitions(snap, running)
         if not running:
             self._poll.stop()
@@ -1059,6 +1118,23 @@ class GrinWindow(QWidget):
         if not running and not self._notified_done:
             self._notified_done = True
             self._notify("GRIN — engagement finished", f"status: {snap.get('status', 'done')}")
+
+    def _allow_tool(self, tool):
+        if self._job_file:
+            self.api.approve_tool(self._job_file, tool)
+            self._refresh_tools()
+
+    def _deny_tool(self, tool):
+        if self._job_file:
+            self.api.deny_tool(self._job_file, tool)
+            self._refresh_tools()
+
+    def _refresh_tools(self):
+        if not self._job_file:
+            self.tool_strip.set_tools([])
+            return
+        pend = self.api.pending_tools(self._job_file)
+        self.tool_strip.set_tools(pend if isinstance(pend, list) else [])
 
     def _approve(self, pid):
         if self._job_file:

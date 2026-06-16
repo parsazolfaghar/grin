@@ -5,6 +5,7 @@ collaborators are injectable so the bridge is unit-tested with fakes (no pywebvi
 import glob
 import json
 import os
+import re
 import uuid
 from datetime import datetime
 
@@ -22,6 +23,7 @@ from grin.intent import parse_intent
 from grin.manual import manual_for, allowed_actions_for
 from grin.adhoc import build_adhoc_engagement
 from grin.strength import strength_params
+from grin.toolrequest import ToolRequestStore, tool_requests_path
 from grin.app.serialize import to_jsonable
 from grin.app.runner_thread import JobRunner
 
@@ -42,6 +44,7 @@ class GrinApi:
         self._tool_env = None   # active deployment profile's tool env (None -> use the engagement's)
         self._stealth = "off"
         self._strength = "normal"
+        self._tool_acquire = "ask"
 
     def set_stealth(self, level):
         """Set the stealth level applied to app-launched (ad-hoc) engagements (off|quiet|paranoid)."""
@@ -50,6 +53,10 @@ class GrinApi:
     def set_strength(self, level):
         """Set the attack-strength level for app-launched (ad-hoc) engagements."""
         self._strength = level
+
+    def set_tool_acquire(self, level):
+        """Policy for installing missing tools on app-launched engagements (ask|auto|never)."""
+        self._tool_acquire = level
 
     def set_backend(self, tool_env):
         """Apply a deployment profile's backend: rebuild the Ollama client (re-reads
@@ -156,6 +163,47 @@ class GrinApi:
         except Exception as ex:  # noqa: BLE001
             return {"error": str(ex)}
 
+    def pending_tools(self, file):
+        """Tools this engagement needs that await Allow/Deny. Never raises across the bridge."""
+        try:
+            return ToolRequestStore(tool_requests_path(self._load(file))).requested()
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
+
+    def approve_tool(self, file, tool):
+        """Install a requested tool into the arsenal, audit it, mark it resolved."""
+        try:
+            from grin.arsenal import run_add
+            from grin.audit import audit
+            # tool is interpolated into a docker-exec shell command by run_add — only allow a real
+            # package-name charset so a crafted tool token can't inject shell into the container
+            if not re.fullmatch(r"[A-Za-z0-9_.+-]+", tool or ""):
+                return {"error": f"refusing unsafe tool name {tool!r}"}
+            eng = self._load(file)
+            rc = run_add(tool)
+            if rc != 0:
+                return {"error": f"install failed for {tool!r}"}
+            ToolRequestStore(tool_requests_path(eng)).resolve(tool)
+            audit(eng.audit_log, engagement=eng.id, target="", tool=tool,
+                  command=f"arsenal add {tool}", action_class="passive", decision="allow",
+                  gated=False, approved_by=self._who(), reason="tool-install")
+            return {"status": "installed", "tool": tool}
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
+
+    def deny_tool(self, file, tool):
+        """Deny a tool request; audit it."""
+        try:
+            from grin.audit import audit
+            eng = self._load(file)
+            ToolRequestStore(tool_requests_path(eng)).deny(tool)
+            audit(eng.audit_log, engagement=eng.id, target="", tool=tool, command="",
+                  action_class="passive", decision="refuse", gated=False,
+                  approved_by=self._who(), reason="tool-deny")
+            return {"status": "denied", "tool": tool}
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
+
     def start_engagement(self, file, goal, **opts):
         try:
             eng = self._load(file)
@@ -207,7 +255,8 @@ class GrinApi:
                 return {"error": "no target found in prompt"}
             eng, path = build_adhoc_engagement(
                 intent, now=self._now(), operator=self._who(),
-                stealth=self._stealth, strength=self._strength)
+                stealth=self._stealth, strength=self._strength,
+                tool_acquire=self._tool_acquire)
             params = strength_params(self._strength)
             opts = {"aggressive": params.aggressive,
                     "max_objectives": params.max_objectives,
