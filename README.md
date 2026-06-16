@@ -106,6 +106,20 @@ OpenRouter). When those vars are absent, Grin falls back to local Ollama. An exp
 `GRIN_MODEL_BACKEND` (ollama|openai) always wins over auto-detection. Client-mode
 engagements warn and audit whenever a cloud backend is active.
 
+## Desktop app
+
+The native GUI (`grin app`) can be installed as a clickable, icon-bearing app:
+
+- **macOS:** `scripts/build-macapp.sh` builds `dist/Grin.app` (PyInstaller, unsigned). Drag it to
+  `/Applications` — it shows in Launchpad/Dock/Spotlight with the Grin icon. **First launch:
+  right-click → Open** (macOS Gatekeeper flags unsigned apps; signing needs an Apple cert).
+- **Linux:** `scripts/install-desktop.sh` installs a `.desktop` entry + icon into your launcher
+  (needs `grin` on `PATH`, e.g. `pip install -e .`). On NixOS it's already declarative.
+
+A launcher-clicked app has no shell env, so put your cloud config in `~/.grin/env` (the same
+`GRIN_MODEL_*` lines) — Grin loads it at startup (it never overrides a var already set in the real
+environment). The model is cloud, the arsenal is Docker/host — neither is bundled into the app.
+
 ## Test
 ```bash
 python3 -m pytest -v

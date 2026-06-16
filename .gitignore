@@ -9,3 +9,8 @@ audit/
 lab/_generated/
 lab/answers.yaml
 lab/results/
+dist/
+build/
+*.spec
+grin/app/assets/grin.icns
+.build-venv/
