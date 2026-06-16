@@ -7,6 +7,7 @@ from datetime import datetime
 
 from grin.aggressive import sweep_objectives, discovered_services
 from grin.analyst import initial_plan, replan
+from grin.checkpoint import new_flags, route_queue
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.finding import Finding
@@ -64,7 +65,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 objective_models, base_model: str, max_objectives: int,
                 max_steps: int, engagement_path: str, secrets: list, loot,
                 scope_targets: list, aggressive: bool = False, catalog=None,
-                seen: set = None) -> str:
+                seen: set = None, checkpoint_fn=None) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
     passed-in lists; returns the final status (completed | budget_exhausted).
 
@@ -73,6 +74,8 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     signal until the queue is exhausted / budget is hit."""
     if seen is None:
         seen = set()
+    flagged_seen: set = set()
+    focus_target = None
     while queue and len(objectives_run) < max_objectives:
         obj = queue.pop(0)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
@@ -90,9 +93,22 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             paused.append({"objective": obj, "pending_id": res.pending_id,
                            "journal": res.journal.path})
             continue
+        if aggressive and checkpoint_fn is not None:
+            fresh = new_flags(res.secrets, flagged_seen)
+            for f in fresh:
+                flagged_seen.add(f)
+            if fresh:
+                decision = checkpoint_fn(fresh[-1], obj.target)
+                queue[:], ft, stop = route_queue(decision, queue, obj.target)
+                if ft is not None:
+                    focus_target = ft
+                if stop:
+                    return "completed"
         if aggressive and catalog is not None:
             svcs = discovered_services(findings)
             for o in sweep_objectives(catalog, eng.scope.include, svcs):
+                if focus_target is not None and o.target != focus_target:
+                    continue
                 key = (o.objective, o.target)
                 if key not in seen:
                     seen.add(key)
@@ -112,7 +128,7 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                 now: datetime, model: str = DEFAULT_MODEL, planner_model: str | None = None,
                 objective_models=None, max_objectives: int = 10, max_steps: int = 12,
                 seeds=None, engagement_path: str = "", aggressive: bool = False,
-                catalog=None) -> EngagementResult:
+                catalog=None, checkpoint_fn=None) -> EngagementResult:
     if not planner_client.is_up():
         return EngagementResult("model_unavailable", goal=goal)
 
@@ -144,7 +160,7 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                          max_objectives=max_objectives, max_steps=max_steps,
                          engagement_path=engagement_path, secrets=secrets, loot=loot,
                          scope_targets=eng.scope.include, aggressive=aggressive,
-                         catalog=catalog, seen=seen)
+                         catalog=catalog, seen=seen, checkpoint_fn=checkpoint_fn)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)
 
@@ -153,7 +169,7 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                       executor_client, runner, now: datetime, model: str = DEFAULT_MODEL,
                       planner_model: str | None = None, objective_models=None,
                       max_objectives: int = 10, max_steps: int = 12,
-                      engagement_path: str = "") -> EngagementResult:
+                      engagement_path: str = "", checkpoint_fn=None) -> EngagementResult:
     """Continue a gated engagement after `grin gate` approvals. A paused objective whose
     pending action is present in the results store (approved) is resumed via resume_task; one
     that's absent (still pending / denied) stays paused. After resuming, the adaptive loop
@@ -208,6 +224,6 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
                          objective_models=objective_models, base_model=model,
                          max_objectives=max_objectives, max_steps=max_steps,
                          engagement_path=engagement_path, secrets=secrets, loot=loot,
-                         scope_targets=eng.scope.include)
+                         scope_targets=eng.scope.include, checkpoint_fn=checkpoint_fn)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)
