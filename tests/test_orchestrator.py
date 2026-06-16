@@ -237,3 +237,34 @@ def test_drive_loop_no_checkpoint_when_not_aggressive(monkeypatch):
         engagement_path="", secrets=[], loot=Loot(), scope_targets=["t1"],
         aggressive=False, catalog=None, checkpoint_fn=lambda *a: fired.append(a) or "stop")
     assert fired == []
+
+
+def test_drive_loop_should_stop_ends_run(monkeypatch):
+    import grin.orchestrator as orch
+    from grin.orchestrator import _drive_loop
+    from collections import namedtuple
+    Obj = namedtuple("Obj", "objective target")
+    ran = []
+
+    class Res:
+        status = "completed"; findings = []; pending_id = None; secrets = []
+        class journal: path = "j"
+
+    def fake_exec(*a, **k):
+        ran.append(1); return Res()
+    monkeypatch.setattr(orch, "execute_task", fake_exec)
+    monkeypatch.setattr(orch, "replan", lambda *a, **k: type("D", (), {"done": False, "reason": "",
+                                                                       "next_objectives": []})())
+
+    class Loot:
+        def record(self, *a, **k): pass
+
+    status = _drive_loop(
+        type("E", (), {"scope": type("S", (), {"include": ["t1"]})()})(),
+        goal="g", queue=[Obj("o1", "t1"), Obj("o2", "t1")], findings=[], objectives_run=[],
+        paused=[], plan_log=[], planner_client=None, executor_client=None, runner=None, now=None,
+        planner_model="m", objective_models=None, base_model="m", max_objectives=10, max_steps=5,
+        engagement_path="", secrets=[], loot=Loot(), scope_targets=["t1"],
+        should_stop=lambda: True)            # already cancelled -> stop before running anything
+    assert status == "stopped"
+    assert ran == []

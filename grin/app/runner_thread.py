@@ -26,6 +26,7 @@ class JobRunner:
         self._checkpoint = None
         self._cp_event = threading.Event()
         self._cp_decision = None
+        self._cancelled = threading.Event()
 
     def checkpoint_fn(self, flag, target):
         """Called from the orchestrate (job) thread on a fresh flag: expose the checkpoint and block
@@ -44,6 +45,16 @@ class JobRunner:
         self._cp_decision = decision
         self._cp_event.set()
 
+    def should_stop(self) -> bool:
+        return self._cancelled.is_set()
+
+    def cancel(self):
+        """Operator hit Stop: the loop ends between objectives; also unblock a thread parked at a
+        checkpoint by resolving it 'stop'."""
+        self._cancelled.set()
+        if self._checkpoint is not None:
+            self.resolve("stop")
+
     def start(self):
         self.status = "running"
         self._thread = threading.Thread(target=self._run, daemon=True)
@@ -61,6 +72,7 @@ class JobRunner:
             if self._now:
                 kw["now"] = self._now()
             kw.setdefault("checkpoint_fn", self.checkpoint_fn)
+            kw.setdefault("should_stop", self.should_stop)
             res = self._orchestrate(self.eng, **kw)
             if res is not None:
                 self._save(self.eng, res)

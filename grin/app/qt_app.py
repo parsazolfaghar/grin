@@ -106,6 +106,7 @@ class Chrome(QWidget):
     stealth_toggle = pyqtSignal()
     strength_toggle = pyqtSignal()
     tools_toggle = pyqtSignal()
+    stop_run = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -131,6 +132,11 @@ class Chrome(QWidget):
         self.runchip = QLabel("● RUNNING"); self.runchip.setObjectName("runchip")
         _track(self.runchip, 2.0); _glow(self.runchip, "#f3df33", 12); self.runchip.hide()
         row.addWidget(self.runchip)
+        # Stop the active run (cooperative — ends between objectives). Only shown while running.
+        self.stop_btn = QPushButton("■ STOP"); self.stop_btn.setObjectName("modebtn")
+        self.stop_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.stop_btn.clicked.connect(self.stop_run.emit)
+        _track(self.stop_btn, 1.6); self.stop_btn.hide(); row.addWidget(self.stop_btn)
         for text in ("LOCAL AI", "FAIL-CLOSED"):
             c = QLabel(text); _role(c, "chip"); _track(c, 2.0); row.addWidget(c)
 
@@ -177,6 +183,7 @@ class Chrome(QWidget):
 
     def set_running(self, on, label="● RUNNING"):
         self.runchip.setText(label); self.runchip.setVisible(bool(on))
+        self.stop_btn.setVisible(bool(on))
 
     def set_mode_label(self, text):
         self.mode_btn.setText(f"MODE: {text}")
@@ -918,6 +925,7 @@ class GrinWindow(QWidget):
         self.chrome.strength_toggle.connect(self._toggle_strength)
         self._tool_acquire = "ask"
         self.chrome.tools_toggle.connect(self._toggle_tools)
+        self.chrome.stop_run.connect(self._stop_engagement)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -1004,6 +1012,10 @@ class GrinWindow(QWidget):
         self._tool_acquire = order[(order.index(self._tool_acquire) + 1) % len(order)]
         self.api.set_tool_acquire(self._tool_acquire)
         self.chrome.set_tools_label(self._tool_acquire.upper())
+
+    def _stop_engagement(self):
+        if self._job_id and hasattr(self.api, "stop_engagement"):
+            self.api.stop_engagement(self._job_id)
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()
