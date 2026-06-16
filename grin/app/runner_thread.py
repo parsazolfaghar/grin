@@ -23,6 +23,24 @@ class JobRunner:
         self.status = "idle"
         self.error = ""
         self._thread = None
+        self._checkpoint = None
+        self._cp_event = threading.Event()
+        self._cp_decision = None
+
+    def checkpoint_fn(self, flag, target):
+        """Called from the orchestrate (job) thread on a fresh flag: expose the checkpoint and block
+        until the GUI resolves it, then return the decision."""
+        self._cp_decision = None
+        self._checkpoint = {"flag": flag, "target": target}
+        self._cp_event.clear()
+        self._cp_event.wait()
+        decision = self._cp_decision or "sweep"
+        self._checkpoint = None
+        return decision
+
+    def resolve(self, decision):
+        self._cp_decision = decision
+        self._cp_event.set()
 
     def start(self):
         self.status = "running"
@@ -40,6 +58,7 @@ class JobRunner:
                 kw["runner"] = self._runner_factory(self._env or self.eng.env)
             if self._now:
                 kw["now"] = self._now()
+            kw.setdefault("checkpoint_fn", self.checkpoint_fn)
             res = self._orchestrate(self.eng, **kw)
             if res is not None:
                 self._save(self.eng, res)
@@ -58,4 +77,5 @@ class JobRunner:
             snap.update(self._read(self.eng))
         except Exception:  # noqa: BLE001
             pass
+        snap["checkpoint"] = self._checkpoint
         return snap
