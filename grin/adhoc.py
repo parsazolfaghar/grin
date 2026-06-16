@@ -11,6 +11,7 @@ import yaml
 from grin.engagement import load_engagement
 from grin.intent import Intent
 from grin.manual import allowed_actions_for
+from grin.strength import strength_params
 
 DEFAULT_ROOT = os.path.expanduser("~/.grin/engagements")
 _SCHEME = re.compile(r'^[a-z]+://', re.I)
@@ -31,7 +32,8 @@ def _slug(s: str) -> str:
 
 
 def build_adhoc_engagement(intent: Intent, *, now: datetime,
-                           operator: str, root: str = DEFAULT_ROOT, stealth: str = "off"):
+                           operator: str, root: str = DEFAULT_ROOT, stealth: str = "off",
+                           strength: str = "normal"):
     if not intent.targets:
         raise ValueError("no target in intent")
     target = normalize_target(intent.targets[0])
@@ -39,20 +41,26 @@ def build_adhoc_engagement(intent: Intent, *, now: datetime,
     eid = f"adhoc-{_slug(target)}-{stamp}"
     os.makedirs(root, exist_ok=True)
     audit_log = os.path.join(root, f"{eid}.jsonl")
+    actions = allowed_actions_for(intent.target_type)
+    if strength_params(strength).recon_only:
+        actions = ["passive", "active-scan"]
     doc = {
         "id": eid,
         "name": intent.goal or f"assessment of {target}",
         "mode": "adhoc",
         "scope": {"in": [target], "exclude": []},
-        "roe": {"allowed_actions": allowed_actions_for(intent.target_type)},
+        "roe": {"allowed_actions": actions},
         "autonomy": "autonomous",
         # adhoc engagements self-select tools per host (LocalRunner on a pentest box, else Docker
         # arsenal). The deployment profile still governs the brain; only tool execution auto-selects.
         "env": {"kind": "auto"},
         "audit_log": audit_log,
         "state": "active",
-        "aggressive": bool(intent.bare_target),
+        # aggression follows the strength level (the bare-target heuristic is retired) so the
+        # on-disk aggressive flag never disagrees with strength
+        "aggressive": strength_params(strength).aggressive,
         "stealth": stealth,
+        "strength": strength,
     }
     path = os.path.join(root, f"{eid}.yaml")
     with open(path, "w") as fh:

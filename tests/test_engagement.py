@@ -139,3 +139,20 @@ def test_stealth_defaults_off_and_validates(tmp_path):
         load_engagement(str(p)); assert False, "expected EngagementError"
     except EngagementError:
         pass
+
+
+def test_strength_defaults_normal_and_validates(tmp_path):
+    import yaml
+    from grin.engagement import load_engagement, EngagementError
+    base = {"id": "s", "name": "s", "mode": "adhoc", "scope": {"in": ["t"]},
+            "roe": {"allowed_actions": ["passive"]}, "autonomy": "autonomous",
+            "env": {"kind": "local"}, "audit_log": str(tmp_path / "a.jsonl"), "state": "active"}
+    p = tmp_path / "e.yaml"; p.write_text(yaml.safe_dump(base))
+    assert load_engagement(str(p)).strength == "normal"
+    p.write_text(yaml.safe_dump({**base, "strength": "max"}))
+    assert load_engagement(str(p)).strength == "max"
+    p.write_text(yaml.safe_dump({**base, "strength": "bogus"}))
+    try:
+        load_engagement(str(p)); assert False, "expected EngagementError"
+    except EngagementError:
+        pass

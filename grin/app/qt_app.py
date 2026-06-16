@@ -104,6 +104,7 @@ class Chrome(QWidget):
 
     mode_toggle = pyqtSignal()
     stealth_toggle = pyqtSignal()
+    strength_toggle = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -148,6 +149,12 @@ class Chrome(QWidget):
         self.stealth_btn.clicked.connect(self.stealth_toggle.emit)
         _track(self.stealth_btn, 1.6); row.addWidget(self.stealth_btn)
 
+        # attack-strength toggle: default NORMAL; cycles NORMAL -> AGGRESSIVE -> MAX -> RECON
+        self.strength_btn = QPushButton("STRENGTH: NORMAL"); self.strength_btn.setObjectName("modebtn")
+        self.strength_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.strength_btn.clicked.connect(self.strength_toggle.emit)
+        _track(self.strength_btn, 1.6); row.addWidget(self.strength_btn)
+
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
                                  ("✕", "wcclose", window.close)):
@@ -169,6 +176,9 @@ class Chrome(QWidget):
 
     def set_stealth_label(self, text):
         self.stealth_btn.setText(f"STEALTH: {text}")
+
+    def set_strength_label(self, text):
+        self.strength_btn.setText(f"STRENGTH: {text}")
 
     def set_health(self, ok):
         """Doctor health dot: green ok / amber issues / dim unknown (checking)."""
@@ -812,6 +822,8 @@ class GrinWindow(QWidget):
         self.chrome.mode_toggle.connect(self._toggle_mode)
         self._stealth_level = "off"
         self.chrome.stealth_toggle.connect(self._toggle_stealth)
+        self._strength_level = "normal"
+        self.chrome.strength_toggle.connect(self._toggle_strength)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -886,6 +898,12 @@ class GrinWindow(QWidget):
         self._stealth_level = order[(order.index(self._stealth_level) + 1) % len(order)]
         self.api.set_stealth(self._stealth_level)
         self.chrome.set_stealth_label(self._stealth_level.upper())
+
+    def _toggle_strength(self):
+        order = ["normal", "aggressive", "max", "recon"]
+        self._strength_level = order[(order.index(self._strength_level) + 1) % len(order)]
+        self.api.set_strength(self._strength_level)
+        self.chrome.set_strength_label(self._strength_level.upper())
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()

@@ -21,6 +21,7 @@ from grin.executor import DEFAULT_MODEL
 from grin.intent import parse_intent
 from grin.manual import manual_for, allowed_actions_for
 from grin.adhoc import build_adhoc_engagement
+from grin.strength import strength_params
 from grin.app.serialize import to_jsonable
 from grin.app.runner_thread import JobRunner
 
@@ -40,10 +41,15 @@ class GrinApi:
         self._job_runner_factory = job_runner_factory
         self._tool_env = None   # active deployment profile's tool env (None -> use the engagement's)
         self._stealth = "off"
+        self._strength = "normal"
 
     def set_stealth(self, level):
         """Set the stealth level applied to app-launched (ad-hoc) engagements (off|quiet|paranoid)."""
         self._stealth = level
+
+    def set_strength(self, level):
+        """Set the attack-strength level for app-launched (ad-hoc) engagements."""
+        self._strength = level
 
     def set_backend(self, tool_env):
         """Apply a deployment profile's backend: rebuild the Ollama client (re-reads
@@ -193,17 +199,20 @@ class GrinApi:
             return {"error": str(ex)}
 
     def engage_text(self, text):
-        """Build a scope-locked ad-hoc engagement from free text and start it (aggressive for a bare
-        target). Reuses start_engagement — no new execution path. Never raises across the bridge."""
+        """Build a scope-locked ad-hoc engagement from free text and start it (aggression/budgets per
+        the strength level). Reuses start_engagement — no new execution path. Never raises across the bridge."""
         try:
             intent = parse_intent(text, client=self._ollama, model=DEFAULT_MODEL)
             if not intent.targets:
                 return {"error": "no target found in prompt"}
             eng, path = build_adhoc_engagement(
-                intent, now=self._now(), operator=self._who(), stealth=self._stealth)
-            opts = {}
-            if intent.bare_target:
-                opts["aggressive"] = True
+                intent, now=self._now(), operator=self._who(),
+                stealth=self._stealth, strength=self._strength)
+            params = strength_params(self._strength)
+            opts = {"aggressive": params.aggressive,
+                    "max_objectives": params.max_objectives,
+                    "max_steps": params.max_steps}
+            if params.aggressive:
                 cat = _catalog()
                 if cat is not None:
                     opts["catalog"] = cat

@@ -12,6 +12,7 @@ MODES = ("own-lab", "client", "adhoc")
 AUTONOMY = ("autonomous", "action-gated", "phase-gated")
 STATES = ("active", "paused", "done")
 STEALTH_LEVELS = ("off", "quiet", "paranoid")
+STRENGTH_LEVELS = ("recon", "normal", "aggressive", "max")
 
 
 class EngagementError(Exception):
@@ -49,6 +50,7 @@ class Engagement:
     state: str
     aggressive: bool = False
     stealth: str = "off"
+    strength: str = "normal"
 
 
 def _require(data: dict, key: str):
@@ -113,10 +115,14 @@ def validate_engagement(data: dict) -> Engagement:
     if stealth not in STEALTH_LEVELS:
         raise EngagementError(f"invalid stealth {stealth!r}; expected one of {STEALTH_LEVELS}")
 
+    strength = str(data.get("strength", "normal") or "normal")
+    if strength not in STRENGTH_LEVELS:
+        raise EngagementError(f"invalid strength {strength!r}; expected one of {STRENGTH_LEVELS}")
+
     return Engagement(id=eid, name=name, mode=mode, scope=scope, roe=roe,
                       autonomy=autonomy, env=dict(env), audit_log=audit_log, state=state,
                       aggressive=bool(data.get("aggressive", False)),
-                      stealth=stealth)
+                      stealth=stealth, strength=strength)
 
 
 def load_engagement(path: str) -> Engagement:
