@@ -8,7 +8,7 @@ import sys
 def _logger():
     import os
     import datetime
-    path = os.path.expanduser("~/.grin/app.log")
+    path = os.path.expanduser(os.environ.get("GRIN_APP_LOG", "~/.grin/app.log"))
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
     except OSError:
