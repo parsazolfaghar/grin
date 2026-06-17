@@ -262,6 +262,47 @@ def test_live_view_discovered_strip_populated(win):
     assert "GRIN{abc}" in txt
 
 
+def _stub_interpret(can):
+    def interpret(text):
+        if not can:
+            return {"can_engage": False, "targets": [], "manual": {"header": "", "sections": []}}
+        return {"can_engage": True, "targets": ["192.168.1.0/24"], "target_type": "cidr-network",
+                "goal": "find the PC", "allowed_actions": ["passive", "exploit"],
+                "manual": {"header": "", "sections": []}}
+    return interpret
+
+
+def test_engage_bar_submits_even_before_preview_debounce(win):
+    # regression: Enter/click arriving before the 250ms preview timer must still launch a valid target
+    w, _ = win
+    sent = []
+    w.engage_bar._api.interpret = _stub_interpret(can=True)
+    w.engage_bar._on_engage = sent.append
+    w.engage_bar.set_text("scan 192.168.1.0/24, find the PC and take control")
+    w.engage_bar._do_engage()   # no refresh_preview() first (debounce hasn't fired)
+    assert sent == ["scan 192.168.1.0/24, find the PC and take control"]
+
+
+def test_engage_bar_enter_key_submits(win):
+    w, _ = win
+    sent = []
+    w.engage_bar._api.interpret = _stub_interpret(can=True)
+    w.engage_bar._on_engage = sent.append
+    w.engage_bar.set_text("scan 192.168.1.0/24, take control")
+    w.engage_bar.box.returnPressed.emit()   # pressing Enter in the box
+    assert len(sent) == 1
+
+
+def test_engage_bar_no_target_does_not_submit(win):
+    w, _ = win
+    sent = []
+    w.engage_bar._api.interpret = _stub_interpret(can=False)
+    w.engage_bar._on_engage = sent.append
+    w.engage_bar.set_text("find my pc")
+    w.engage_bar._do_engage()
+    assert sent == []
+
+
 def test_live_view_discovered_empty_state(win):
     w, _ = win
     w.open_engagement("e.yaml")

@@ -410,6 +410,7 @@ class EngageBar(QWidget):
         self.btn = QPushButton("ENGAGE"); self.btn.setObjectName("engagebtn")
         self.btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.btn.clicked.connect(self._do_engage)
+        self.box.returnPressed.connect(self._do_engage)   # Enter submits, not just the button
         row.addWidget(self.box, 1); row.addWidget(self.btn)
         lay.addLayout(row)
         self.preview = QLabel(""); self.preview.setObjectName("engagepreview")
@@ -458,6 +459,10 @@ class EngageBar(QWidget):
         return self.btn.isEnabled()
 
     def _do_engage(self):
+        # Enter/click may arrive before the 250ms debounce computed the preview — interpret now so a
+        # valid target isn't silently dropped.
+        if not self._preview.get("can_engage"):
+            self.refresh_preview()
         if not self._preview.get("can_engage"):
             return
         self._on_engage(self.text())
