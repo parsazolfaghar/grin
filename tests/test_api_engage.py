@@ -251,3 +251,25 @@ def test_clear_engagements_removes_adhoc_only(tmp_path):
     assert not (tmp_path / "adhoc-x-1.jsonl").exists()
     assert not (tmp_path / "adhoc-x-1.tools.json").exists()
     assert (tmp_path / "client-real.yaml").exists()   # hand-written engagement untouched
+
+
+def test_start_engagement_uses_cloud_pins(tmp_path, monkeypatch):
+    # the GUI path must send the cloud model (deepseek-chat), not the local default, or the API 400s
+    from datetime import datetime
+    from grin.adhoc import build_adhoc_engagement
+    from grin.intent import parse_intent
+    from grin.cli import CLOUD_DEFAULT_PINS
+    monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
+    monkeypatch.setenv("GRIN_MODEL_URL", "http://x")
+    monkeypatch.setenv("GRIN_MODEL_API_KEY", "k")
+    api = _api(tmp_path)
+    captured = {}
+
+    class FakeJob:
+        def start(self): pass
+    api._job_runner_factory = lambda eng, *, goal, env=None, **opts: (captured.update(opts) or FakeJob())
+    _e, path = build_adhoc_engagement(parse_intent("www.x.com"), now=datetime(2026, 1, 1),
+                                      operator="op", root=str(tmp_path))
+    api.start_engagement(path, "goal")
+    assert captured["model"] == CLOUD_DEFAULT_PINS["planner"]
+    assert captured["planner_model"] == CLOUD_DEFAULT_PINS["planner"]
