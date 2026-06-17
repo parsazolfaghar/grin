@@ -165,6 +165,18 @@ class GrinApi:
         except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 
+    def discoveries(self, file):
+        """Deterministic 'what did tools actually find' summary (open services, captured creds/
+        flags) parsed from the results store — independent of the LLM's findings. Never raises
+        across the bridge."""
+        try:
+            eng = self._load(file)
+            from grin.results import ResultStore, results_path
+            from grin.discoveries import discover
+            return to_jsonable(discover(ResultStore(results_path(eng)).all()))
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
+            return {"error": str(ex)}
+
     # ---- actions (route through the existing spine/orchestrator; no new execution path) ----
     def approve(self, file, pending_id):
         try:
@@ -335,7 +347,7 @@ class GrinApi:
 
     def _merged_snapshot(self, file):
         return {"objectives": [], "findings": self.findings(file), "audit": self.audit(file),
-                "blocked": self.blocked(file)}
+                "blocked": self.blocked(file), "discovered": self.discoveries(file)}
 
 
 def _catalog():
