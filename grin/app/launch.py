@@ -49,6 +49,10 @@ def main(argv=None) -> int:
         added = ensure_tool_path()   # a Finder-clicked app lacks Homebrew on PATH -> add it
         if added:
             log(f"PATH += {added}")
+        from grin.dockerenv import ensure_docker_host
+        dh = ensure_docker_host()    # a clicked app has no DOCKER_HOST -> point it at Colima/Docker
+        if dh:
+            log(f"DOCKER_HOST={dh}")
         argv = argv if argv is not None else sys.argv[1:]
         # ignore macOS process-serial / -NS* launch args so the dir stays sane
         argv = [a for a in argv if not a.startswith("-psn_") and not a.startswith("-NS")]

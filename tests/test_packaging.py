@@ -9,6 +9,8 @@ def test_pyinstaller_argv():
     assert "--icon" in argv and "assets/grin.icns" in argv
     assert argv[-1] == "grin/app/launch.py"
     assert "--collect-all" in argv and "grin" in argv
+    # the docker SDK is imported lazily -> must be collected so the bundled app can drive Docker
+    assert "docker" in argv
 
 
 def test_desktop_file_content():

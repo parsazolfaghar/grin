@@ -861,6 +861,8 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv=None) -> int:
     from grin.config import load_env_file
     load_env_file()
+    from grin.dockerenv import ensure_docker_host
+    ensure_docker_host()   # auto-point DOCKER_HOST at Colima/Docker if unset (so docker envs just work)
     args = build_parser().parse_args(argv)
     if args.group == "engagement" and args.action == "validate":
         return cmd_validate(args.file)
