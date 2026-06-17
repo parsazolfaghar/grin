@@ -21,6 +21,19 @@ def test_build_step_prompt_includes_objective_target_history_and_classes():
     assert "nmap -sV 203.0.113.7" in usr      # the history is fed back
 
 
+def test_prompt_includes_offense_tradecraft_for_known_gaps():
+    # Hardening against the three gaps the T4-T6 engage runs exposed: param fuzzing (missed SSTI),
+    # enumerate-before-guess (missed /var/backups + /opt/deploy), and proactive offline cracking +
+    # locked-key cracking + pivoting. Guard that the methodology stays in the prompt.
+    _sys, usr = build_step_prompt("o", "203.0.113.7", _journal(), ["active-scan", "exploit"])
+    low = usr.lower()
+    assert "fuzz parameter" in low                      # parameter discovery
+    assert "{{7*7}}" in usr                             # SSTI probe
+    assert "/var/backups" in usr and "ls -la" in usr    # enumerate before guess
+    assert "ssh2john" in usr                            # crack passphrase-locked keys
+    assert "lateral movement" in low or "pivot" in low  # multi-host pivot
+
+
 def test_parse_step_json_action():
     raw = '{"action": {"tool": "nmap", "command": "nmap -sV 203.0.113.7", ' \
           '"declared_class": "active-scan", "why": "port scan"}}'
