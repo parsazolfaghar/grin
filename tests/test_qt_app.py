@@ -60,6 +60,22 @@ def test_window_builds_on_boot(win):
     assert w.stack.currentWidget() is w.boot
 
 
+def test_resize_handles_are_grabbable():
+    # the frameless window is resized via custom edge/corner handles — an 8px strip was too thin to
+    # catch ("stiff"). Guard a comfortable grab zone so resizing stays easy.
+    from grin.app.qt_app import RESIZE_MARGIN
+    assert RESIZE_MARGIN >= 12
+
+
+def test_cells_scroll_horizontally_to_avoid_clipping(win):
+    # long unbreakable tokens must be reachable by scrolling, not clipped off the pane edge
+    from PyQt6.QtCore import Qt
+    w, _ = win
+    w.open_engagement("e.yaml")
+    for box in (w.live.obj_box, w.live.find_box, w.live.audit_box):
+        assert box.scroll.horizontalScrollBarPolicy() == Qt.ScrollBarPolicy.ScrollBarAsNeeded
+
+
 def test_open_engagement_switches_to_live(win):
     w, _ = win
     w.open_engagement("e.yaml")

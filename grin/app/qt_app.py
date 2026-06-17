@@ -666,12 +666,14 @@ class LiveView(QWidget):
         sa = QScrollArea(); sa.setWidgetResizable(True); sa.setWidget(bw)
         sa.setFrameShape(QFrame.Shape.NoFrame)
         sa.viewport().setStyleSheet("background: transparent;")
-        sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        # AsNeeded (not AlwaysOff): when the pane is narrow, long unbreakable tokens (hashes, URLs,
+        # full commands) would otherwise be clipped off the right edge — "losing info" on resize.
+        sa.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
         v.addWidget(sa, 1)
-        # lightweight handle exposing the body layout + the count label
+        # lightweight handle exposing the body layout + the count label + the scroll area
         class _Box:
             pass
-        box = _Box(); box.body = body; box.rev = rv
+        box = _Box(); box.body = body; box.rev = rv; box.scroll = sa
         return box, cell
 
     def set_data(self, snap: dict):
@@ -830,7 +832,7 @@ _CURSORS = {
     frozenset({"right", "top"}): Qt.CursorShape.SizeBDiagCursor,
     frozenset({"left", "bottom"}): Qt.CursorShape.SizeBDiagCursor,
 }
-RESIZE_MARGIN = 8
+RESIZE_MARGIN = 14   # grab zone for the frameless window's edges/corners; 8px was too thin to catch
 MIN_W, MIN_H = 760, 520
 
 
