@@ -100,15 +100,19 @@ class DockerRunner:
 
 from grin.arsenal import DEFAULT_ARSENALS, resolve_tool, distro_for, add_cmd
 
+_AUTO_CLIENT = object()  # sentinel: client not supplied -> auto-detect (vs an explicit None = no client)
+
 
 class ArsenalRunner:
     """Runs each command in whichever provisioned arsenal container has the tool (prefer order).
     tool->container resolution cached per run. Missing tool -> clear error unless
     GRIN_ARSENAL_AUTOINSTALL=1 (install then retry). Live only ([docker] extra)."""
 
-    def __init__(self, containers=DEFAULT_ARSENALS, default_timeout: int = 60, client=None,
+    def __init__(self, containers=DEFAULT_ARSENALS, default_timeout: int = 60, client=_AUTO_CLIENT,
                  autoinstall: bool | None = None, acquire: str | None = None, requests=None):
-        if client is None:
+        # client omitted -> auto-detect from the docker SDK; an EXPLICIT None means "no client"
+        # (used by tests + callers without a daemon) and must stay None even when the SDK is present.
+        if client is _AUTO_CLIENT:
             try:
                 import docker
                 client = docker.from_env()

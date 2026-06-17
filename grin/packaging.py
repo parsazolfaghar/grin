@@ -6,9 +6,12 @@ build commands unit-testable."""
 def pyinstaller_argv(entry: str = "grin/app/launch.py", name: str = "Grin",
                      icon: str = "grin/app/assets/grin.icns") -> list:
     """The macOS `.app` build command (argv[0] == 'pyinstaller', on PATH after pip install).
-    --windowed produces a .app; --collect-all grin bundles the package (incl. app/assets)."""
+    --windowed produces a .app; --collect-all grin bundles the package (incl. app/assets).
+    The docker SDK is imported LAZILY (DockerRunner) so static analysis misses it — collect it
+    explicitly (+ its transport deps) so the bundled app can drive Kali/lab containers."""
     return ["pyinstaller", "--noconfirm", "--windowed", "--name", name,
-            "--icon", icon, "--collect-all", "grin", entry]
+            "--icon", icon, "--collect-all", "grin", "--collect-all", "docker",
+            "--hidden-import", "requests", "--hidden-import", "urllib3", entry]
 
 
 def desktop_file_content(exec_cmd: str = "grin app", icon: str = "grin") -> str:
