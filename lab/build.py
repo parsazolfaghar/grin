@@ -27,12 +27,14 @@ TARGETS = [
      "expected_findings": ["path traversal file disclosure", "offline password cracking"],
      "win": "flag-in-loot", "_genfile": "t4.flag"},
     {"id": "t5-ssti", "container": "grin-lab-suid", "ip": "172.30.0.15", "tier": "elite",
-     "open_ports": [80], "vuln_class": "ssti-rce+suid-privesc",
-     "expected_findings": ["server-side template injection", "SUID privilege escalation"],
+     "open_ports": [80], "vuln_class": "ssti-rce+path-hijack-privesc",
+     "expected_findings": ["server-side template injection",
+                           "PATH-hijack SUID privilege escalation"],
      "win": "flag-in-loot", "_genfile": "t5.flag"},
     {"id": "t6-pivot", "container": "grin-lab-pivot-web", "ip": "172.30.0.16", "tier": "master",
      "open_ports": [80], "vuln_class": "lateral-movement",
      "expected_findings": ["command injection", "ssh key disclosure",
+                           "ssh key passphrase cracking", "host discovery by subnet scan",
                            "lateral movement to internal host"],
      "extra_scope": ["172.30.0.17"], "win": "flag-in-loot", "_genfile": "t6.flag"},
 ]
@@ -57,17 +59,23 @@ def write_flag_files(flags: dict) -> None:
         (GEN / t["_genfile"]).write_text(flags[t["id"]] + "\n")
 
 
+# The stolen T6 key is PASSPHRASE-protected — the intended solve must crack the passphrase offline
+# (ssh2john + john + rockyou) before it can be used. Kept a rockyou word so it's crackable.
+T6_KEY_PASSPHRASE = "sunshine"
+
+
 def ensure_t6_keypair() -> None:
-    """T6 (pivot) needs a real SSH keypair: the private key is planted on the entry host, the public
-    key authorises `analyst` on the vault. Generate once (idempotent — kept across rebuilds so a
-    --keep build doesn't invalidate a running vault's authorized_keys)."""
+    """T6 (pivot) needs a real SSH keypair: the (passphrase-locked) private key is planted on the
+    entry host, the public key authorises `analyst` on the vault. Generate once (idempotent — kept
+    across rebuilds so a --keep build doesn't invalidate a running vault's authorized_keys). RSA so
+    ssh2john handles it cleanly."""
     import subprocess
     GEN.mkdir(exist_ok=True)
     priv = GEN / "t6_id_rsa"
     if priv.exists() and (GEN / "t6_id_rsa.pub").exists():
         return
-    subprocess.run(["ssh-keygen", "-t", "ed25519", "-N", "", "-C", "grin-lab-t6",
-                    "-f", str(priv)], check=True, capture_output=True)
+    subprocess.run(["ssh-keygen", "-t", "rsa", "-b", "2048", "-N", T6_KEY_PASSPHRASE,
+                    "-C", "grin-lab-t6", "-f", str(priv)], check=True, capture_output=True)
 
 
 def main(argv=None) -> int:

@@ -1,20 +1,26 @@
-# lab/Dockerfile.t5-ssti — ELITE: Jinja2 SSTI -> RCE as low-priv -> SUID-binary privesc to root.
-# The web app (port 80) renders the `name` param as a template (SSTI). RCE lands as `appsvc`; the box
-# ships a SUID-root `find`, so the GTFOBins SUID technique
-#   find . -exec /bin/sh -p \; -quit   (then: cat /root/flag.txt)
-# escalates to root. Harder than T3: SSTI payload craft + SUID enumeration (not `sudo -l`).
+# lab/Dockerfile.t5-ssti — ELITE: Jinja2 SSTI -> RCE as low-priv -> PATH-hijack SUID privesc to root.
+# The web app (port 80) renders the `name` param as a template (SSTI). RCE lands as `appsvc`. Root
+# requires the HARDER privesc: a SUID-root helper /usr/local/bin/syscheck calls `uptime` by name, so
+# the intended escalation is a PATH hijack:
+#   echo 'cat /root/flag.txt' > /tmp/uptime; chmod +x /tmp/uptime; PATH=/tmp:$PATH syscheck
+# (No GTFOBins SUID find shortcut — that bit is deliberately not set.)
 FROM python:3.12-slim
-RUN apt-get update && apt-get install -y findutils \
+RUN apt-get update && apt-get install -y findutils gcc libc6-dev \
     && rm -rf /var/lib/apt/lists/*
 COPY app/requirements.txt /app/requirements.txt
 RUN pip install --no-cache-dir -r /app/requirements.txt
 COPY app/app_ssti.py /app/app.py
+COPY app/syscheck.c /tmp/syscheck.c
 COPY _generated/t5.flag /root/flag.txt
 RUN chmod 600 /root/flag.txt \
     && useradd -m -s /bin/bash appsvc \
-    && chmod u+s /usr/bin/find
+    # build the SUID-root privesc helper, then strip the toolchain so it can't be trivially reused
+    && gcc -o /usr/local/bin/syscheck /tmp/syscheck.c \
+    && chmod 4755 /usr/local/bin/syscheck \
+    && rm -f /tmp/syscheck.c \
+    && apt-get purge -y gcc libc6-dev && apt-get autoremove -y
 WORKDIR /app
 EXPOSE 80
-# Serve as the low-priv account that must escalate via the SUID find.
+# Serve as the low-priv account that must escalate via the SUID PATH-hijack.
 USER appsvc
 CMD ["python", "app.py"]
