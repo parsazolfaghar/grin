@@ -8,6 +8,7 @@ from datetime import datetime
 from grin.aggressive import sweep_objectives, discovered_services
 from grin.analyst import initial_plan, replan
 from grin.checkpoint import new_flags, route_queue
+from grin.discoveries import discover
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.finding import Finding
@@ -25,6 +26,26 @@ MAX_STALL_OBJECTIVES = 2
 
 def _has_flag(secrets) -> bool:
     return any(getattr(s, "label", "") == "flag" for s in secrets)
+
+
+def _discovery_keys(journal) -> set:
+    """Deterministic 'what did recon learn' keys for THIS task: a key per live host and per
+    host:port service found in the task's executed tool output. Used so the no-progress stall counter
+    treats genuine recon (new hosts/services) as progress — a network sweep that keeps finding live
+    hosts is making progress even though it produces no findings/secrets yet."""
+    recs = []
+    for s in getattr(journal, "steps", []) or []:
+        if getattr(s, "decision", "") != "executed":
+            continue
+        a = s.action if isinstance(s.action, dict) else {}
+        recs.append({"command": a.get("command", ""), "output": getattr(s, "output", ""),
+                     "target": a.get("target", "")})
+    keys = set()
+    for h in discover(recs).hosts:
+        keys.add(("h", h.target))
+        for svc in h.services:
+            keys.add(("s", h.target, svc.port))
+    return keys
 
 
 def _flag_honeypot(findings: list) -> None:
@@ -86,13 +107,14 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     # repetition — the #1 cause of flailing). Each engagement loop gets its own set.
     executed_commands: set = set()
     flagged_seen: set = set()
+    discovered_keys: set = set()   # cumulative live hosts + host:port services found by recon
     focus_target = None
     stall = 0
     while queue and len(objectives_run) < max_objectives:
         if should_stop is not None and should_stop():   # operator hit Stop — end between objectives
             return "stopped"
         obj = queue.pop(0)
-        prev_progress = len(findings) + len(secrets)
+        prev_progress = len(findings) + len(secrets) + len(discovered_keys)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
                            client=executor_client, runner=runner, now=now,
                            model=_model_for(obj, objective_models, base_model),
@@ -116,8 +138,11 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             return "completed"
         # No-progress termination: consecutive objectives that add nothing new mean the engagement
         # has stalled — conclude instead of flailing to the budget. (Aggressive sweeps deliberately.)
+        # Recon counts: new live hosts / services reset the stall so a sweep that's still finding
+        # hosts is not mistaken for stalling (the bug that quit a /24 scan after pure recon).
+        discovered_keys |= _discovery_keys(res.journal)
         if not aggressive:
-            if len(findings) + len(secrets) == prev_progress:
+            if len(findings) + len(secrets) + len(discovered_keys) == prev_progress:
                 stall += 1
                 if stall >= MAX_STALL_OBJECTIVES:
                     return "completed"

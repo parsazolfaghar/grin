@@ -8,7 +8,7 @@ import os
 import re
 from dataclasses import dataclass, field
 
-from grin.services import extract_services
+from grin.services import extract_services, extract_live_hosts
 from grin.extractors import extract
 
 # first IPv4, else URL host, else a dotted/hostname token, else "" — best-effort target attribution
@@ -70,6 +70,12 @@ def discover(records) -> Discoveries:
                 if target not in order:
                     order.append(target)
                 bucket.setdefault(svc.port, svc)
+            # surface live hosts even with no open ports (ping sweep / all-filtered scan). The output
+            # may list many hosts (a /24 sweep), so attribute by the host nmap names, not `target`.
+            for host in extract_live_hosts(output):
+                by_target.setdefault(host, {})
+                if host not in order:
+                    order.append(host)
             tool = _tool_from_command(command)
             for sec in extract(tool, command, output, target):
                 key = (sec.label, sec.value)

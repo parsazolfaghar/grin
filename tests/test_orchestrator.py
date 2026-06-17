@@ -131,6 +131,36 @@ def test_no_progress_concludes_before_budget(tmp_path):
     assert len(res.objectives_run) <= 3   # stalled out early, did not reach the budget of 10
 
 
+def test_recon_discovering_new_hosts_resets_stall(tmp_path):
+    # A pure-recon engagement (ping sweeps, no findings/secrets) must NOT be mistaken for stalling
+    # while it keeps discovering NEW live hosts. o1/o2 find new hosts (progress -> stall resets);
+    # o3/o4 only re-find seen hosts (no progress -> stall hits 2 -> conclude). So it runs 4
+    # objectives, not 2. Each objective uses a distinct command to avoid cross-objective dedup.
+    eng = make_eng(tmp_path)
+    tgt = "203.0.113.0/24"  # in scope; vary only the command to dodge cross-objective dedup
+    cmds = [f"nmap -sn {flag} {tgt}" for flag in ("-PE", "-PP", "-PM", "-PS22")]
+    planner = FakeClient(
+        [_plan([("o1", tgt)])]
+        + [_replan(False, [("o%d" % i, tgt)], "keep sweeping") for i in range(2, 5)])
+    ex = []
+    for c in cmds:
+        ex += [_ex_action("nmap", c, tgt, "active-scan"), _ex_done([])]
+    executor = FakeClient(ex)
+
+    def _up(*ips):
+        return "".join(f"Nmap scan report for {ip}\nHost is up (0.005s latency).\n" for ip in ips)
+    runner = FakeRunner({
+        cmds[0]: ExecResult(_up("203.0.113.1", "203.0.113.2"), 0, 0.1, False),
+        cmds[1]: ExecResult(_up("203.0.113.130"), 0, 0.1, False),  # new host -> progress
+        cmds[2]: ExecResult(_up("203.0.113.1"), 0, 0.1, False),    # already seen -> stall 1
+        cmds[3]: ExecResult(_up("203.0.113.2"), 0, 0.1, False),    # already seen -> stall 2
+    })
+    res = orchestrate(eng, goal="map the network", planner_client=planner,
+                      executor_client=executor, runner=runner, now=NOW, max_objectives=10)
+    assert res.status == "completed"
+    assert len(res.objectives_run) == 4   # would be 2 if recon didn't count as progress
+
+
 def test_captured_flag_concludes_immediately(tmp_path):
     # A flag is auto-extracted from tool output in the first objective. Even though the analyst says
     # "not done", the loop concludes at once (a flag is terminal proof) rather than running on.

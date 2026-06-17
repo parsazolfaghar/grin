@@ -15,6 +15,24 @@ def test_explicit_target_wins_over_command_parsing():
     assert d.hosts[0].target == "10.9.9.9"
 
 
+def test_ping_sweep_surfaces_live_hosts_with_no_open_ports():
+    # a -sn sweep finds live hosts but no ports; they must still appear in Discoveries
+    out = ("Nmap scan report for 192.168.1.1\nHost is up (0.005s latency).\n"
+           "Nmap scan report for your-rig\nHost is up (0.001s latency).\n")
+    d = discover([_rec("nmap -sn 192.168.1.0/24", out)])
+    targets = {h.target for h in d.hosts}
+    assert "192.168.1.1" in targets and "your-rig" in targets
+    assert all(h.services == [] for h in d.hosts)  # live, no open ports
+
+
+def test_filtered_port_scan_still_surfaces_the_host():
+    # every port filtered (no 'open') -> 0 services, but the host is live and must show up
+    out = ("Nmap scan report for 192.168.1.127\nHost is up (0.0004s latency).\n"
+           "22/tcp filtered ssh\n80/tcp filtered http\n")
+    d = discover([_rec("nmap -sV -p 22,80 192.168.1.127", out)])
+    assert any(h.target == "192.168.1.127" and h.services == [] for h in d.hosts)
+
+
 class _Eng:
     def __init__(self, audit_log):
         self.audit_log = audit_log
