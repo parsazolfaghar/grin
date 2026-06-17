@@ -25,7 +25,7 @@ class _UpClient:
 
 def _fake_execute_factory(ran, tmp_path):
     def fake_execute_task(eng, *, objective, target, client, runner, now, model,
-                          max_steps, engagement_path):
+                          max_steps, engagement_path, executed_commands=None):
         ran.append(objective)
         from grin.executor import TaskResult
         from grin.journal import Journal

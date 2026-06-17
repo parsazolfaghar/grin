@@ -170,3 +170,24 @@ def test_render_history_marks_duplicate(tmp_path):
     assert "different" in history.lower(), (
         f"Expected 'different' prompt in history:\n{history}"
     )
+
+
+# ---------------------------------------------------------------------------
+# Test 4: a SHARED executed_commands set dedups ACROSS objectives (the Orchestrator
+# passes one set to every task) — a command run in an earlier task is skipped now.
+# ---------------------------------------------------------------------------
+
+def test_shared_executed_commands_skips_command_from_earlier_objective(tmp_path):
+    eng = make_eng(tmp_path)
+    cmd = "curl http://203.0.113.7/"
+    shared = {cmd}   # pretend an earlier objective already ran it
+    client = FakeClient([
+        _action("curl", cmd, "203.0.113.7", "active-scan"),   # duplicate -> must be skipped
+        _done([]),
+    ])
+    runner = CountingFakeRunner()
+    res = execute_task(eng, objective="re-probe", target="203.0.113.7", client=client,
+                       runner=runner, now=NOW, executed_commands=shared)
+    # the command was NOT invoked again (deduped via the shared set)
+    assert runner.call_counts.get(cmd, 0) == 0
+    assert any(s.decision == "duplicate" for s in res.journal.steps)

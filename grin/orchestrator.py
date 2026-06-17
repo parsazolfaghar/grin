@@ -18,6 +18,14 @@ from grin.results import ResultStore, results_path
 
 _HONEYPOT_TITLE = "Suspected honeypot/decoy (advisory)"
 
+# Consecutive objectives that add no new finding/secret before the loop concludes a non-aggressive
+# engagement has stalled (nothing more to find here) — stops flailing to the objective budget.
+MAX_STALL_OBJECTIVES = 2
+
+
+def _has_flag(secrets) -> bool:
+    return any(getattr(s, "label", "") == "flag" for s in secrets)
+
 
 def _flag_honeypot(findings: list) -> None:
     """ADVISORY ONLY (roadmap R1): if accumulated findings look like a decoy, append ONE info
@@ -74,16 +82,22 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     signal until the queue is exhausted / budget is hit."""
     if seen is None:
         seen = set()
+    # shared across objectives so a command run earlier is skipped later (stops cross-objective
+    # repetition — the #1 cause of flailing). Each engagement loop gets its own set.
+    executed_commands: set = set()
     flagged_seen: set = set()
     focus_target = None
+    stall = 0
     while queue and len(objectives_run) < max_objectives:
         if should_stop is not None and should_stop():   # operator hit Stop — end between objectives
             return "stopped"
         obj = queue.pop(0)
+        prev_progress = len(findings) + len(secrets)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
                            client=executor_client, runner=runner, now=now,
                            model=_model_for(obj, objective_models, base_model),
-                           max_steps=max_steps, engagement_path=engagement_path)
+                           max_steps=max_steps, engagement_path=engagement_path,
+                           executed_commands=executed_commands)
         objectives_run.append(obj)
         _merge_findings(findings, res.findings)
         _flag_honeypot(findings)   # advisory; never alters the queue/execution
@@ -95,6 +109,20 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             paused.append({"objective": obj, "pending_id": res.pending_id,
                            "journal": res.journal.path})
             continue
+        # Goal-met early exit: a captured flag is terminal proof. Non-aggressive runs stop the moment
+        # one is in hand rather than burning the rest of the budget. (Aggressive mode sweeps the whole
+        # catalog and ignores done by design, so this is gated off there.)
+        if not aggressive and _has_flag(secrets):
+            return "completed"
+        # No-progress termination: consecutive objectives that add nothing new mean the engagement
+        # has stalled — conclude instead of flailing to the budget. (Aggressive sweeps deliberately.)
+        if not aggressive:
+            if len(findings) + len(secrets) == prev_progress:
+                stall += 1
+                if stall >= MAX_STALL_OBJECTIVES:
+                    return "completed"
+            else:
+                stall = 0
         if aggressive and checkpoint_fn is not None:
             fresh = new_flags(res.secrets, flagged_seen)
             for f in fresh:
@@ -116,7 +144,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                     seen.add(key)
                     queue.append(o)
         decision = replan(planner_client, planner_model, goal, findings,
-                          len(objectives_run), len(queue), scope_targets)
+                          len(objectives_run), len(queue), scope_targets, secrets=secrets)
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
         if decision.done and not aggressive:
@@ -211,7 +239,7 @@ def resume_engagement(eng: Engagement, prior: EngagementResult, *, planner_clien
     queue: list = []
     if len(objectives_run) < max_objectives:
         decision = replan(planner_client, eff_planner, goal, findings, len(objectives_run), 0,
-                          eng.scope.include)
+                          eng.scope.include, secrets=secrets)
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
         if decision.done:

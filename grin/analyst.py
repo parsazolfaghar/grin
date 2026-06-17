@@ -77,17 +77,26 @@ def _render_findings(findings) -> str:
     return "\n".join(f"- [{f.severity}] {f.title} ({f.target}) via {f.tool}" for f in findings)
 
 
+def _render_secrets(secrets) -> str:
+    if not secrets:
+        return "(none captured yet)"
+    return "\n".join(f"- [{s.label}] {s.value} ({s.target}) via {s.tool}" for s in secrets)
+
+
 def replan(client, model: str, goal: str, findings, done_count: int,
-           remaining_count: int, scope_targets: list) -> AnalystDecision:
+           remaining_count: int, scope_targets: list, secrets=None) -> AnalystDecision:
+    secrets = secrets or []
     user = (
         f"Engagement goal: {goal}\n"
         f"In-scope targets (you may ONLY target these): {', '.join(scope_targets)}\n"
         f"Objectives completed: {done_count}; still queued: {remaining_count}\n\n"
         f"Findings so far:\n{_render_findings(findings)}\n\n"
+        f"Secrets/flags captured so far:\n{_render_secrets(secrets)}\n\n"
         "Decide: is the engagement goal met?\n"
-        "The goal is ONLY met when concrete proof appears in the findings — a flag captured, "
-        "credentials obtained, or privileged access gained. Enumerating services is NOT sufficient "
-        "to declare done.\n\n"
+        "The goal IS met once concrete proof has been obtained — a flag captured, credentials "
+        "obtained, or privileged access gained. Such proof appears under Findings OR under "
+        "Secrets/flags captured above; if the goal asked for a flag and one is listed there, you "
+        "MUST reply done=true. Enumerating services is NOT sufficient to declare done.\n\n"
         "If the goal is not yet met:\n"
         "- If findings reveal a service, port, or weakness, your NEXT objectives MUST be "
         "EXPLOITATION objectives (action_class: exploit or post-exploit) that act on those "
