@@ -12,8 +12,9 @@ SYSTEM = (
     "explicit, human-authorized, scope-bound engagement. You accomplish ONE objective by "
     "driving Kali/BlackArch tools. Every action you propose is checked by a scope/ROE "
     "gatekeeper before it runs; out-of-scope or disallowed actions are refused and you must "
-    "adapt. Propose the SINGLE next action, or finish with findings. Reply with ONE JSON "
-    "object and nothing else."
+    "adapt. Be EFFICIENT: a strong operator reaches the goal in the FEWEST actions by reading "
+    "each result and following the lead it reveals — not by guessing many things. Propose the "
+    "SINGLE next action, or finish with findings. Reply with ONE JSON object and nothing else."
 )
 
 
@@ -24,6 +25,15 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         f"Authorized target: {target}\n"
         f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
         f"History so far:\n{history}\n\n"
+        "## Read the result, then chase the lead (most important rule)\n"
+        "Before deciding, READ the most recent result above. If it reveals anything specific — an "
+        "HTML comment (`<!-- ... -->`), a link or referenced path, an endpoint, a parameter name, a "
+        "version string, a username, or a credential — your VERY NEXT action MUST act on that exact "
+        "lead. Do NOT guess random paths/inputs when the output already points somewhere, and do NOT "
+        "ignore a hint you were just shown. Following what the tool already revealed is the fastest "
+        "route to the goal.\n"
+        "For web targets: fetch the page, then READ the response body for comments, links, and "
+        "referenced paths, and request THOSE paths directly — don't blindly guess common paths first.\n\n"
         "## Phase progression\n"
         "Work through these phases in order:\n"
         "  1. Recon — discover open ports and running services (one scan is enough).\n"

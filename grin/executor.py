@@ -115,6 +115,12 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                 if (sec.label, sec.value) not in existing_keys:
                     journal.secrets.append(sec)
                     existing_keys.add((sec.label, sec.value))
+            # A captured flag is terminal proof for this objective — finish now instead of taking
+            # more steps. (The Orchestrator decides whether the whole engagement is done.)
+            if any(getattr(s, "label", "") == "flag" for s in found_secrets):
+                journal.save()
+                return TaskResult("completed", journal.findings, journal,
+                                  secrets=journal.secrets)
         elif out.status == "refused":
             journal.add_step(Step(action=a, decision="refused", reason=out.reason))
             noprogress += 1

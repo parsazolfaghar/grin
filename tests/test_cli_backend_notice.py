@@ -37,4 +37,4 @@ def test_notice_shows_cloud(tmp_path, monkeypatch, capsys):
     monkeypatch.delenv("GRIN_MODEL_BACKEND", raising=False)
     cli.main(["engage", _eng_yaml(tmp_path), "--goal", "x"])
     err = capsys.readouterr().err.lower()
-    assert "[backend]" in err and "cloud" in err and "deepseek-chat" in err
+    assert "[backend]" in err and "cloud" in err and "deepseek-reasoner" in err

@@ -191,3 +191,26 @@ def test_shared_executed_commands_skips_command_from_earlier_objective(tmp_path)
     # the command was NOT invoked again (deduped via the shared set)
     assert runner.call_counts.get(cmd, 0) == 0
     assert any(s.decision == "duplicate" for s in res.journal.steps)
+
+
+# ---------------------------------------------------------------------------
+# Test 5: capturing a flag ends the task immediately (terminal proof) — no
+# further steps are taken even if max_steps remains.
+# ---------------------------------------------------------------------------
+
+def test_flag_capture_ends_task_immediately(tmp_path):
+    eng = make_eng(tmp_path)
+    cmd = "curl http://203.0.113.7/diag"
+    # the model would keep going (a 2nd action queued), but the flag in the 1st output stops it
+    client = FakeClient([
+        _action("curl", cmd, "203.0.113.7", "active-scan"),
+        _action("curl", "curl http://203.0.113.7/other", "203.0.113.7", "active-scan"),
+    ])
+    runner = CountingFakeRunner({cmd: ExecResult("secret_flag: GRIN{cafe1234}", 0, 0.1, False)})
+    res = execute_task(eng, objective="capture flag", target="203.0.113.7", client=client,
+                       runner=runner, now=NOW, max_steps=12)
+    assert res.status == "completed"
+    assert any(s.label == "flag" for s in res.secrets)
+    # only the first command ran — the loop stopped on the flag, never issued the 2nd
+    assert runner.call_counts.get("curl http://203.0.113.7/other", 0) == 0
+    assert len([s for s in res.journal.steps if s.decision == "executed"]) == 1
