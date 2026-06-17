@@ -507,7 +507,10 @@ DEFAULT_PINS = {
 }
 
 CLOUD_DEFAULT_PINS = {
-    "planner": "deepseek-chat",
+    # R1 reasoner for PLANNING/judgment (few calls per engagement -> small cost; measurably plans
+    # smarter — skips needless recon when the goal already names the service). Per-step recon/exploit
+    # stay on fast/cheap chat. Overridable via --planner-model/--recon-model/--exploit-model.
+    "planner": "deepseek-reasoner",
     "recon": "deepseek-chat",
     "exploit": "deepseek-chat",
 }

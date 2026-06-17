@@ -11,7 +11,7 @@ def test_resolve_pins_ollama(monkeypatch):
 def test_resolve_pins_openai(monkeypatch):
     monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
     pins = cli._resolve_pins(planner=None, recon=None, exploit=None)
-    assert pins["planner"] == cli.CLOUD_DEFAULT_PINS["planner"] == "deepseek-chat"
+    assert pins["planner"] == cli.CLOUD_DEFAULT_PINS["planner"] == "deepseek-reasoner"
     assert pins["recon"] == "deepseek-chat" and pins["exploit"] == "deepseek-chat"
 
 
