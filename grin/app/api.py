@@ -230,6 +230,14 @@ class GrinApi:
             eng = self._load(file)
         except Exception as ex:  # noqa: BLE001
             return {"error": str(ex)}
+        # resolve per-role models for the ACTIVE backend (deepseek-chat on cloud, qwen3:14b local).
+        # Without this the run defaults to the local model name and the cloud API 400s. (Caller-set
+        # values win.)
+        from grin.cli import _resolve_pins, _objective_models
+        pins = _resolve_pins()
+        opts.setdefault("model", pins["planner"])
+        opts.setdefault("planner_model", pins["planner"])
+        opts.setdefault("objective_models", _objective_models(pins["recon"], pins["exploit"]))
         job_id = uuid.uuid4().hex[:12]
         if self._job_runner_factory is not None:
             job = self._job_runner_factory(eng, goal=goal, env=self._tool_env, **opts)
