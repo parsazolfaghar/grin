@@ -37,3 +37,19 @@ def test_get_returns_latest_for_id(tmp_path):
     s.put(id="x", command="c1", output="first", exit_code=0)
     s.put(id="x", command="c2", output="second", exit_code=1)
     assert s.get("x")["output"] == "second"   # latest wins
+
+
+def test_all_returns_latest_per_id_in_order(tmp_path):
+    from grin.results import ResultStore
+    s = ResultStore(str(tmp_path / "e.results.jsonl"))
+    s.put(id="a", command="nmap x", output="o1", exit_code=0)
+    s.put(id="b", command="hydra y", output="o2", exit_code=0)
+    s.put(id="a", command="nmap x", output="o1-newer", exit_code=0)
+    rows = s.all()
+    assert [r["id"] for r in rows] == ["a", "b"]
+    assert rows[0]["output"] == "o1-newer"
+
+
+def test_all_missing_file_returns_empty(tmp_path):
+    from grin.results import ResultStore
+    assert ResultStore(str(tmp_path / "nope.jsonl")).all() == []
