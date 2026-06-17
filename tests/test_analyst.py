@@ -60,6 +60,33 @@ def test_replan_parse_miss_is_fail_soft():
     assert "unparseable" in d.reason
 
 
+class _RecordingClient:
+    def __init__(self, reply):
+        self.reply = reply
+        self.prompt = ""
+
+    def is_up(self):
+        return True
+
+    def installed_models(self):
+        return []
+
+    def generate(self, model, system, prompt, temperature=0.3, keep_alive="10m"):
+        self.prompt = prompt
+        return self.reply
+
+
+def test_replan_prompt_includes_captured_secrets():
+    from grin.secret import Secret
+    rec = _RecordingClient(json.dumps({"done": True, "reason": "flag", "next_objectives": []}))
+    flag = Secret(label="flag", value="GRIN{abc123}", target="10.0.0.5", tool="curl",
+                  command="curl x", context="captured")
+    d = replan(rec, "m", "capture the flag", [], 1, 0, ["10.0.0.0/24"], secrets=[flag])
+    assert "GRIN{abc123}" in rec.prompt           # the analyst is shown the captured flag
+    assert "Secrets/flags captured" in rec.prompt
+    assert d.done is True
+
+
 def test_initial_plan_parses_action_class():
     import json
     from grin.analyst import initial_plan

@@ -29,7 +29,8 @@ class TaskResult:
 
 def execute_task(eng: Engagement, *, objective: str, target: str, client, runner,
                  now: datetime, model: str = DEFAULT_MODEL, max_steps: int = 12,
-                 journal: Journal | None = None, engagement_path: str = "") -> TaskResult:
+                 journal: Journal | None = None, engagement_path: str = "",
+                 executed_commands: set | None = None) -> TaskResult:
     if journal is None:
         task_id = uuid.uuid4().hex[:8]
         journal = Journal(task_id=task_id, objective=objective, target=target,
@@ -41,7 +42,11 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
         return TaskResult("model_unavailable", journal.findings, journal,
                           secrets=journal.secrets)
 
-    executed_commands: set[str] = set()
+    # Command dedup. A caller (the Orchestrator) may pass a SHARED set so a command already run in
+    # an EARLIER objective is skipped too — this is what stops the agent re-curling the same URL
+    # across objectives. None -> a fresh per-task set (back-compatible).
+    if executed_commands is None:
+        executed_commands = set()
     noprogress = 0
 
     while len(journal.steps) < journal.max_steps:

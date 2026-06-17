@@ -90,17 +90,66 @@ def test_findings_are_deduped(tmp_path):
                                     evidence="e", tool="nmap", command="c")]
 
 
-def test_budget_caps_objectives(tmp_path):
+def _ex_find(title, cmd, target):
+    """Two executor replies: run a command, then report a finding (satisfies the evidence gate)."""
+    return [_ex_action("nmap", cmd, target, "active-scan"),
+            _ex_done([{"title": title, "severity": "info", "evidence": "e", "tool": "nmap",
+                       "command": cmd}])]
+
+
+def test_budget_caps_objectives_when_making_progress(tmp_path):
+    # Each objective finds something NEW (so the no-progress stop doesn't fire), the analyst never
+    # declares done, and the budget caps the loop at 3 -> budget_exhausted with the queue non-empty.
     eng = make_eng(tmp_path)
-    planner = FakeClient([
-        _plan([("o", "203.0.113.7")]),
-        _replan(False, [("more", "203.0.113.7")], "keep going"),
-    ])
-    executor = FakeClient(_ex_done([]))
+    planner = FakeClient(
+        [_plan([("o1", "203.0.113.7")])]
+        + [_replan(False, [("o%d" % i, "203.0.113.7")], "keep going") for i in range(2, 8)])
+    executor = FakeClient(
+        _ex_find("f1", "nmap a 203.0.113.7", "203.0.113.7")
+        + _ex_find("f2", "nmap b 203.0.113.7", "203.0.113.7")
+        + _ex_find("f3", "nmap c 203.0.113.7", "203.0.113.7"))
+    runner = FakeRunner({"nmap a 203.0.113.7": ExecResult("a", 0, 0.1, False),
+                         "nmap b 203.0.113.7": ExecResult("b", 0, 0.1, False),
+                         "nmap c 203.0.113.7": ExecResult("c", 0, 0.1, False)})
     res = orchestrate(eng, goal="g", planner_client=planner, executor_client=executor,
-                      runner=FakeRunner(), now=NOW, max_objectives=3)
+                      runner=runner, now=NOW, max_objectives=3)
     assert res.status == "budget_exhausted"
     assert len(res.objectives_run) == 3
+
+
+def test_no_progress_concludes_before_budget(tmp_path):
+    # Every objective completes with no new finding/secret -> the loop concludes (stall) well before
+    # the objective budget, instead of flailing to it.
+    eng = make_eng(tmp_path)
+    planner = FakeClient(
+        [_plan([("o1", "203.0.113.7")])]
+        + [_replan(False, [("o%d" % i, "203.0.113.7")], "keep going") for i in range(2, 12)])
+    executor = FakeClient(_ex_done([]))   # always done, nothing found
+    res = orchestrate(eng, goal="g", planner_client=planner, executor_client=executor,
+                      runner=FakeRunner(), now=NOW, max_objectives=10)
+    assert res.status == "completed"
+    assert len(res.objectives_run) <= 3   # stalled out early, did not reach the budget of 10
+
+
+def test_captured_flag_concludes_immediately(tmp_path):
+    # A flag is auto-extracted from tool output in the first objective. Even though the analyst says
+    # "not done", the loop concludes at once (a flag is terminal proof) rather than running on.
+    eng = make_eng(tmp_path)
+    planner = FakeClient([
+        _plan([("probe", "203.0.113.7")]),
+        _replan(False, [("more", "203.0.113.7")], "keep going"),  # analyst would continue...
+    ])
+    executor = FakeClient([
+        _ex_action("curl", "curl http://203.0.113.7/diag", "203.0.113.7", "active-scan"),
+        _ex_done([]),
+    ])
+    runner = FakeRunner({"curl http://203.0.113.7/diag":
+                         ExecResult("secret_flag: GRIN{deadbeef}", 0, 0.1, False)})
+    res = orchestrate(eng, goal="capture the flag", planner_client=planner,
+                      executor_client=executor, runner=runner, now=NOW, max_objectives=10)
+    assert res.status == "completed"
+    assert len(res.objectives_run) == 1   # stopped right after the flag, did not run "more"
+    assert any(getattr(s, "label", "") == "flag" for s in res.secrets)
 
 
 def test_gated_objective_pauses_and_loop_continues(tmp_path):
