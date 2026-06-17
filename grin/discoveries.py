@@ -1,6 +1,10 @@
-"""Deterministic discovery summary — aggregate what tools actually found from the persisted
-results store, independent of the LLM's findings. Pure, never raises (house rule, see
-grin/services.py + grin/extractors.py)."""
+"""Deterministic discovery summary — aggregate what tools actually found, independent of the LLM's
+findings. `discover()` is pure (never raises); `gather_records()` does the IO of collecting tool
+output from where the engine persists it: the per-task JOURNALS (the autonomous `engage` path —
+this is where the Executor records full output) AND the results store (the gate/resume path)."""
+import glob
+import json
+import os
 import re
 from dataclasses import dataclass, field
 
@@ -59,7 +63,8 @@ def discover(records) -> Discoveries:
             if not output:
                 continue
             commands_run += 1
-            target = target_from_command(command)
+            # prefer an explicit target (journal step carries action.target), else parse the command
+            target = (rec or {}).get("target") or target_from_command(command)
             for svc in extract_services(output):
                 bucket = by_target.setdefault(target, {})
                 if target not in order:
@@ -79,6 +84,37 @@ def discover(records) -> Discoveries:
                            commands_run=commands_run)
     except Exception:  # noqa: BLE001 - deterministic extractor: never raise
         return Discoveries()
+
+
+def gather_records(engagement) -> list:
+    """IO: collect executed-step records {command, output, target} for an engagement from BOTH the
+    results store (gate/resume path) and the per-task journals (autonomous `engage` path — where the
+    Executor writes full tool output). Never raises; returns [] when there is nothing yet."""
+    recs = []
+    try:
+        from grin.results import ResultStore, results_path
+        recs.extend(ResultStore(results_path(engagement)).all())
+    except Exception:  # noqa: BLE001
+        pass
+    try:
+        base, _ext = os.path.splitext(engagement.audit_log)
+        for path in sorted(glob.glob(f"{base}.*.journal.json")):
+            try:
+                data = json.loads(open(path).read())
+            except (OSError, json.JSONDecodeError):
+                continue
+            for i, step in enumerate(data.get("steps", []) or []):
+                if step.get("decision") != "executed":
+                    continue
+                action = step.get("action") or {}
+                recs.append({"id": f"{os.path.basename(path)}#{i}",
+                             "command": action.get("command", ""),
+                             "output": step.get("output", ""),
+                             "target": action.get("target", ""),
+                             "exit_code": step.get("exit_code")})
+    except Exception:  # noqa: BLE001
+        pass
+    return recs
 
 
 def summary_line(d: Discoveries) -> str:
