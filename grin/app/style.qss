@@ -74,6 +74,12 @@ QLabel[role="auditallow"]  { color: #f6f6f4; font-size: 11px; }
 QLabel[role="auditrefuse"] { color: #f3df33; font-size: 11px; }
 QLabel[role="auditline"]   { color: rgba(246,246,244,0.52); font-size: 11px; }
 
+/* ---- discovered strip (deterministic results banner above the panes) ---- */
+QFrame[role="discovered"] { background: rgba(243,223,51,0.06); border-top: 1px solid rgba(246,246,244,0.40); border-bottom: 1px solid rgba(246,246,244,0.40); border-left: 3px solid #f3df33; }
+QLabel[role="discoveredhdr"]  { color: #f3df33; font-size: 11px; }
+QLabel[role="discoveredsum"]  { color: rgba(246,246,244,0.52); font-size: 10px; }
+QLabel[role="discoveredbody"] { color: #f6f6f4; font-size: 11px; }
+
 /* ---- powerline status bar ---- */
 QLineEdit#filterbox { background: #0a14cf; color: #f6f6f4; border: none;
                       border-bottom: 1px solid rgba(246,246,244,0.40); padding: 7px 16px; font-size: 11px; }

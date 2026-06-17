@@ -40,6 +40,9 @@ class FakeApi:
     def deny(self, f, pid):
         self.denied.append(pid); return {"status": "denied", "reason": ""}
 
+    def discoveries(self, f):
+        return {"commands_run": 0, "hosts": [], "credentials": [], "flags": []}
+
     def set_backend(self, tool_env):
         self.tool_env = tool_env
 
@@ -246,3 +249,21 @@ def test_resizable_panes_are_a_splitter(win):
     # the live grid is a QSplitter with the 3 cells
     splitters = w.live.findChildren(QSplitter)
     assert splitters and splitters[0].count() == 3
+
+
+def test_live_view_discovered_strip_populated(win):
+    w, _ = win
+    w.open_engagement("e.yaml")
+    w.live.set_data({"discovered": {"commands_run": 2, "hosts": [
+        {"target": "192.168.1.42", "services": [{"port": 7000, "name": "airplay"}]}],
+        "credentials": [], "flags": [{"value": "GRIN{abc}"}]}})
+    txt = w.live.discovered_text()
+    assert "192.168.1.42" in txt and "7000/tcp airplay" in txt
+    assert "GRIN{abc}" in txt
+
+
+def test_live_view_discovered_empty_state(win):
+    w, _ = win
+    w.open_engagement("e.yaml")
+    w.live.set_data({"discovered": {"commands_run": 0, "hosts": [], "credentials": [], "flags": []}})
+    assert "no results" in w.live.discovered_text().lower()
