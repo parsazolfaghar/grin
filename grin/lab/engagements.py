@@ -9,7 +9,8 @@ def engagement_dict(target: Target, *, runner_container: str = "grin-kali") -> d
         "id": eid,
         "name": f"Flag-lab {target.id} ({target.tier})",
         "mode": "own-lab",
-        "scope": {"in": [target.ip], "exclude": []},
+        # extra_scope authorises pivot/lateral targets (e.g. T6's vault host) beyond the entry IP.
+        "scope": {"in": [target.ip, *target.extra_scope], "exclude": []},
         "roe": {"allowed_actions": ["passive", "active-scan", "exploit", "post-exploit"],
                 "windows": []},
         "autonomy": "autonomous",

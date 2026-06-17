@@ -28,3 +28,13 @@ def test_engagement_dict_is_loadable(tmp_path):
     eng = load_engagement(str(p))
     assert eng.id == "lab-t2-web"
     assert eng.scope.include == ["172.30.0.12"]
+
+
+def test_engagement_scope_includes_extra_scope():
+    # T6's pivot vault must be in scope so lateral movement is authorized.
+    t6 = Target(id="t6-pivot", container="grin-lab-pivot-web", ip="172.30.0.16", tier="master",
+                open_ports=[80], vuln_class="lateral-movement",
+                expected_findings=["lateral movement"], flag="GRIN{z}", win="flag-in-loot",
+                extra_scope=["172.30.0.17"])
+    d = engagement_dict(t6)
+    assert d["scope"]["in"] == ["172.30.0.16", "172.30.0.17"]

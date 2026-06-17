@@ -28,6 +28,17 @@ targets:
     assert t.id == "t1-ssh" and t.ip == "172.30.0.11"
     assert t.open_ports == [22] and t.flag == "GRIN{abc}"
     assert t.expected_findings == ["ssh weak credentials"]
+    assert t.extra_scope == []   # optional field defaults empty when absent
+
+
+def test_extra_scope_loads_when_present(tmp_path):
+    path = _yaml(tmp_path, """
+targets:
+  - {id: t6-pivot, container: d, ip: 172.30.0.16, tier: master, open_ports: [80],
+     vuln_class: lateral-movement, expected_findings: ["y"], flag: "GRIN{b}", win: flag-in-loot,
+     extra_scope: ["172.30.0.17"]}
+""")
+    assert load_answers(path)[0].extra_scope == ["172.30.0.17"]
 
 
 def test_missing_required_field_raises(tmp_path):

@@ -1,0 +1,18 @@
+# lab/Dockerfile.t6-pivot-vault — MASTER (vault host): the flag lives here, behind key-only SSH for
+# `analyst`. The matching deploy key is planted on the entry host (172.30.0.16); reaching this flag
+# requires pivoting with the stolen key. Not directly part of the engagement's primary scope target
+# (that's the entry host) — it's in scope via extra_scope so the pivot is authorized.
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y openssh-server \
+    && rm -rf /var/lib/apt/lists/* \
+    && mkdir -p /run/sshd \
+    && useradd -m -s /bin/bash analyst \
+    && mkdir -p /home/analyst/.ssh
+COPY _generated/t6_id_rsa.pub /home/analyst/.ssh/authorized_keys
+COPY _generated/t6.flag /home/analyst/flag.txt
+RUN chown -R analyst:analyst /home/analyst/.ssh /home/analyst/flag.txt \
+    && chmod 700 /home/analyst/.ssh \
+    && chmod 600 /home/analyst/.ssh/authorized_keys \
+    && chmod 644 /home/analyst/flag.txt
+EXPOSE 22
+CMD ["/usr/sbin/sshd", "-D", "-e"]

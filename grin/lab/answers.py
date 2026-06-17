@@ -1,5 +1,5 @@
 """Answer-key (ground truth) for the flag-lab. One Target per vulnerable container."""
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import yaml
@@ -20,6 +20,7 @@ class Target:
     expected_findings: list
     flag: str
     win: str
+    extra_scope: list = field(default_factory=list)   # extra in-scope hosts (e.g. T6 pivot vault)
 
 
 _REQUIRED = ("id", "container", "ip", "tier", "open_ports", "vuln_class",
@@ -42,7 +43,8 @@ def load_answers(path: str) -> list:
         targets.append(Target(
             id=row["id"], container=row["container"], ip=row["ip"], tier=row["tier"],
             open_ports=list(row["open_ports"]), vuln_class=row["vuln_class"],
-            expected_findings=list(row["expected_findings"]), flag=row["flag"], win=row["win"]))
+            expected_findings=list(row["expected_findings"]), flag=row["flag"], win=row["win"],
+            extra_scope=list(row.get("extra_scope", []))))
     return targets
 
 

@@ -5,7 +5,8 @@ from pathlib import Path
 
 from grin.lab.answers import load_answers
 
-LAB_CONTAINERS = ["grin-lab-ssh", "grin-lab-web", "grin-lab-chain"]
+LAB_CONTAINERS = ["grin-lab-ssh", "grin-lab-web", "grin-lab-chain", "grin-lab-crack",
+                  "grin-lab-suid", "grin-lab-pivot-web", "grin-lab-pivot-vault"]
 LAB_DIR = Path(__file__).resolve().parents[2] / "lab"
 
 

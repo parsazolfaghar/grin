@@ -9,6 +9,22 @@ Validated on the user rig (NixOS, RTX 3060 12 GB, Ollama local). Phase-1 gate is
 an autonomous `grin engage` against T1 captured the flag end-to-end with the default local
 model (`qwen3:14b`) once the deterministic extractor landed.
 
+## Target ladder (increasing difficulty)
+
+| id | ip | tier | vuln / intended chain |
+|----|----|------|------------------------|
+| t1-ssh   | .11 | easy   | weak SSH creds -> ssh -> flag |
+| t2-web   | .12 | medium | web OS command injection -> read /flag.txt |
+| t3-chain | .13 | hard   | cmd-injection foothold -> `sudo find` GTFOBins privesc -> root flag |
+| t4-crack | .14 | expert | path-traversal file disclosure -> leak password hash -> **offline crack** (`john` + rockyou) -> SSH -> flag |
+| t5-ssti  | .15 | elite  | **Jinja2 SSTI** -> RCE as low-priv -> **SUID `find`** GTFOBins privesc -> root flag |
+| t6-pivot | .16 (+ .17 vault) | master | cmd-injection -> steal deploy SSH key -> **pivot** to internal vault (.17, in scope via `extra_scope`) -> flag |
+
+T4 exercises the offline-cracking path (the password is a mid-rank rockyou word the tiny curated
+list won't find — `john`/rockyou is required). T5 needs SSTI payload craft + SUID enumeration. T6 is
+multi-host lateral movement: the flag lives on the vault, reachable only with the key stolen from the
+entry host.
+
 **Model backend:** Grin is cloud-default when configured — set `GRIN_MODEL_BACKEND=openai`,
 `GRIN_MODEL_URL`, and `GRIN_MODEL_API_KEY` (e.g. via `~/.grin/deepseek.env`) to use an
 OpenAI-compatible cloud endpoint such as DeepSeek. When those vars are absent, Grin falls
@@ -59,12 +75,12 @@ docker exec grin-kali sh -c "printf 'Host *\n    StrictHostKeyChecking no\n    U
 
 ```bash
 cd ~/grin
-python3 -m grin.cli lab up        # build + start the 3 targets on the internal grin-lab net
+python3 -m grin.cli lab up        # build + start all targets (7 containers) on the internal grin-lab net
 python3 -m grin.cli lab status    # confirm running + runner-reach=open for each
 python3 -m grin.cli lab engagements examples/lab   # generate engagement YAMLs
 ```
 
-The host-networked `grin-kali` reaches the `internal: true` lab targets (172.30.0.11-13) via
+The host-networked `grin-kali` reaches the `internal: true` lab targets (172.30.0.11-17) via
 the host bridge route — no `docker network connect` needed.
 
 ## 4. Run an engagement (needs the docker python SDK + pyyaml + httpx)

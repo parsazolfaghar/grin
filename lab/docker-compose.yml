@@ -27,3 +27,27 @@ services:
     container_name: grin-lab-chain
     networks: {grin-lab: {ipv4_address: 172.30.0.13}}
     restart: "no"
+  t4-crack:
+    build: {context: ., dockerfile: Dockerfile.t4-crack}
+    image: grin-lab-crack
+    container_name: grin-lab-crack
+    networks: {grin-lab: {ipv4_address: 172.30.0.14}}
+    restart: "no"
+  t5-ssti:
+    build: {context: ., dockerfile: Dockerfile.t5-ssti}
+    image: grin-lab-suid
+    container_name: grin-lab-suid
+    networks: {grin-lab: {ipv4_address: 172.30.0.15}}
+    restart: "no"
+  t6-pivot-web:
+    build: {context: ., dockerfile: Dockerfile.t6-pivot-web}
+    image: grin-lab-pivot-web
+    container_name: grin-lab-pivot-web
+    networks: {grin-lab: {ipv4_address: 172.30.0.16}}
+    restart: "no"
+  t6-pivot-vault:
+    build: {context: ., dockerfile: Dockerfile.t6-pivot-vault}
+    image: grin-lab-pivot-vault
+    container_name: grin-lab-pivot-vault
+    networks: {grin-lab: {ipv4_address: 172.30.0.17}}
+    restart: "no"
