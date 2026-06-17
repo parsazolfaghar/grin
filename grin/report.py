@@ -102,8 +102,27 @@ def attack_coverage(catalog, audit, findings) -> dict:
     return {"attempted": attempted, "succeeded": succeeded, "by_tactic": by_tactic}
 
 
+def render_discovered(d) -> str:
+    """A deterministic '## Discovered' section from a Discoveries (raw observed facts, not LLM
+    findings). Returns '' when nothing was discovered."""
+    if not d or (not d.hosts and not d.credentials and not d.flags):
+        return ""
+    lines = ["## Discovered", ""]
+    for h in d.hosts:
+        host = h.target or "(unattributed)"
+        svcs = ", ".join(f"{s.port}/tcp {s.name}" for s in h.services) or "(no open ports)"
+        lines.append(f"- **{host}**: {svcs}")
+    if d.credentials:
+        lines += ["", "### Credentials"]
+        lines += [f"- `{c.value}` ({c.target or '?'} via {c.tool or '?'})" for c in d.credentials]
+    if d.flags:
+        lines += ["", "### Flags"]
+        lines += [f"- `{f.value}`" for f in d.flags]
+    return "\n".join(lines) + "\n"
+
+
 def render_report(engagement, result, *, audit_summary: str, summary_text: str,
-                  catalog=None, audit_records=None) -> str:
+                  catalog=None, audit_records=None, discoveries=None) -> str:
     eng = engagement
     out = []
     out.append(f"# Grin Engagement Report — {eng.name}")
@@ -118,6 +137,10 @@ def render_report(engagement, result, *, audit_summary: str, summary_text: str,
     out.append("## Executive summary")
     out.append(summary_text)
     out.append("")
+    _disc = render_discovered(discoveries) if discoveries is not None else ""
+    if _disc:
+        out.append(_disc.rstrip("\n"))
+        out.append("")
     out.append("## Findings")
     if not result.findings:
         out.append("No findings.")

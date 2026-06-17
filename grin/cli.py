@@ -317,15 +317,31 @@ def cmd_report(path: str, *, out, model: str) -> int:
                     _audit_records.append(json.loads(_ln))
                 except json.JSONDecodeError:
                     continue
+    from grin.discoveries import discover
+    _disc = discover(ResultStore(results_path(eng)).all())
     md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
                        summary_text=summary, catalog=_load_catalog_or_none(),
-                       audit_records=_audit_records)
+                       audit_records=_audit_records, discoveries=_disc)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
         Path(out).write_text(md)
         print(f"report written to {out}")
     else:
         print(md)
+    return 0
+
+
+def cmd_discoveries(path: str) -> int:
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    from grin.discoveries import discover
+    from grin.report import render_discovered
+    d = discover(ResultStore(results_path(eng)).all())
+    text = render_discovered(d)
+    print(text if text else "no discoveries yet")
     return 0
 
 
@@ -833,6 +849,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ars.add_argument("action", choices=["up", "down", "status", "add"])
     p_ars.add_argument("tool", nargs="?", default=None, help="(add) tool to install")
 
+    dc = sub.add_parser("discoveries", help="print deterministic discoveries from an engagement's results store")
+    dc.add_argument("file")
+
     return parser
 
 
@@ -891,6 +910,8 @@ def main(argv=None) -> int:
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
     if args.group == "arsenal":
         return cmd_arsenal(args.action, tool=args.tool)
+    if args.group == "discoveries":
+        return cmd_discoveries(args.file)
     return 2
 
 

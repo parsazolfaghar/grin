@@ -27,6 +27,7 @@ class FakeApi:
     def findings(self, f): return []
     def audit(self, f): return []
     def blocked(self, f): return []
+    def discoveries(self, f): return {"commands_run": 0, "hosts": [], "credentials": [], "flags": []}
     # tool acquire
     def pending_tools(self, f): return list(self._pending)
     def engage_text(self, t): return {"job_id": "j1", "started": True, "file": "/tmp/e.yaml"}

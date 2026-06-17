@@ -147,3 +147,22 @@ def test_render_report_no_secrets():
     r = _result(findings=[]); r.secrets = []
     md = render_report(ENG, r, audit_summary="x", summary_text="s")
     assert "No secrets captured" in md
+
+
+def test_render_discovered_lists_hosts_creds_flags():
+    from grin.discoveries import discover
+    from grin.report import render_discovered
+    out = ("Nmap scan report for 10.0.0.5\n22/tcp open ssh\n"
+           "[22][ssh] host: 10.0.0.5 login: admin password: pw\nGRIN{deadbeef}\n")
+    d = discover([{"id": "x", "command": "nmap 10.0.0.5", "output": out, "exit_code": 0}])
+    md = render_discovered(d)
+    assert "## Discovered" in md
+    assert "10.0.0.5" in md and "22/tcp ssh" in md
+    assert "admin:pw" in md
+    assert "GRIN{deadbeef}" in md
+
+
+def test_render_discovered_empty_is_blank():
+    from grin.discoveries import Discoveries
+    from grin.report import render_discovered
+    assert render_discovered(Discoveries()) == ""

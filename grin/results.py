@@ -33,3 +33,23 @@ class ResultStore:
             if rec.get("id") == id:
                 found = rec
         return found
+
+    def all(self) -> list:
+        """Every record, latest-per-id, in first-seen order. [] if the file is absent."""
+        if not self._path.exists():
+            return []
+        order = []
+        latest = {}
+        for line in self._path.read_text().splitlines():
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            rid = rec.get("id")
+            if rid not in latest:
+                order.append(rid)
+            latest[rid] = rec
+        return [latest[r] for r in order]

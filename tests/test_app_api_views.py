@@ -85,3 +85,35 @@ def test_audit_tail_parsed(tmp_path):
 def test_bad_path_returns_error_not_raise(tmp_path):
     api = GrinApi(engagements_dir=str(tmp_path))
     assert "error" in api.findings(str(tmp_path / "nope.yaml")) if isinstance(api.findings(str(tmp_path / "nope.yaml")), dict) else api.findings(str(tmp_path / "nope.yaml")) == []
+
+
+def test_discoveries_reads_results_store(tmp_path):
+    from grin.results import ResultStore, results_path
+    path = _write_eng(tmp_path)
+    eng = load_engagement(path)
+    out = ("Nmap scan report for 127.0.0.1\n7000/tcp open airplay\n"
+           "GRIN{abc123}\n")
+    ResultStore(results_path(eng)).put(id="r1", command="nmap -sV 127.0.0.1",
+                                       output=out, exit_code=0)
+    api = GrinApi(engagements_dir=str(tmp_path))
+    d = api.discoveries(path)
+    assert d["commands_run"] == 1
+    assert d["hosts"][0]["target"] == "127.0.0.1"
+    assert d["hosts"][0]["services"][0]["port"] == 7000
+    assert d["flags"][0]["value"] == "GRIN{abc123}"
+    json.dumps(d)
+
+
+def test_discoveries_missing_store_is_empty(tmp_path):
+    path = _write_eng(tmp_path)
+    api = GrinApi(engagements_dir=str(tmp_path))
+    d = api.discoveries(path)
+    assert d["hosts"] == [] and d["commands_run"] == 0
+
+
+def test_merged_snapshot_includes_discovered(tmp_path):
+    path = _write_eng(tmp_path)
+    api = GrinApi(engagements_dir=str(tmp_path))
+    snap = api._merged_snapshot(path)
+    assert "discovered" in snap
+    json.dumps(snap)

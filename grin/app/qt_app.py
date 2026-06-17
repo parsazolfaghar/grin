@@ -541,6 +541,54 @@ class CheckpointBar(QWidget):
         self._on_decision(decision)
 
 
+class DiscoveredStrip(QFrame):
+    """Full-width 'what tools actually found' banner above the panes — deterministic (parsed from
+    tool output, never the LLM), so the operator always sees open services / captured creds+flags
+    even when findings=0. Driven from snap['discovered'] (the to_jsonable Discoveries dict)."""
+
+    def __init__(self):
+        super().__init__()
+        _role(self, "discovered")
+        v = QVBoxLayout(self); v.setContentsMargins(16, 11, 16, 11); v.setSpacing(6)
+        head = QHBoxLayout(); head.setSpacing(12)
+        self.title = QLabel("DISCOVERED"); _role(self.title, "discoveredhdr"); _track(self.title, 2.2)
+        _glow(self.title, "#f3df33", 10)
+        self.summary = QLabel(""); _role(self.summary, "discoveredsum"); _track(self.summary, 1.0)
+        head.addWidget(self.title); head.addWidget(self.summary); head.addStretch(1)
+        v.addLayout(head)
+        self.body = QLabel("no results yet"); _role(self.body, "discoveredbody")
+        self.body.setWordWrap(True); _track(self.body, 0.6)
+        v.addWidget(self.body)
+
+    def set_discovered(self, disc):
+        disc = disc or {}
+        hosts = disc.get("hosts", []) or []
+        creds = disc.get("credentials", []) or []
+        flags = disc.get("flags", []) or []
+        cmds = int(disc.get("commands_run", 0) or 0)
+        if not hosts and not creds and not flags and not cmds:
+            self.summary.setText("")
+            self.body.setText("no results yet")
+            return
+
+        def _n(n, w):
+            return f"{n} {w}" + ("" if n == 1 else "s")
+        self.summary.setText(" · ".join([_n(cmds, "cmd"), _n(len(hosts), "host"),
+                                         _n(len(creds), "cred"), _n(len(flags), "flag")]).upper())
+        lines = []
+        for h in hosts:
+            svcs = "   ".join(f"{s.get('port')}/tcp {s.get('name','')}"
+                              for s in (h.get("services") or [])) or "(no open ports)"
+            lines.append(f"{h.get('target') or '(unattributed)'}    {svcs}")
+        cred_txt = ", ".join(c.get("value", "") for c in creds) or "—"
+        flag_txt = ", ".join(f.get("value", "") for f in flags) or "—"
+        lines.append(f"creds: {cred_txt}    flags: {flag_txt}")
+        self.body.setText("\n".join(lines))
+
+    def text(self):
+        return f"{self.title.text()} {self.summary.text()}\n{self.body.text()}"
+
+
 # ---------------------------------------------------------------- live view
 class LiveView(QWidget):
     approve = pyqtSignal(str)   # pending id
@@ -585,6 +633,10 @@ class LiveView(QWidget):
         self.filter_box.hide()
         outer.addWidget(self.filter_box)
 
+        # deterministic 'what was discovered' strip — full width, above the panes
+        self.discovered = DiscoveredStrip()
+        outer.addWidget(self.discovered)
+
         # three-pane grid — a splitter so the operator can drag the pane boundaries
         grid = QSplitter(Qt.Orientation.Horizontal); grid.setObjectName("grid")
         grid.setChildrenCollapsible(False); grid.setHandleWidth(1)
@@ -628,6 +680,7 @@ class LiveView(QWidget):
         findings = snap.get("findings", []) or []
         audit = snap.get("audit", []) or []
         blocked = snap.get("blocked", []) or []
+        self.discovered.set_discovered(snap.get("discovered"))
 
         def _match(*parts):
             return (not flt) or flt in " ".join(str(p) for p in parts).lower()
@@ -709,6 +762,9 @@ class LiveView(QWidget):
         _role(s, "psub"); _track(s, 0.8); s.setWordWrap(True)
         col.addWidget(t); col.addWidget(s); h.addLayout(col, 1)
         return row
+
+    def discovered_text(self):
+        return self.discovered.text()
 
     def focus_filter(self):
         self.filter_box.setVisible(True)
@@ -821,7 +877,10 @@ def _snap_sig(snap):
     finds = tuple((f.get("title"), f.get("severity")) for f in snap.get("findings", []) or [])
     audit = tuple((a.get("ts"), a.get("command")) for a in snap.get("audit", []) or [])
     blocked = tuple(b.get("id") for b in snap.get("blocked", []) or [])
-    return (snap.get("status"), objs, finds, audit, blocked)
+    disc = snap.get("discovered") or {}
+    disc_sig = (disc.get("commands_run"), len(disc.get("hosts", []) or []),
+                len(disc.get("credentials", []) or []), len(disc.get("flags", []) or []))
+    return (snap.get("status"), objs, finds, audit, blocked, disc_sig)
 
 
 class LootDialog(QDialog):
@@ -1088,7 +1147,8 @@ class GrinWindow(QWidget):
         self._job_file = file
         self._last_sig = None   # force a render on (re)entry
         snap = {"objectives": [], "findings": self.api.findings(file),
-                "audit": self.api.audit(file), "blocked": self.api.blocked(file)}
+                "audit": self.api.audit(file), "blocked": self.api.blocked(file),
+                "discovered": self.api.discoveries(file)}
         self._show_live(file, snap, running=False)
         self._last_sig = _snap_sig(snap)
         self._refresh_tools()   # show any already-pending tool requests immediately, not on next tick
