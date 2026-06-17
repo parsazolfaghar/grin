@@ -39,6 +39,8 @@ def main(argv=None) -> int:
     try:
         argv = argv if argv is not None else sys.argv[1:]
         argv = [a for a in argv if not a.startswith("-psn_") and not a.startswith("-NS")]
+        from grin.toolpath import ensure_tool_path
+        ensure_tool_path()   # clicked installer lacks Homebrew on PATH -> add it for the docker/tool checks
         from PyQt6.QtWidgets import QApplication
         from grin.setup.controller import SetupController
         from grin.setup.wizard import build_wizard

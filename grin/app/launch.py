@@ -45,6 +45,10 @@ def main(argv=None) -> int:
     try:
         from grin.config import load_env_file
         load_env_file()
+        from grin.toolpath import ensure_tool_path
+        added = ensure_tool_path()   # a Finder-clicked app lacks Homebrew on PATH -> add it
+        if added:
+            log(f"PATH += {added}")
         argv = argv if argv is not None else sys.argv[1:]
         # ignore macOS process-serial / -NS* launch args so the dir stays sane
         argv = [a for a in argv if not a.startswith("-psn_") and not a.startswith("-NS")]
