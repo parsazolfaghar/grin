@@ -128,6 +128,46 @@ def test_distinct_commands_each_execute(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# Test 2b: quote-only variations of the same command are deduped (T3 waste)
+# ---------------------------------------------------------------------------
+
+def test_quote_variation_is_deduped(tmp_path):
+    """`cat /root/flag.txt` and `cat "/root/flag.txt"` are the same read — the second must dedup so
+    the agent doesn't burn its budget re-trying the identical command in different quoting."""
+    eng = make_eng(tmp_path)
+    target = "203.0.113.7"
+    client = FakeClient([
+        _action("cat", "cat /root/flag.txt", target, "exploit"),
+        _action("cat", 'cat "/root/flag.txt"', target, "exploit"),   # quote-only variant
+    ])  # FakeClient sticks on the last reply -> keeps re-emitting the quoted variant
+    runner = CountingFakeRunner({"cat /root/flag.txt": ExecResult("permission denied", 13, 0.1, False)})
+    res = execute_task(eng, objective="read flag", target=target,
+                       client=client, runner=runner, now=NOW, max_steps=10)
+    assert runner.call_counts.get("cat /root/flag.txt", 0) == 1
+    assert runner.call_counts.get('cat "/root/flag.txt"', 0) == 0   # never actually run (deduped)
+    assert "duplicate" in [s.decision for s in res.journal.steps]
+
+
+def test_sudo_prefix_is_not_collapsed(tmp_path):
+    """`sudo cat X` is a genuinely different action from `cat X` (privesc) — must NOT be deduped."""
+    eng = make_eng(tmp_path)
+    target = "203.0.113.7"
+    client = FakeClient([
+        _action("cat", "cat /etc/shadow", target, "exploit"),
+        _action("cat", "sudo cat /etc/shadow", target, "exploit"),
+        _done([]),
+    ])
+    runner = CountingFakeRunner({
+        "cat /etc/shadow": ExecResult("permission denied", 13, 0.1, False),
+        "sudo cat /etc/shadow": ExecResult("root:$6$...", 0, 0.1, False),
+    })
+    execute_task(eng, objective="read shadow", target=target,
+                 client=client, runner=runner, now=NOW, max_steps=10)
+    assert runner.call_counts.get("cat /etc/shadow", 0) == 1
+    assert runner.call_counts.get("sudo cat /etc/shadow", 0) == 1   # ran (not deduped)
+
+
+# ---------------------------------------------------------------------------
 # Test 3: render_history shows the duplicate-skip marker
 # ---------------------------------------------------------------------------
 

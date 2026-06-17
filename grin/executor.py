@@ -18,6 +18,19 @@ DEFAULT_MODEL = "qwen3:14b"   # config default; the real pin is set on the rig, 
 MAX_NOPROGRESS = 3  # consecutive non-advancing steps before the loop aborts
 
 
+def _canonical_cmd(command: str) -> str:
+    """Canonical dedup key: collapse whitespace and strip matching surrounding quotes from each token,
+    so semantically identical retries dedup (e.g. `cat /root/flag.txt` == `cat "/root/flag.txt"` ==
+    `cat '/root/flag.txt'`) — the T3 waste where the model re-tries the same read in different quoting.
+    Deliberately does NOT strip a leading `sudo`/other prefix: `sudo cat X` is a different action."""
+    toks = []
+    for t in (command or "").split():
+        if len(t) >= 2 and t[0] == t[-1] and t[0] in "\"'":
+            t = t[1:-1]
+        toks.append(t)
+    return " ".join(toks)
+
+
 @dataclass
 class TaskResult:
     status: str                       # completed | awaiting_approval | budget_exhausted | model_unavailable
@@ -86,7 +99,7 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             continue
 
         a = decision.action
-        normalized_cmd = " ".join(a["command"].split())
+        normalized_cmd = _canonical_cmd(a["command"])
 
         # Dedup check: if this exact command has already been executed, skip it.
         if normalized_cmd in executed_commands:
