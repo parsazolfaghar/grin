@@ -14,9 +14,9 @@ _DISTRO = {"grin-kali": "apt", "grin-blackarch": "pacman"}
 
 BASELINE = {
     "apt": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "netcat-traditional",
-            "openssh-client", "sshpass", "curl", "wget", "iputils-ping", "wordlists"],
+            "openssh-client", "sshpass", "curl", "wget", "iputils-ping", "wordlists", "john"],
     "pacman": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "gnu-netcat",
-               "openssh", "sshpass", "curl", "wget", "iputils", "wordlists"],
+               "openssh", "sshpass", "curl", "wget", "iputils", "wordlists", "john"],
 }
 
 
