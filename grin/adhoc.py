@@ -13,7 +13,13 @@ from grin.intent import Intent
 from grin.manual import allowed_actions_for
 from grin.strength import strength_params
 
-DEFAULT_ROOT = os.path.expanduser("~/.grin/engagements")
+def _default_root() -> str:
+    """Resolved at call time (not import) so GRIN_ENGAGEMENTS_ROOT can redirect writes — the test
+    suite points this at a tmp dir so it never pollutes the developer's real ~/.grin/engagements."""
+    return os.path.expanduser(os.environ.get("GRIN_ENGAGEMENTS_ROOT", "~/.grin/engagements"))
+
+
+DEFAULT_ROOT = _default_root()
 _SCHEME = re.compile(r'^[a-z]+://', re.I)
 
 
@@ -32,10 +38,12 @@ def _slug(s: str) -> str:
 
 
 def build_adhoc_engagement(intent: Intent, *, now: datetime,
-                           operator: str, root: str = DEFAULT_ROOT, stealth: str = "off",
+                           operator: str, root: str | None = None, stealth: str = "off",
                            strength: str = "normal", tool_acquire: str = "ask"):
     if not intent.targets:
         raise ValueError("no target in intent")
+    if root is None:
+        root = _default_root()
     target = normalize_target(intent.targets[0])
     stamp = now.strftime("%Y%m%d-%H%M%S")
     eid = f"adhoc-{_slug(target)}-{stamp}"

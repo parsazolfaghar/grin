@@ -8,9 +8,13 @@ os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
 
 
 @pytest.fixture(autouse=True)
-def _isolate_user_env(monkeypatch):
-    """Keep the suite hermetic: a real ~/.grin/env on the developer's machine (loaded by cli.main via
-    load_env_file) must not leak GRIN_MODEL_* into tests and flip the default backend to cloud. Make
-    load_env_file a no-op for tests; cloud tests set the env explicitly with monkeypatch.setenv."""
+def _isolate_user_env(monkeypatch, tmp_path):
+    """Keep the suite hermetic on the developer's machine:
+    - a real ~/.grin/env (loaded by cli.main via load_env_file) must not leak GRIN_MODEL_* into tests
+      and flip the default backend to cloud -> make load_env_file a no-op (cloud tests set env explicitly);
+    - tests must not pollute the real ~/.grin: redirect the app log (GRIN_APP_LOG) and the adhoc
+      engagements root (GRIN_ENGAGEMENTS_ROOT) at a per-test tmp dir."""
     monkeypatch.setattr("grin.config.load_env_file", lambda *a, **k: {})
+    monkeypatch.setenv("GRIN_APP_LOG", str(tmp_path / "app.log"))
+    monkeypatch.setenv("GRIN_ENGAGEMENTS_ROOT", str(tmp_path / "engagements"))
     yield

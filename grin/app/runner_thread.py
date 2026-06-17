@@ -22,6 +22,10 @@ class JobRunner:
         self._env = env
         self.status = "idle"
         self.error = ""
+        # Resolve the log path now (on the main thread, while env is set) — the job runs on a
+        # background thread that may call _log after a test's env override is torn down.
+        import os
+        self._log_path = os.path.expanduser(os.environ.get("GRIN_APP_LOG", "~/.grin/app.log"))
         self._thread = None
         self._checkpoint = None
         self._cp_event = threading.Event()
@@ -90,12 +94,13 @@ class JobRunner:
                 traceback.format_exception(type(ex), ex, ex.__traceback__)))
 
     def _log(self, msg):
-        """Record the run outcome to ~/.grin/app.log — a clicked app has no console, so a silent
-        'nothing happened' (e.g. model_unavailable) is otherwise invisible."""
+        """Record the run outcome to ~/.grin/app.log (overridable via GRIN_APP_LOG, matching
+        app/launch.py) — a clicked app has no console, so a silent 'nothing happened'
+        (e.g. model_unavailable) is otherwise invisible."""
         import os
         import datetime
         try:
-            path = os.path.expanduser("~/.grin/app.log")
+            path = self._log_path
             os.makedirs(os.path.dirname(path), exist_ok=True)
             with open(path, "a") as fh:
                 fh.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} [job] {msg}\n")
