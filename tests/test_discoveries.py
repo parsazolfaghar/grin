@@ -1,8 +1,64 @@
-from grin.discoveries import discover, target_from_command, summary_line
+import json
+
+from grin.discoveries import (discover, target_from_command, summary_line,
+                              gather_records)
 
 
 def _rec(command, output, id="x"):
     return {"id": id, "command": command, "output": output, "exit_code": 0}
+
+
+def test_explicit_target_wins_over_command_parsing():
+    # journal steps carry action.target; honor it even when the command has a different/no host
+    d = discover([{"command": "nmap -sV scanme", "output": "22/tcp open ssh\n",
+                   "target": "10.9.9.9"}])
+    assert d.hosts[0].target == "10.9.9.9"
+
+
+class _Eng:
+    def __init__(self, audit_log):
+        self.audit_log = audit_log
+
+
+def _write_journal(base, task_id, steps):
+    path = f"{base}.{task_id}.journal.json"
+    json_data = {"task_id": task_id, "objective": "o", "target": "t",
+                 "engagement_path": "e.yaml", "path": path, "steps": steps}
+    open(path, "w").write(json.dumps(json_data))
+
+
+def test_gather_records_reads_journals(tmp_path):
+    base = str(tmp_path / "eng.audit")
+    _write_journal(base, "aaa", [
+        {"action": {"tool": "nmap", "command": "nmap -sV 10.0.0.5", "target": "10.0.0.5"},
+         "decision": "executed", "output": "22/tcp open ssh\n", "exit_code": 0},
+        {"action": {"tool": "hydra", "command": "hydra ssh", "target": "10.0.0.5"},
+         "decision": "refused", "output": "", "exit_code": None}])  # refused -> skipped
+    recs = gather_records(_Eng(base + ".jsonl"))
+    assert len(recs) == 1
+    assert recs[0]["command"] == "nmap -sV 10.0.0.5"
+    assert recs[0]["target"] == "10.0.0.5"
+    d = discover(recs)
+    assert d.hosts[0].target == "10.0.0.5"
+    assert d.hosts[0].services[0].port == 22
+
+
+def test_gather_records_merges_results_store_and_journals(tmp_path):
+    from grin.results import ResultStore, results_path
+    base = str(tmp_path / "eng.audit")
+    eng = _Eng(base + ".jsonl")
+    ResultStore(results_path(eng)).put(id="r1", command="nmap 10.0.0.1",
+                                       output="80/tcp open http\n", exit_code=0)
+    _write_journal(base, "bbb", [
+        {"action": {"tool": "nmap", "command": "nmap 10.0.0.2", "target": "10.0.0.2"},
+         "decision": "executed", "output": "443/tcp open https\n", "exit_code": 0}])
+    d = discover(gather_records(eng))
+    targets = {h.target for h in d.hosts}
+    assert targets == {"10.0.0.1", "10.0.0.2"}
+
+
+def test_gather_records_no_files_is_empty(tmp_path):
+    assert gather_records(_Eng(str(tmp_path / "nope.jsonl"))) == []
 
 
 def test_services_extracted_and_attributed_to_target():

@@ -171,9 +171,8 @@ class GrinApi:
         across the bridge."""
         try:
             eng = self._load(file)
-            from grin.results import ResultStore, results_path
-            from grin.discoveries import discover
-            return to_jsonable(discover(ResultStore(results_path(eng)).all()))
+            from grin.discoveries import discover, gather_records
+            return to_jsonable(discover(gather_records(eng)))
         except Exception as ex:  # noqa: BLE001 - never raise across the bridge
             return {"error": str(ex)}
 

@@ -317,8 +317,8 @@ def cmd_report(path: str, *, out, model: str) -> int:
                     _audit_records.append(json.loads(_ln))
                 except json.JSONDecodeError:
                     continue
-    from grin.discoveries import discover
-    _disc = discover(ResultStore(results_path(eng)).all())
+    from grin.discoveries import discover, gather_records
+    _disc = discover(gather_records(eng))
     md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
                        summary_text=summary, catalog=_load_catalog_or_none(),
                        audit_records=_audit_records, discoveries=_disc)
@@ -337,9 +337,9 @@ def cmd_discoveries(path: str) -> int:
     except EngagementError as e:
         print(f"INVALID: {e}", file=sys.stderr)
         return 1
-    from grin.discoveries import discover
+    from grin.discoveries import discover, gather_records
     from grin.report import render_discovered
-    d = discover(ResultStore(results_path(eng)).all())
+    d = discover(gather_records(eng))
     text = render_discovered(d)
     print(text if text else "no discoveries yet")
     return 0
