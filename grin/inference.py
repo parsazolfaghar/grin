@@ -86,8 +86,10 @@ class OpenAICompatClient:
 
     def is_up(self) -> bool:
         try:
+            # generous timeout: a frozen (PyInstaller) app's first HTTPS call has a slow cold
+            # TLS/DNS init that easily exceeds a 5s budget -> false "model unavailable"
             return httpx.get(f"{self.base_url}/models", headers=self._headers(),
-                             timeout=5.0).status_code == 200
+                             timeout=20.0).status_code == 200
         except httpx.HTTPError:
             return False
 

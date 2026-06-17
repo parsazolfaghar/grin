@@ -79,9 +79,28 @@ class JobRunner:
                 self.status = res.status if getattr(res, "status", None) else "completed"
             else:
                 self.status = "completed"
+            self._log(f"orchestrate done: status={self.status} "
+                      f"objectives={len(getattr(res, 'objectives_run', []) or [])} "
+                      f"findings={len(getattr(res, 'findings', []) or [])}")
         except Exception as ex:  # noqa: BLE001
             self.error = str(ex)
             self.status = "error"
+            import traceback
+            self._log("orchestrate ERROR: " + "".join(
+                traceback.format_exception(type(ex), ex, ex.__traceback__)))
+
+    def _log(self, msg):
+        """Record the run outcome to ~/.grin/app.log — a clicked app has no console, so a silent
+        'nothing happened' (e.g. model_unavailable) is otherwise invisible."""
+        import os
+        import datetime
+        try:
+            path = os.path.expanduser("~/.grin/app.log")
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "a") as fh:
+                fh.write(f"{datetime.datetime.now().isoformat(timespec='seconds')} [job] {msg}\n")
+        except OSError:
+            pass
 
     def snapshot(self):
         snap = {"status": self.status}
