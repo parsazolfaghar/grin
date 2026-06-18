@@ -13,7 +13,19 @@ MEDIC_SYSTEM = (
     "goal, what has been found, and the recent command trail. Diagnose what was achieved, what is "
     "blocking, and what has NOT been tried. If a concrete, materially different next step exists, "
     "propose it; otherwise conclude with a precise diagnosis. A separate Executor runs tools under "
-    "a fail-closed gatekeeper; you only plan, in scope. Reply with ONE JSON object and nothing else."
+    "a fail-closed gatekeeper; you only plan, in scope. Reply with ONE JSON object and nothing else.\n"
+    "Common stuck-states and the CONCRETE recovery to propose (match the trail to one):\n"
+    "- RCE as a low-priv user but the flag is root-owned / unreadable: do NOT keep re-reading it. "
+    "Escalate — enumerate SUID (`find / -perm -4000 -type f`), inspect any custom binary with "
+    "`strings`, and PATH-hijack a relative call (e.g. one that runs `uptime`) using the `web-rce` "
+    "helper to run the multi-step hijack.\n"
+    "- SSH'd / pivoted into a host but no flag yet: the flag is that USER's home — `cat ~/flag.txt` / "
+    "`cat /home/<user>/flag.txt` — not `/flag.txt` and not a broad `find` that returns /sys noise.\n"
+    "- Stole an SSH key but haven't used it: crack the passphrase (ssh2john+rockyou, auto-decrypts), "
+    "read the adjacent README for the service-account username, then ssh as THAT user to the vault.\n"
+    "- Injection returns only normal output (no `uid=`): the separator is filtered — cycle "
+    "`;`/`|`/`&&`/`$()`/newline.\n"
+    "- Multi-step web exploit not landing by hand: use the `web-rce` helper (it handles all encoding)."
 )
 
 
