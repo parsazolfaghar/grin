@@ -73,6 +73,20 @@ Without this, `sshpass` aborts with exit code 6 ("host key unknown"):
 docker exec grin-kali sh -c "printf 'Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR\n' >> /etc/ssh/ssh_config"
 ```
 
+### web-rce helper (deterministic web-RCE payload encoding)
+
+The agent reliably gets SSTI / command-injection RCE but reliably fails to hand-encode a multi-step
+payload through a URL param (spaces break it, base64 `+`/`/`/`=` corrupt, pipes/braces need
+escaping). `grin/tools/webexec.py` does it correctly; deploy it onto the runner as `web-rce` so the
+executor can run any shell command/privesc chain through a web foothold in one shot (this is what
+closes T5's SSTI -> SUID PATH-hijack autonomously):
+
+```bash
+docker cp grin/tools/webexec.py grin-kali:/usr/local/bin/web-rce
+docker exec grin-kali sh -c "chmod +x /usr/local/bin/web-rce"
+# usage: web-rce --url http://t/ --param name --mode ssti|cmdi|auto [--method GET|POST] --cmd '<script>'
+```
+
 ## 3. Bring the lab up
 
 ```bash
