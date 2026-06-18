@@ -136,8 +136,16 @@ falls back to FakeRunner (no real execution).
 append-only per engagement id — clear them (`rm -rf audit loot results journals`) before a clean
 run or a benchmark, or runs accumulate. (Phase 2 `labbench` will handle this automatically.)
 
-## TODO (reproducibility)
+## Reproducible provisioning
 
-The §2 runner provisioning is currently manual. A `grin lab provision` subcommand (or a
-`lab/provision-runner.sh`) should bake the toolset + wordlists + ssh_config into the runner so the
-whole lab is reproducible from a clean rig. Tracked as a follow-up.
+`lab/provision-runner.sh` bakes everything in §2 into the runner in one idempotent step — toolset
+(incl. `john`), rockyou, curated credential lists, ssh_config, AND the deterministic helpers
+(`web-rce` / `ssh-loot` / `suid-hijack`). Run from the repo root after `grin lab up`:
+
+```bash
+bash lab/provision-runner.sh            # default container: grin-kali
+bash lab/provision-runner.sh <name>     # custom runner
+```
+
+This is what makes the consistent 6/6 result (see `MORNING-REPORT-2026-06-18.md`) reproducible from a
+clean rig. (A `grin lab provision` subcommand wrapping this remains a nice-to-have.)
