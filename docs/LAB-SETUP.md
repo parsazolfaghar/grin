@@ -97,6 +97,16 @@ docker exec grin-kali sh -c "chmod +x /usr/local/bin/ssh-loot"
 # usage: ssh-loot --host <vault-ip> --key /tmp/loot/id_rsa [--readme '<clue>'] [--passphrase <pw>]
 ```
 
+`suid-hijack` closes the SUID-privesc last mile — it drives `web-rce` to enumerate SUID binaries,
+find the one that calls a program by bare name, and PATH-hijack it (works even when the target lacks
+`strings`, by trying candidate commands):
+
+```bash
+docker cp grin/tools/suidhijack.py grin-kali:/usr/local/bin/suid-hijack
+docker exec grin-kali sh -c "chmod +x /usr/local/bin/suid-hijack"
+# usage: suid-hijack --url http://t/ --param name --mode ssti|cmdi|auto --flag /root/flag.txt
+```
+
 ## 3. Bring the lab up
 
 ```bash
