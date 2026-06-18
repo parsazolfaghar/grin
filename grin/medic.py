@@ -1,0 +1,77 @@
+"""The Medic — Grin's rescue/self-audit agent. Paged by the Orchestrator when an engagement
+stalls. Reads the engagement's own evidence (findings, secrets, recent command trail) and either
+RECOVERS (proposes materially different objectives) or CONCLUDES with a plain-language diagnosis.
+Like the Analyst it ONLY plans — never runs tools or edits code. Tolerant JSON parsing, fail-soft."""
+from dataclasses import dataclass, field
+
+from grin.analyst import _parse_objectives, _render_findings, _render_secrets
+from grin.jsonextract import extract_json
+
+MEDIC_SYSTEM = (
+    "You are Grin's Medic — an incident responder paged when an authorized, scope-bound "
+    "penetration test has STALLED (several objectives with no new progress). You are given the "
+    "goal, what has been found, and the recent command trail. Diagnose what was achieved, what is "
+    "blocking, and what has NOT been tried. If a concrete, materially different next step exists, "
+    "propose it; otherwise conclude with a precise diagnosis. A separate Executor runs tools under "
+    "a fail-closed gatekeeper; you only plan, in scope. Reply with ONE JSON object and nothing else."
+)
+
+
+@dataclass
+class MedicDecision:
+    action: str                                       # "recover" | "conclude"
+    objectives: list = field(default_factory=list)    # list[Objective] when recover
+    diagnosis: str = ""                               # plain-language reason when conclude
+
+
+def _render_trail(recent_steps) -> str:
+    if not recent_steps:
+        return "(no command trail)"
+    lines = []
+    for s in recent_steps[-40:]:
+        out = (s.get("output") or "").replace("\n", " ")[:160]
+        ex = ",".join(s.get("extracted") or [])
+        lines.append(f"- [{(s.get('objective') or '')[:30]}] {(s.get('command') or '')[:80]} "
+                     f"(exit {s.get('exit_code')}){(' => ' + ex) if ex else ''} | {out}")
+    return "\n".join(lines)
+
+
+def triage(client, model, *, goal, findings, secrets, tried_objectives, recent_steps,
+           scope_targets, max_new: int = 3) -> MedicDecision:
+    """One rescue pass. Returns recover (new objectives) or conclude (diagnosis). Fail-soft:
+    on an unparseable reply, concludes rather than raising."""
+    tried = "\n".join(f"- {o.objective} @ {o.target}" for o in tried_objectives) or "(none)"
+    user = (
+        f"Engagement goal: {goal}\n"
+        f"In-scope targets: {', '.join(scope_targets)}\n\n"
+        f"Findings so far:\n{_render_findings(findings)}\n\n"
+        f"Secrets/loot captured:\n{_render_secrets(secrets)}\n\n"
+        f"Objectives already TRIED (do not repeat):\n{tried}\n\n"
+        f"Recent command trail:\n{_render_trail(recent_steps)}\n\n"
+        "The run has stalled. State briefly what was achieved and what is blocking. Then either "
+        f"propose UP TO {max_new} NEW, materially different objectives not already tried (e.g. if "
+        "code execution was achieved but the flag was never read, propose reading it; if a foothold "
+        "exists but no privesc was attempted, propose escalation), OR if no new approach exists, "
+        "conclude.\n"
+        'Reply EXACTLY with ONE JSON object: {"action": "recover", "objectives": '
+        '[{"objective": "...", "target": "<in-scope>", "action_class": "exploit"}]} '
+        'OR {"action": "conclude", "diagnosis": "<achieved, where blocked, and why>"}.\n'
+        "Return ONLY the JSON."
+    )
+    data = extract_json(client.generate(model=model, system=MEDIC_SYSTEM, prompt=user,
+                                        temperature=0.3),
+                        want=("action", "objectives", "diagnosis"))
+    if not isinstance(data, dict):
+        return MedicDecision(action="conclude",
+                             diagnosis="Medic could not parse a rescue plan; engagement stalled.")
+    action = str(data.get("action", "")).strip().lower()
+    if action == "recover":
+        objs = _parse_objectives(data.get("objectives", []))[:max_new]
+        tried_keys = {(o.objective, o.target) for o in tried_objectives}
+        objs = [o for o in objs if (o.objective, o.target) not in tried_keys]
+        if objs:
+            return MedicDecision(action="recover", objectives=objs)
+        return MedicDecision(action="conclude",
+                             diagnosis=str(data.get("diagnosis", "")) or "No new tactic available; stalled.")
+    return MedicDecision(action="conclude",
+                         diagnosis=str(data.get("diagnosis", "")) or "Engagement stalled.")
