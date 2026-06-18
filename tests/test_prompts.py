@@ -34,6 +34,29 @@ def test_prompt_includes_offense_tradecraft_for_known_gaps():
     assert "lateral movement" in low or "pivot" in low  # multi-host pivot
 
 
+def test_self_correct_banner_fires_on_empty_output():
+    # The general robustness fix: an empty/error tool result must trigger a "diagnose + retry" banner
+    # so the agent self-corrects (catching whole classes of gotchas) instead of moving on.
+    j = Journal(task_id="t", objective="o", target="203.0.113.7",
+                engagement_path="e.yaml", path="/tmp/j.json")
+    j.add_step(Step(action={"tool": "curl", "command": "curl 'http://h/?name={{7*7}}'"},
+                    decision="executed", output="", exit_code=0))   # empty -> curl globbed it
+    _sys, usr = build_step_prompt("o", "203.0.113.7", j, ["active-scan"])
+    assert "did not succeed" in usr.lower()
+    assert "curl -g" in usr                      # the specific recovery for the {{ }} glob case
+    assert "%7B%7B7*7%7D%7D" in usr
+
+
+def test_self_correct_banner_silent_on_success():
+    # No banner when the last command produced real output — don't nag on a healthy run.
+    j = Journal(task_id="t", objective="o", target="203.0.113.7",
+                engagement_path="e.yaml", path="/tmp/j.json")
+    j.add_step(Step(action={"tool": "nmap", "command": "nmap -sV h"},
+                    decision="executed", output="22/tcp open ssh", exit_code=0))
+    _sys, usr = build_step_prompt("o", "203.0.113.7", j, ["active-scan"])
+    assert "did not succeed" not in usr.lower()
+
+
 def test_parse_step_json_action():
     raw = '{"action": {"tool": "nmap", "command": "nmap -sV 203.0.113.7", ' \
           '"declared_class": "active-scan", "why": "port scan"}}'

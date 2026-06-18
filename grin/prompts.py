@@ -18,6 +18,47 @@ SYSTEM = (
 )
 
 
+def _recent_failure(journal):
+    """Look at the most recent EXECUTED step: return (command, empty?, exit_code) if it produced no
+    output or a non-zero exit — the signal that the command was malformed and needs correcting, not
+    abandoning. Returns None if the last executed step looked fine (or there isn't one)."""
+    for s in reversed(getattr(journal, "steps", []) or []):
+        if getattr(s, "decision", "") != "executed":
+            continue
+        out = (getattr(s, "output", "") or "").strip()
+        code = getattr(s, "exit_code", 0)
+        if not out or code not in (0, None):
+            cmd = s.action.get("command", "") if isinstance(s.action, dict) else ""
+            return cmd, (not out), code
+        return None
+    return None
+
+
+def _self_correct_banner(journal) -> str:
+    """A deterministic, code-injected self-correction nudge. The #1 cause of stalled engagements is
+    the agent treating a FAILED command (empty/error output) as 'nothing here' and moving on. This
+    forces it to diagnose+retry a corrected variant — generalising across whole classes of tool
+    gotchas rather than needing a per-failure prompt patch."""
+    rf = _recent_failure(journal)
+    if rf is None:
+        return ""
+    cmd, empty, code = rf
+    why = "returned NO output" if empty else f"exited with code {code}"
+    return (
+        "## STOP — your last command did not succeed (fix it before anything else)\n"
+        f"`{cmd[:160]}` {why}. Empty/error output almost always means the command was MALFORMED — "
+        "NOT that there is nothing to find. Do NOT move on, give up, or repeat it verbatim. Diagnose "
+        "the cause and reissue a CORRECTED variant as your next action:\n"
+        "- Empty output from a URL containing `{ }` or `[ ]` (e.g. an SSTI `{{7*7}}` payload): curl "
+        "GLOBBED it. Re-send with `curl -g 'http://...'` or URL-encode the braces (`%7B%7B7*7%7D%7D`).\n"
+        "- `permission denied` / `404` / `No such file`: wrong path or no rights — ENUMERATE (list the "
+        "parent dir, or read a backup/alternate location) instead of retrying the same target.\n"
+        "- Quoting/heredoc/escaping errors: simplify quoting; write data to a file with one redirect "
+        "(`printf '%s' ... > /tmp/x`) and operate on the file.\n"
+        "- A tool 'not found': install it (`grin arsenal add <tool>`) or use an installed equivalent.\n\n"
+    )
+
+
 def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> tuple[str, str]:
     history = journal.render_history()
     user = (
@@ -25,7 +66,8 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         f"Authorized target: {target}\n"
         f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
         f"History so far:\n{history}\n\n"
-        "## Read the result, then chase the lead (most important rule)\n"
+        + _self_correct_banner(journal)
+        + "## Read the result, then chase the lead (most important rule)\n"
         "Before deciding, READ the most recent result above. If it reveals anything specific — an "
         "HTML comment (`<!-- ... -->`), a link or referenced path, an endpoint, a parameter name, a "
         "version string, a username, or a credential — your VERY NEXT action MUST act on that exact "
@@ -107,10 +149,14 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> 
         "(`ssh-keygen -p -P <passphrase> -N '' -f id_rsa`) and use `ssh -i id_rsa <user>@<host>`. A "
         "locked key is not a dead end.\n"
         "- Lateral movement / pivot: if the flag/proof is NOT on this host (or the goal says it lives "
-        "elsewhere), use creds/keys you found here to reach OTHER in-scope hosts. Scan the rest of the "
-        "authorized scope for live hosts + services (`nmap -sn <range>`, then `nmap -sV <host>`), then "
-        "`ssh -i <key> <user>@<other-host>` (the key/README usually names the account). The flag may be "
-        "one hop away.\n"
+        "elsewhere), use creds/keys you found here to reach OTHER in-scope hosts. Steps, in order: "
+        "(1) SAVE a stolen key to a file and lock it down — `printf '%s' '<key>' > /tmp/k && "
+        "chmod 600 /tmp/k` (do NOT pipe a key via `-i /dev/stdin`; ssh needs a real file). "
+        "(2) If the key is passphrase-protected, CRACK it first (ssh2john + rockyou, above). "
+        "(3) SCAN the rest of the authorized scope to find the OTHER host — `nmap -sn <range>` then "
+        "`nmap -sV <host>` — and ssh to THAT discovered host, NOT back to the entry host you already "
+        "own: `ssh -i /tmp/k <user>@<discovered-host> 'cat ~/flag.txt'` (the key/README names the "
+        "account). The flag is one hop away.\n"
         "- Web command injection: test parameters with `curl` and chain shell metacharacters "
         "(e.g. `; cat /flag`, `| id`)\n"
         "- Once you have a shell or file-read primitive: `cat /flag`, `cat /root/secret`, etc.\n"
