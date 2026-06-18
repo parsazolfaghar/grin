@@ -149,16 +149,41 @@ def test_recon_discovering_new_hosts_resets_stall(tmp_path):
 
     def _up(*ips):
         return "".join(f"Nmap scan report for {ip}\nHost is up (0.005s latency).\n" for ip in ips)
+    seen_output = _up("203.0.113.1", "203.0.113.2")
     runner = FakeRunner({
-        cmds[0]: ExecResult(_up("203.0.113.1", "203.0.113.2"), 0, 0.1, False),
+        cmds[0]: ExecResult(seen_output, 0, 0.1, False),
         cmds[1]: ExecResult(_up("203.0.113.130"), 0, 0.1, False),  # new host -> progress
-        cmds[2]: ExecResult(_up("203.0.113.1"), 0, 0.1, False),    # already seen -> stall 1
-        cmds[3]: ExecResult(_up("203.0.113.2"), 0, 0.1, False),    # already seen -> stall 2
+        cmds[2]: ExecResult(seen_output, 0, 0.1, False),  # identical result -> no progress -> stall 1
+        cmds[3]: ExecResult(seen_output, 0, 0.1, False),  # identical result -> no progress -> stall 2
     })
     res = orchestrate(eng, goal="map the network", planner_client=planner,
                       executor_client=executor, runner=runner, now=NOW, max_objectives=10)
     assert res.status == "completed"
-    assert len(res.objectives_run) == 4   # would be 2 if recon didn't count as progress
+    assert len(res.objectives_run) == 4   # would be 2 if recon/exploitation didn't count as progress
+
+
+def test_exploitation_output_resets_stall(tmp_path):
+    # The fix for the T5 cutoff: a task that produces NEW substantive output (e.g. RCE enumerating
+    # the box) is progress even with no formal finding/secret, so the stall doesn't kill a winning run.
+    eng = make_eng(tmp_path)
+    t = "203.0.113.7"
+    # Each objective runs a distinct RCE command that returns DIFFERENT new output -> progress every
+    # time -> the loop runs to the objective budget instead of stalling out at 2.
+    cmds = [f"curl -g 'http://{t}/?name={{{{cfg{i}}}}}'" for i in range(6)]
+    planner = FakeClient([_plan([("o0", t)])]
+                         + [_replan(False, [("o%d" % i, t)], "keep going") for i in range(1, 6)])
+    ex = []
+    for c in cmds:
+        ex += [_ex_action("curl", c, t, "exploit"), _ex_done([])]
+    executor = FakeClient(ex)
+    runner = FakeRunner({c: ExecResult(f"unique-rce-output-{i}", 0, 0.1, False)
+                         for i, c in enumerate(cmds)})
+    res = orchestrate(eng, goal="exploit", planner_client=planner, executor_client=executor,
+                      runner=runner, now=NOW, max_objectives=5)
+    # ran the full budget (status budget_exhausted) instead of stalling out at 2 — new output each
+    # objective counted as progress, which is the whole point of the fix.
+    assert len(res.objectives_run) == 5
+    assert res.status == "budget_exhausted"
 
 
 def test_captured_flag_concludes_immediately(tmp_path):

@@ -48,6 +48,24 @@ def _discovery_keys(journal) -> set:
     return keys
 
 
+def _output_keys(journal) -> set:
+    """Keys for genuinely NEW tool output in this task. The agent learning something new — an RCE
+    enumerating files, a shell reading a config — is real progress even before it yields a formal
+    finding/secret. Counting this stops the no-progress stall from killing an engagement that is
+    actively winning (the bug that cut T5 off at 3 objectives right after it achieved RCE). Empty
+    output doesn't count, so a genuinely spinning agent still stalls; cross-objective command dedup
+    already blocks identical re-runs, so distinct non-empty outputs ~= distinct successful steps."""
+    import hashlib
+    keys = set()
+    for s in getattr(journal, "steps", []) or []:
+        if getattr(s, "decision", "") != "executed":
+            continue
+        out = (getattr(s, "output", "") or "").strip()
+        if out:
+            keys.add(hashlib.sha1(out.encode("utf-8", "replace")).hexdigest())
+    return keys
+
+
 def _flag_honeypot(findings: list) -> None:
     """ADVISORY ONLY (roadmap R1): if accumulated findings look like a decoy, append ONE info
     finding (once). Never blocks, removes objectives, or gates execution — the operator decides."""
@@ -108,13 +126,14 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     executed_commands: set = set()
     flagged_seen: set = set()
     discovered_keys: set = set()   # cumulative live hosts + host:port services found by recon
+    output_keys: set = set()       # cumulative distinct non-empty tool outputs (exploitation progress)
     focus_target = None
     stall = 0
     while queue and len(objectives_run) < max_objectives:
         if should_stop is not None and should_stop():   # operator hit Stop — end between objectives
             return "stopped"
         obj = queue.pop(0)
-        prev_progress = len(findings) + len(secrets) + len(discovered_keys)
+        prev_progress = len(findings) + len(secrets) + len(discovered_keys) + len(output_keys)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
                            client=executor_client, runner=runner, now=now,
                            model=_model_for(obj, objective_models, base_model),
@@ -140,9 +159,12 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
         # has stalled — conclude instead of flailing to the budget. (Aggressive sweeps deliberately.)
         # Recon counts: new live hosts / services reset the stall so a sweep that's still finding
         # hosts is not mistaken for stalling (the bug that quit a /24 scan after pure recon).
+        # exploitation progress counts too: a task that achieved RCE / read new files learned
+        # something new even with no formal finding yet — don't mistake that for stalling.
         discovered_keys |= _discovery_keys(res.journal)
+        output_keys |= _output_keys(res.journal)
         if not aggressive:
-            if len(findings) + len(secrets) + len(discovered_keys) == prev_progress:
+            if len(findings) + len(secrets) + len(discovered_keys) + len(output_keys) == prev_progress:
                 stall += 1
                 if stall >= MAX_STALL_OBJECTIVES:
                     return "completed"
