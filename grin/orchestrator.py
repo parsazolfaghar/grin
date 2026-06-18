@@ -100,6 +100,23 @@ class EngagementResult:
     secrets: list = field(default_factory=list)
 
 
+def _write_medic_patch(eng, patch: str, diagnosis: str) -> str | None:
+    """Write a Medic patch PROPOSAL to a review file next to the audit log. Human-review only — the
+    engine NEVER applies it. Returns the path, or None on error (best-effort, never blocks a run)."""
+    try:
+        import os
+        audit = getattr(eng, "audit_log", "") or ""
+        d = os.path.dirname(audit) or "."
+        os.makedirs(d, exist_ok=True)
+        path = os.path.join(d, f"{getattr(eng, 'id', 'engagement')}.medic-patch.md")
+        with open(path, "a") as f:
+            f.write(f"# Medic patch proposal (REVIEW ONLY — not applied)\n\n"
+                    f"## Diagnosis\n{diagnosis}\n\n## Proposed change\n{patch}\n\n---\n")
+        return path
+    except Exception:
+        return None
+
+
 def _merge_findings(into: list, new) -> None:
     """Deterministic exact-duplicate dedup; never drops a distinct finding."""
     for f in new:
@@ -123,7 +140,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 max_steps: int, engagement_path: str, secrets: list, loot,
                 scope_targets: list, aggressive: bool = False, catalog=None,
                 seen: set = None, checkpoint_fn=None, should_stop=None,
-                medic_triage=None) -> str:
+                medic_triage=None, medic_patches: bool = False) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
     passed-in lists; returns the final status (completed | budget_exhausted).
 
@@ -142,10 +159,14 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
         nonlocal medic_pages
         d = medic_triage(planner_client, planner_model, goal=goal, findings=findings,
                          secrets=secrets, tried_objectives=objectives_run,
-                         recent_steps=recent_steps, scope_targets=scope_targets)
+                         recent_steps=recent_steps, scope_targets=scope_targets,
+                         propose_patches=medic_patches)
         medic_pages += 1
         plan_log.append({"kind": "medic", "action": d.action,
-                         "objectives": list(d.objectives), "diagnosis": d.diagnosis})
+                         "objectives": list(d.objectives), "diagnosis": d.diagnosis,
+                         "patch": getattr(d, "patch", "")})
+        if getattr(d, "patch", ""):
+            _write_medic_patch(eng, d.patch, d.diagnosis)
         return d
 
     def _apply_recover(d) -> bool:
@@ -276,7 +297,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                 now: datetime, model: str = DEFAULT_MODEL, planner_model: str | None = None,
                 objective_models=None, max_objectives: int = 10, max_steps: int = 12,
                 seeds=None, engagement_path: str = "", aggressive: bool = False,
-                catalog=None, checkpoint_fn=None, should_stop=None) -> EngagementResult:
+                catalog=None, checkpoint_fn=None, should_stop=None,
+                medic_patches: bool = False) -> EngagementResult:
     if not planner_client.is_up():
         return EngagementResult("model_unavailable", goal=goal)
 
@@ -314,7 +336,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
                          max_objectives=max_objectives, max_steps=max_steps,
                          engagement_path=engagement_path, secrets=secrets, loot=loot,
                          scope_targets=eng.scope.include, aggressive=aggressive,
-                         catalog=catalog, seen=seen, checkpoint_fn=checkpoint_fn, should_stop=should_stop)
+                         catalog=catalog, seen=seen, checkpoint_fn=checkpoint_fn, should_stop=should_stop,
+                         medic_patches=medic_patches)
     return EngagementResult(status, findings, objectives_run, paused, plan_log, goal=goal,
                             secrets=secrets)
 

@@ -97,6 +97,33 @@ def test_empty_initial_plan_seeds_fallback_objective(tmp_path, monkeypatch):
     assert "172.30.0.12" in ran["objectives"][0] or "enumerate" in ran["objectives"][0]
 
 
+def test_medic_patch_proposal_written_to_review_file(tmp_path, monkeypatch):
+    # With medic_patches=True, a CONCLUDE carrying a patch must be written to a review file next to
+    # the audit log (human-review only — never applied).
+    import glob
+    import os
+    monkeypatch.setattr(orch, "execute_task", _no_progress_executor(tmp_path))
+
+    def stub_medic(client, model, **kw):
+        assert kw.get("propose_patches") is True   # flag threaded through
+        return MedicDecision(action="conclude", diagnosis="no extractor for the loot type",
+                             patch="add a regex to grin/extractors.py")
+
+    eng = _eng(tmp_path)
+    queue = [Objective("o1", "172.30.0.12", "exploit"), Objective("o2", "172.30.0.12", "exploit")]
+    _drive_loop(eng, goal="g", queue=queue, findings=[], objectives_run=[], paused=[], plan_log=[],
+                planner_client=FakeClient('{"done": false, "next_objectives": []}'),
+                executor_client=FakeClient("{}"), runner=None, now=NOW, planner_model="m",
+                objective_models=None, base_model="m", max_objectives=20, max_steps=4,
+                engagement_path="", secrets=[], loot=_FakeLoot(), scope_targets=["172.30.0.12"],
+                medic_triage=stub_medic, medic_patches=True)
+
+    patches = glob.glob(os.path.join(os.path.dirname(eng.audit_log), "*.medic-patch.md"))
+    assert patches, "patch proposal file not written"
+    body = open(patches[0]).read()
+    assert "extractors.py" in body and "REVIEW ONLY" in body
+
+
 def _activity_no_capture_executor(tmp_path):
     # Each objective produces DISTINCT non-empty output (so output_keys grows -> the dead-stall
     # never trips) but never a finding/secret -> "productive wandering" (the T2 failure mode).

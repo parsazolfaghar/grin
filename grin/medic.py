@@ -32,11 +32,38 @@ MEDIC_SYSTEM = (
 )
 
 
+MEDIC_PATCH_SYSTEM = (
+    "You are Grin's Medic in PATCH-PROPOSAL mode. The engagement hit a wall that looks like a "
+    "MISSING CAPABILITY in Grin itself (e.g. it saw loot in tool output but had no extractor for it, "
+    "or a foothold type with no helper). Draft a concrete code-change PROPOSAL for a HUMAN to review "
+    "— you do NOT apply it. Grin's extension points: deterministic loot extractors in "
+    "`grin/extractors.py`; self-contained runner helpers in `grin/tools/` (e.g. web-rce/ssh-loot/"
+    "suid-hijack); executor tradecraft in `grin/prompts.py`; the Medic playbooks in `grin/medic.py`. "
+    "Reply in markdown: the missing capability, the target file, and a concrete code/diff snippet. "
+    "Keep it minimal and testable. This is a SUGGESTION ONLY."
+)
+
+
 @dataclass
 class MedicDecision:
     action: str                                       # "recover" | "conclude"
     objectives: list = field(default_factory=list)    # list[Objective] when recover
     diagnosis: str = ""                               # plain-language reason when conclude
+    patch: str = ""                                   # human-review patch proposal (opt-in, conclude)
+
+
+def propose_patch(client, model, *, diagnosis, goal) -> str:
+    """Draft a code-patch PROPOSAL (markdown) addressing the capability wall in the diagnosis. For
+    HUMAN review only — never auto-applied. Fail-soft: returns '' on error."""
+    try:
+        user = (f"Engagement goal: {goal}\n"
+                f"Diagnosis of the wall Grin hit:\n{diagnosis}\n\n"
+                "Draft the minimal code-change proposal (target file + code/diff) that would give "
+                "Grin the missing capability, so it wouldn't hit this wall again. Suggestion only.")
+        return client.generate(model=model, system=MEDIC_PATCH_SYSTEM, prompt=user,
+                               temperature=0.2) or ""
+    except Exception:
+        return ""
 
 
 def _render_trail(recent_steps) -> str:
@@ -52,9 +79,14 @@ def _render_trail(recent_steps) -> str:
 
 
 def triage(client, model, *, goal, findings, secrets, tried_objectives, recent_steps,
-           scope_targets, max_new: int = 3) -> MedicDecision:
+           scope_targets, max_new: int = 3, propose_patches: bool = False) -> MedicDecision:
     """One rescue pass. Returns recover (new objectives) or conclude (diagnosis). Fail-soft:
-    on an unparseable reply, concludes rather than raising."""
+    on an unparseable reply, concludes rather than raising. When propose_patches is set, a CONCLUDE
+    also carries a human-review code-patch proposal (the diagnosis points at a capability wall)."""
+    def _concl(diag: str) -> MedicDecision:
+        patch = propose_patch(client, model, diagnosis=diag, goal=goal) if propose_patches else ""
+        return MedicDecision(action="conclude", diagnosis=diag, patch=patch)
+
     tried = "\n".join(f"- {o.objective} @ {o.target}" for o in tried_objectives) or "(none)"
     user = (
         f"Engagement goal: {goal}\n"
@@ -77,8 +109,7 @@ def triage(client, model, *, goal, findings, secrets, tried_objectives, recent_s
                                         temperature=0.3),
                         want=("action", "objectives", "diagnosis"))
     if not isinstance(data, dict):
-        return MedicDecision(action="conclude",
-                             diagnosis="Medic could not parse a rescue plan; engagement stalled.")
+        return _concl("Medic could not parse a rescue plan; engagement stalled.")
     action = str(data.get("action", "")).strip().lower()
     if action == "recover":
         objs = _parse_objectives(data.get("objectives", []))[:max_new]
@@ -86,7 +117,5 @@ def triage(client, model, *, goal, findings, secrets, tried_objectives, recent_s
         objs = [o for o in objs if (o.objective, o.target) not in tried_keys]
         if objs:
             return MedicDecision(action="recover", objectives=objs)
-        return MedicDecision(action="conclude",
-                             diagnosis=str(data.get("diagnosis", "")) or "No new tactic available; stalled.")
-    return MedicDecision(action="conclude",
-                         diagnosis=str(data.get("diagnosis", "")) or "Engagement stalled.")
+        return _concl(str(data.get("diagnosis", "")) or "No new tactic available; stalled.")
+    return _concl(str(data.get("diagnosis", "")) or "Engagement stalled.")

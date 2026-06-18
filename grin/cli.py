@@ -219,7 +219,8 @@ def _print_engagement_result(res) -> None:
 
 def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
                max_steps: int, planner_model=None, recon_model=None, exploit_model=None,
-               aggressive: bool = False, strength=None, stealth=None) -> int:
+               aggressive: bool = False, strength=None, stealth=None,
+               medic_patches: bool = False) -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
@@ -252,7 +253,8 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
                       now=datetime.now(), model=pins["planner"], planner_model=pins["planner"],
                       objective_models=_objective_models(pins["recon"], pins["exploit"]),
                       max_objectives=max_objectives, max_steps=max_steps, seeds=seed_list,
-                      engagement_path=path, aggressive=aggressive, catalog=catalog)
+                      engagement_path=path, aggressive=aggressive, catalog=catalog,
+                      medic_patches=medic_patches)
     save_result(result_path(eng), res)
     _print_engagement_result(res)
     return 0
@@ -812,6 +814,9 @@ def build_parser() -> argparse.ArgumentParser:
     g2.add_argument("--resume", action="store_true", help="continue a paused engagement after `grin gate` approvals")
     g2.add_argument("--aggressive", action="store_true",
         help="exhaustive mode: sweep the ATT&CK catalog (more attempts, same guardrails)")
+    g2.add_argument("--medic-patches", action="store_true",
+        help="when the Medic hits a capability wall, draft a code-patch PROPOSAL for review "
+             "(written to audit/<id>.medic-patch.md; never auto-applied)")
 
     rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
     rp.add_argument("file")
@@ -899,7 +904,8 @@ def main(argv=None) -> int:
                           max_objectives=args.max_objectives, max_steps=args.max_steps,
                           planner_model=args.planner_model, recon_model=args.recon_model,
                           exploit_model=args.exploit_model, aggressive=args.aggressive,
-                          strength=args.strength, stealth=args.stealth)
+                          strength=args.strength, stealth=args.stealth,
+                          medic_patches=args.medic_patches)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model)
     if args.group == "loot":

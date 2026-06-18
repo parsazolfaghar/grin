@@ -36,6 +36,38 @@ def test_triage_recovers_with_new_objectives():
     assert "flag" in d.objectives[0].objective
 
 
+def test_propose_patch_drafts_a_proposal():
+    from grin.medic import propose_patch
+    out = propose_patch(FakeClient("## Proposal\nAdd a regex to grin/extractors.py for JWT tokens."),
+                        "m", diagnosis="found a JWT in output but it was never captured as loot",
+                        goal="capture creds")
+    assert "extractors.py" in out
+
+
+def test_triage_conclude_with_patches_populates_patch_field():
+    reply = json.dumps({"action": "conclude", "diagnosis": "no extractor for the loot type seen"})
+    d = triage(FakeClient([reply, "## Patch proposal\nadd extractor X"]), "m", goal="g",
+               findings=[], secrets=[], tried_objectives=[], recent_steps=[], scope_targets=["t"],
+               propose_patches=True)
+    assert d.action == "conclude"
+    assert d.patch and "extractor" in d.patch
+
+
+def test_triage_conclude_without_patches_leaves_patch_empty():
+    reply = json.dumps({"action": "conclude", "diagnosis": "stuck"})
+    d = triage(FakeClient(reply), "m", goal="g", findings=[], secrets=[], tried_objectives=[],
+               recent_steps=[], scope_targets=["t"])   # propose_patches defaults False
+    assert d.action == "conclude" and d.patch == ""
+
+
+def test_triage_recover_does_not_propose_patch():
+    reply = json.dumps({"action": "recover", "objectives": [
+        {"objective": "read flag", "target": "t", "action_class": "exploit"}]})
+    d = triage(FakeClient(reply), "m", goal="g", findings=[], secrets=[], tried_objectives=[],
+               recent_steps=[], scope_targets=["t"], propose_patches=True)
+    assert d.action == "recover" and d.patch == ""   # only conclude proposes a patch
+
+
 def test_triage_recover_that_only_repeats_tried_concludes():
     tried = [Objective("scan ports", "t")]
     reply = json.dumps({"action": "recover",
