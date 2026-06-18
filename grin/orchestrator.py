@@ -23,6 +23,10 @@ _HONEYPOT_TITLE = "Suspected honeypot/decoy (advisory)"
 # engagement has stalled (nothing more to find here) — stops flailing to the objective budget.
 MAX_STALL_OBJECTIVES = 2
 
+# How many times the Medic (grin/medic.py) may be paged per engagement before it concludes —
+# bounds the rescue loop so a stall can't spin the Medic forever.
+MAX_MEDIC_PAGES = 2
+
 
 def _has_flag(secrets) -> bool:
     return any(getattr(s, "label", "") == "flag" for s in secrets)
@@ -112,7 +116,8 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                 objective_models, base_model: str, max_objectives: int,
                 max_steps: int, engagement_path: str, secrets: list, loot,
                 scope_targets: list, aggressive: bool = False, catalog=None,
-                seen: set = None, checkpoint_fn=None, should_stop=None) -> str:
+                seen: set = None, checkpoint_fn=None, should_stop=None,
+                medic_triage=None) -> str:
     """The adaptive loop body, shared by orchestrate() and resume_engagement(). Mutates the
     passed-in lists; returns the final status (completed | budget_exhausted).
 
@@ -121,6 +126,10 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     signal until the queue is exhausted / budget is hit."""
     if seen is None:
         seen = set()
+    if medic_triage is None:
+        from grin.medic import triage as medic_triage
+    medic_pages = 0
+    recent_steps: list = []   # compact cross-objective command trail for the Medic
     # shared across objectives so a command run earlier is skipped later (stops cross-objective
     # repetition — the #1 cause of flailing). Each engagement loop gets its own set.
     executed_commands: set = set()
@@ -146,6 +155,16 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             if sec not in secrets:
                 secrets.append(sec)
                 loot.record(sec, objective=obj.objective)
+        for st in getattr(res.journal, "steps", None) or []:
+            if getattr(st, "decision", None) == "executed":
+                recent_steps.append({
+                    "objective": obj.objective,
+                    "command": (getattr(st, "action", None) or {}).get("command", ""),
+                    "exit_code": getattr(st, "exit_code", None),
+                    "output": getattr(st, "output", "") or "",
+                    "extracted": [e.get("label") for e in (getattr(st, "extracted", None) or [])],
+                })
+        recent_steps[:] = recent_steps[-60:]
         if res.status == "awaiting_approval":
             paused.append({"objective": obj, "pending_id": res.pending_id,
                            "journal": res.journal.path})
@@ -167,6 +186,31 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             if len(findings) + len(secrets) + len(discovered_keys) + len(output_keys) == prev_progress:
                 stall += 1
                 if stall >= MAX_STALL_OBJECTIVES:
+                    # Page the Medic instead of giving up: it re-reads the engagement's own
+                    # evidence and either recovers (new objectives) or concludes with a diagnosis.
+                    if medic_pages < MAX_MEDIC_PAGES:
+                        decision = medic_triage(planner_client, planner_model, goal=goal,
+                                                findings=findings, secrets=secrets,
+                                                tried_objectives=objectives_run,
+                                                recent_steps=recent_steps,
+                                                scope_targets=scope_targets)
+                        medic_pages += 1
+                        plan_log.append({"kind": "medic", "action": decision.action,
+                                         "objectives": list(decision.objectives),
+                                         "diagnosis": decision.diagnosis})
+                        if decision.action == "recover" and decision.objectives:
+                            for o in decision.objectives:
+                                key = (o.objective, o.target)
+                                if key not in seen:
+                                    seen.add(key)
+                                    queue.append(o)
+                            stall = 0
+                            continue
+                        findings.append(Finding(
+                            title="Medic diagnosis", target=obj.target, severity="info",
+                            evidence=decision.diagnosis, tool="medic", command="",
+                            recommendation=""))
+                        return "completed"
                     return "completed"
             else:
                 stall = 0
