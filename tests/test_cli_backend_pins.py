@@ -22,6 +22,26 @@ def test_resolve_pins_explicit_wins(monkeypatch):
     assert pins["recon"] == "deepseek-chat"
 
 
+def test_resolve_pins_env_override(monkeypatch):
+    # GRIN_*_MODEL (e.g. set in ~/.grin/env) selects the model per role, so the env file alone can
+    # point a non-DeepSeek cloud backend (Cerebras) at its own model without code edits or CLI flags.
+    monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
+    monkeypatch.setenv("GRIN_PLANNER_MODEL", "zai-glm-4.7")
+    monkeypatch.setenv("GRIN_RECON_MODEL", "zai-glm-4.7")
+    monkeypatch.setenv("GRIN_EXPLOIT_MODEL", "zai-glm-4.7")
+    pins = cli._resolve_pins(planner=None, recon=None, exploit=None)
+    assert pins == {"planner": "zai-glm-4.7", "recon": "zai-glm-4.7", "exploit": "zai-glm-4.7"}
+
+
+def test_resolve_pins_explicit_beats_env(monkeypatch):
+    # CLI flag is the strongest signal — it wins over the env override.
+    monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
+    monkeypatch.setenv("GRIN_EXPLOIT_MODEL", "zai-glm-4.7")
+    pins = cli._resolve_pins(planner=None, recon=None, exploit="gpt-oss-120b")
+    assert pins["exploit"] == "gpt-oss-120b"
+    assert pins["recon"] == "deepseek-chat"   # unset role still falls to backend default
+
+
 def test_make_client_uses_factory(monkeypatch):
     monkeypatch.setenv("GRIN_MODEL_BACKEND", "openai")
     monkeypatch.setenv("GRIN_MODEL_URL", "https://api.deepseek.com")

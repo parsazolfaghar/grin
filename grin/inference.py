@@ -3,10 +3,14 @@ deterministic fake, and an env-driven factory. Backend is cloud-default when con
 (GRIN_MODEL_URL + GRIN_MODEL_API_KEY), else local Ollama; an explicit GRIN_MODEL_BACKEND overrides.
 The engine talks only to this interface, so the whole loop is testable with no model."""
 import os
+import time
 from typing import Protocol
 import httpx
 
 OLLAMA_URL = "http://127.0.0.1:11434"
+# transient statuses worth retrying: rate limit + gateway/server errors. Free tiers (Cerebras, Groq,
+# OpenRouter) return 429 readily under Grin's call rate, so retry-with-backoff = the app keeps working.
+_RETRY_STATUS = frozenset({429, 500, 502, 503, 504})
 
 
 def resolve_ollama_url(explicit: str | None = None) -> str:
@@ -76,10 +80,13 @@ class OpenAICompatClient:
     Implements the same InferenceClient Protocol as OllamaClient so the engine is unchanged.
     Cloud is opt-in by project charter; client-data exposure is warned + audited by the cli."""
 
-    def __init__(self, base_url: str, api_key: str, timeout: float = 600.0):
+    def __init__(self, base_url: str, api_key: str, timeout: float = 600.0,
+                 max_retries: int = 5, sleep=time.sleep):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
+        self.max_retries = max_retries
+        self._sleep = sleep   # injectable for tests
 
     def _headers(self) -> dict:
         return {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
@@ -105,14 +112,31 @@ class OpenAICompatClient:
         body = {"model": model, "stream": False, "temperature": temperature,
                 "messages": [{"role": "system", "content": system},
                              {"role": "user", "content": prompt}]}
-        r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(),
-                       timeout=self.timeout)
+        for attempt in range(self.max_retries + 1):
+            r = httpx.post(f"{self.base_url}/chat/completions", json=body, headers=self._headers(),
+                           timeout=self.timeout)
+            if r.status_code in _RETRY_STATUS and attempt < self.max_retries:
+                self._sleep(self._backoff(r, attempt))   # pace under rate limits instead of crashing
+                continue
+            break
         r.raise_for_status()
         data = r.json()
         try:
             return data["choices"][0]["message"]["content"] or ""
         except (KeyError, IndexError, TypeError):
             return ""
+
+    def _backoff(self, resp, attempt: int) -> float:
+        """Honor a numeric Retry-After header if the provider sends one, else exponential backoff
+        capped at 30s. Keeps a free-tier 429 from killing an engagement — it just paces itself."""
+        try:
+            hdr = getattr(resp, "headers", {}) or {}
+            val = hdr.get("retry-after") or hdr.get("Retry-After")
+            if val is not None:
+                return min(float(val), 30.0)
+        except (ValueError, TypeError, AttributeError):
+            pass
+        return min(2.0 ** attempt, 30.0)
 
 
 def make_inference_client():

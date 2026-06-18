@@ -517,12 +517,17 @@ CLOUD_DEFAULT_PINS = {
 
 
 def _resolve_pins(*, planner=None, recon=None, exploit=None) -> dict:
-    """Per-role models for the active backend. Unset roles take the backend's default set
-    (CLOUD_DEFAULT_PINS for openai, DEFAULT_PINS for ollama); an explicit value always wins."""
+    """Per-role models for the active backend. Precedence per role: explicit CLI value >
+    GRIN_<ROLE>_MODEL env (e.g. set in ~/.grin/env) > the backend's default set (CLOUD_DEFAULT_PINS
+    for openai, DEFAULT_PINS for ollama). The env layer lets ~/.grin/env alone point a non-DeepSeek
+    cloud backend (Cerebras) at its own model — no code edit or per-run CLI flag."""
+    import os as _os
     base = CLOUD_DEFAULT_PINS if active_backend() == "openai" else DEFAULT_PINS
-    return {"planner": planner or base["planner"],
-            "recon": recon or base["recon"],
-            "exploit": exploit or base["exploit"]}
+    return {
+        "planner": planner or _os.environ.get("GRIN_PLANNER_MODEL") or base["planner"],
+        "recon": recon or _os.environ.get("GRIN_RECON_MODEL") or base["recon"],
+        "exploit": exploit or _os.environ.get("GRIN_EXPLOIT_MODEL") or base["exploit"],
+    }
 
 
 def _print_backend_notice(pins) -> None:

@@ -32,6 +32,29 @@ def test_generate_posts_chat_completions_and_parses(monkeypatch):
     assert captured["json"]["stream"] is False
 
 
+def test_generate_retries_on_429_then_succeeds(monkeypatch):
+    # Free tiers (Cerebras/Groq/OpenRouter) 429 under Grin's call rate — the client must back off and
+    # retry instead of crashing the engagement. Two 429s then a 200 should yield the content.
+    seq = [_Resp({}, 429), _Resp({}, 429),
+           _Resp({"choices": [{"message": {"content": "pong"}}]}, 200)]
+    calls = {"n": 0}
+    def fake_post(*a, **k):
+        r = seq[calls["n"]]; calls["n"] += 1; return r
+    monkeypatch.setattr(inf.httpx, "post", fake_post)
+    slept = []
+    c = OpenAICompatClient("https://x", "k", sleep=lambda s: slept.append(s))
+    assert c.generate(model="m", system="s", prompt="p") == "pong"
+    assert calls["n"] == 3 and len(slept) == 2   # retried twice, then succeeded
+
+
+def test_generate_gives_up_after_max_retries(monkeypatch):
+    # Persistent 429 eventually raises (bounded) rather than looping forever.
+    monkeypatch.setattr(inf.httpx, "post", lambda *a, **k: _Resp({}, 429))
+    c = OpenAICompatClient("https://x", "k", max_retries=3, sleep=lambda s: None)
+    with pytest.raises(RuntimeError):
+        c.generate(model="m", system="s", prompt="p")
+
+
 def test_generate_malformed_returns_empty(monkeypatch):
     monkeypatch.setattr(inf.httpx, "post", lambda *a, **k: _Resp({"nope": 1}))
     c = OpenAICompatClient("https://x", "k")
