@@ -87,6 +87,16 @@ docker exec grin-kali sh -c "chmod +x /usr/local/bin/web-rce"
 # usage: web-rce --url http://t/ --param name --mode ssti|cmdi|auto [--method GET|POST] --cmd '<script>'
 ```
 
+`ssh-loot` does the same for the SSH-pivot last mile — given a stolen (passphrase-protected) key it
+cracks + decrypts + tries candidate users (incl. one named in a README) + reads the flag from home,
+closing T6's pivot deterministically:
+
+```bash
+docker cp grin/tools/sshloot.py grin-kali:/usr/local/bin/ssh-loot
+docker exec grin-kali sh -c "chmod +x /usr/local/bin/ssh-loot"
+# usage: ssh-loot --host <vault-ip> --key /tmp/loot/id_rsa [--readme '<clue>'] [--passphrase <pw>]
+```
+
 ## 3. Bring the lab up
 
 ```bash
