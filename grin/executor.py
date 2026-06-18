@@ -8,7 +8,7 @@ from datetime import datetime
 
 from grin.engagement import Engagement
 from grin.extractors import extract
-from grin.lootfile import persist_artifact
+from grin.lootfile import persist_artifact, decrypt_persisted_key
 from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
@@ -119,6 +119,10 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             # objective's ssh2john/john/ssh can use it instead of guessing a path on the target.
             for sec in found_secrets:
                 persist_artifact(sec, runner, target=a["target"])
+                # A cracked passphrase: strip it from the persisted key in place so any later
+                # `ssh -i /tmp/loot/id_rsa` works without carrying the passphrase across objectives.
+                if sec.label == "cracked password":
+                    decrypt_persisted_key(sec.value, runner, target=a["target"])
             extracted_tags = [{"label": s.label, "value": s.value} for s in found_secrets]
             journal.add_step(Step(action=a, decision="executed",
                                   output=raw_output, exit_code=out.result.exit_code,

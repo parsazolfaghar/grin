@@ -52,6 +52,27 @@ def test_persist_ignores_non_artifact_secrets():
     assert r.commands == []        # nothing written for a flag
 
 
+def test_decrypt_persisted_key_strips_passphrase():
+    """Once the passphrase is cracked, decrypt the persisted key in place so a later objective's
+    `ssh -i /tmp/loot/id_rsa` works without passing the passphrase across objectives."""
+    from grin.lootfile import decrypt_persisted_key
+    r = _RecRunner()
+    ok = decrypt_persisted_key("sunshine", r)
+    assert ok is True
+    cmd = r.commands[0]
+    assert "ssh-keygen -p" in cmd and "sunshine" in cmd
+    assert f"-f {LOOT_DIR}/id_rsa" in cmd and "-N ''" in cmd
+
+
+def test_decrypt_persisted_key_never_raises():
+    from grin.lootfile import decrypt_persisted_key
+
+    class Boom:
+        def run(self, *a, **k):
+            raise RuntimeError("down")
+    assert decrypt_persisted_key("x", Boom()) is False
+
+
 def test_persist_never_raises():
     class Boom:
         def run(self, *a, **k):

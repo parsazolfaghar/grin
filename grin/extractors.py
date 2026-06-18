@@ -106,17 +106,20 @@ def _extract_private_keys(tool: str, command: str, output: str, target: str) -> 
 # plaintext lets the next objective actually use the key/credential — this was the missing piece when
 # the T6 crack "ran" but its result was never recorded.
 _JOHN_CRACK_RE = re.compile(r"^(\S+)\s+\(([^)]+)\)\s*$")
+# `john --show` (and SSH-key cracks) print `<source>:<password>` where source is the key/hash file.
+# Restricted to key/hash-looking sources so it doesn't swallow arbitrary colon-bearing output.
+_JOHN_SHOW_RE = re.compile(r"(\S*(?:id_rsa|_rsa|\.hash|\.key|\.pem)\S*):(\S+)")
 
 
 def _extract_cracked(tool: str, command: str, output: str, target: str) -> List[Secret]:
     results: List[Secret] = []
     seen: set[str] = set()
     for line in output.splitlines():
-        m = _JOHN_CRACK_RE.match(line)
+        m = _JOHN_CRACK_RE.match(line) or _JOHN_SHOW_RE.search(line)
         if not m:
             continue
-        password = m.group(1).strip()
-        source = m.group(2).strip()
+        password = m.group(1).strip() if m.re is _JOHN_CRACK_RE else m.group(2).strip()
+        source = m.group(2).strip() if m.re is _JOHN_CRACK_RE else m.group(1).strip()
         if password in seen:
             continue
         seen.add(password)

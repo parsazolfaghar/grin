@@ -41,3 +41,16 @@ def persist_artifact(secret, runner, target: str = "") -> str | None:
         return path
     except Exception:
         return None
+
+
+def decrypt_persisted_key(passphrase: str, runner, target: str = "") -> bool:
+    """Strip the passphrase from the persisted key in place (ssh-keygen -p), so a later objective's
+    `ssh -i /tmp/loot/id_rsa` works without carrying the passphrase across objectives. Best-effort:
+    returns False on any error; a wrong passphrase just makes ssh-keygen fail harmlessly."""
+    try:
+        path = f"{LOOT_DIR}/id_rsa"
+        pw = (passphrase or "").replace("'", "'\\''")   # safe single-quoting
+        runner.run(target, f"ssh-keygen -p -P '{pw}' -N '' -f {path}")
+        return True
+    except Exception:
+        return False

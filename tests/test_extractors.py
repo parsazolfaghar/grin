@@ -101,6 +101,18 @@ def test_extract_john_cracked_password():
     assert creds[0].value == "hunter2"
 
 
+def test_extract_john_show_colon_format():
+    """SSH-key cracks come out of john as `<keyfile>:<passphrase>` (not the `pw (source)` form).
+    This is the exact T6 miss: john cracked `sunshine` but it was never captured."""
+    out = ("Loaded 1 password hash (SSH, SSH private key [RSA/DSA/EC/OPENSSH 32/64])\n"
+           "/tmp/loot/id_rsa:sunshine\n"
+           "1 password hash cracked, 0 left\n")
+    secs = extract("john", "john --show /tmp/loot/key.hash", out, "172.30.0.16")
+    creds = [s for s in secs if s.label == "cracked password"]
+    assert len(creds) == 1
+    assert creds[0].value == "sunshine"
+
+
 def test_extract_unix_password_hash():
     """A shadow/backup hash line (T4 chain) is captured so it can be cracked offline."""
     out = "deploy:$6$abc123$Z9xQwErTyUiOpAsDfGhJkLzXcVbNm1234567890qwertyuiop:19000:0:99999:7:::"
