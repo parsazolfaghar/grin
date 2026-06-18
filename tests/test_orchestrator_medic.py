@@ -89,10 +89,10 @@ def test_empty_initial_plan_seeds_fallback_objective(tmp_path, monkeypatch):
         return TaskResult("completed", [], j, secrets=[])
     monkeypatch.setattr(orch, "execute_task", fake_execute)
 
-    res = orchestrate(_eng(tmp_path), goal="capture flag",
-                      planner_client=FakeClient('{"done": true, "next_objectives": []}'),
-                      executor_client=FakeClient("{}"), runner=None, now=NOW,
-                      model="m", planner_model="m", max_objectives=5)
+    orchestrate(_eng(tmp_path), goal="capture flag",
+                planner_client=FakeClient('{"done": true, "next_objectives": []}'),
+                executor_client=FakeClient("{}"), runner=None, now=NOW,
+                model="m", planner_model="m", max_objectives=5)
     assert len(ran["objectives"]) >= 1   # fallback recon objective actually ran
     assert "172.30.0.12" in ran["objectives"][0] or "enumerate" in ran["objectives"][0]
 

@@ -32,7 +32,6 @@ def test_persist_private_key_writes_real_file_on_runner():
     cmd = r.commands[0]
     assert "base64 -d" in cmd and f"> {path}" in cmd and "chmod 600" in cmd
     # the embedded base64 must decode back to the exact key bytes
-    m = re.search(r"base64 -d", cmd)
     b64 = re.search(r"printf %s '([A-Za-z0-9+/=]+)'", cmd)
     assert b64 and base64.b64decode(b64.group(1)).decode() == _key().value
 
