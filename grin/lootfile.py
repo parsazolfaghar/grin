@@ -35,8 +35,10 @@ def persist_artifact(secret, runner, target: str = "") -> str | None:
             cmd = (f"mkdir -p {LOOT_DIR} && printf %s '{b64}' | base64 -d >> {path} "
                    f"&& printf '\\n' >> {path}")
         else:
+            # Re-add the trailing newline the extractor's .strip() removed: OpenSSH/libcrypto
+            # rejects a key file with no final newline ('error in libcrypto: unsupported').
             cmd = (f"mkdir -p {LOOT_DIR} && printf %s '{b64}' | base64 -d > {path} "
-                   f"&& chmod 600 {path}")
+                   f"&& printf '\\n' >> {path} && chmod 600 {path}")
         runner.run(target or getattr(secret, "target", ""), cmd)
         return path
     except Exception:

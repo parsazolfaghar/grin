@@ -37,6 +37,18 @@ def test_persist_private_key_writes_real_file_on_runner():
     assert b64 and base64.b64decode(b64.group(1)).decode() == _key().value
 
 
+def test_persist_private_key_ensures_trailing_newline():
+    """OpenSSH/libcrypto refuses a private key file with no trailing newline ('error in libcrypto:
+    unsupported') — even though ssh2john parses it. The extractor strips the block, so the persist
+    MUST re-add a trailing newline or `ssh -i` fails (the exact T6 link-4 miss)."""
+    r = _RecRunner()
+    persist_artifact(_key(), r)
+    cmd = r.commands[0]
+    assert "id_rsa" in cmd
+    # a newline is appended after the decoded key bytes
+    assert r"printf '\n' >>" in cmd or r'printf "\n" >>' in cmd
+
+
 def test_persist_hash_appends_to_hashfile():
     r = _RecRunner()
     h = Secret(label="password hash", value="deploy:$6$abc$xyz", target="t", tool="curl", command="c")
