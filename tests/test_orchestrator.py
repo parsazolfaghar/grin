@@ -237,13 +237,14 @@ def test_model_down_aborts(tmp_path):
     assert res.objectives_run == []
 
 
-def test_empty_initial_plan_completes_with_no_findings(tmp_path):
+def test_empty_initial_plan_seeds_fallback_not_silent_noop(tmp_path):
+    # An empty/unparseable initial plan must NOT silently no-op (the validated T5 anomaly):
+    # a fallback recon objective per in-scope target is seeded so the engagement actually runs.
     eng = make_eng(tmp_path)
     res = orchestrate(eng, goal="g", planner_client=FakeClient("not json"),
                       executor_client=FakeClient("x"), runner=FakeRunner(), now=NOW)
-    assert res.status == "completed"
-    assert res.findings == []
-    assert res.objectives_run == []
+    assert len(res.objectives_run) >= 1
+    assert res.status in ("completed", "budget_exhausted")
 
 
 def test_flag_honeypot_advisory_once_and_silent_when_clean():

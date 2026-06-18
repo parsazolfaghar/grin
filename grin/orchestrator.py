@@ -12,6 +12,7 @@ from grin.discoveries import discover
 from grin.engagement import Engagement
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.finding import Finding
+from grin.objective import Objective
 from grin.honeypot import assess as _assess_honeypot
 from grin.journal import Journal
 from grin.loot import LootStore, loot_dir
@@ -26,6 +27,11 @@ MAX_STALL_OBJECTIVES = 2
 # How many times the Medic (grin/medic.py) may be paged per engagement before it concludes —
 # bounds the rescue loop so a stall can't spin the Medic forever.
 MAX_MEDIC_PAGES = 2
+
+# Objectives of command activity with NO new finding/secret before the Medic is paged. Catches
+# "productive wandering" — an agent that keeps producing output (so the dead-stall never trips)
+# but never actually captures anything. The dead stall handles "no activity at all".
+MEDIC_NOCAPTURE_TRIGGER = 3
 
 
 def _has_flag(secrets) -> bool:
@@ -129,7 +135,29 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
     if medic_triage is None:
         from grin.medic import triage as medic_triage
     medic_pages = 0
+    no_capture = 0            # objectives since the last NEW finding/secret (activity != capture)
     recent_steps: list = []   # compact cross-objective command trail for the Medic
+
+    def _page_medic():
+        nonlocal medic_pages
+        d = medic_triage(planner_client, planner_model, goal=goal, findings=findings,
+                         secrets=secrets, tried_objectives=objectives_run,
+                         recent_steps=recent_steps, scope_targets=scope_targets)
+        medic_pages += 1
+        plan_log.append({"kind": "medic", "action": d.action,
+                         "objectives": list(d.objectives), "diagnosis": d.diagnosis})
+        return d
+
+    def _apply_recover(d) -> bool:
+        added = False
+        for o in d.objectives:
+            key = (o.objective, o.target)
+            if key not in seen:
+                seen.add(key)
+                queue.append(o)
+                added = True
+        return added
+
     # shared across objectives so a command run earlier is skipped later (stops cross-objective
     # repetition — the #1 cause of flailing). Each engagement loop gets its own set.
     executed_commands: set = set()
@@ -143,6 +171,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
             return "stopped"
         obj = queue.pop(0)
         prev_progress = len(findings) + len(secrets) + len(discovered_keys) + len(output_keys)
+        prev_findsec = len(findings) + len(secrets)
         res = execute_task(eng, objective=obj.objective, target=obj.target,
                            client=executor_client, runner=runner, now=now,
                            model=_model_for(obj, objective_models, base_model),
@@ -182,29 +211,18 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
         # something new even with no formal finding yet — don't mistake that for stalling.
         discovered_keys |= _discovery_keys(res.journal)
         output_keys |= _output_keys(res.journal)
+        no_capture = no_capture + 1 if len(findings) + len(secrets) == prev_findsec else 0
         if not aggressive:
+            # Dead stall: no progress of ANY kind (findings/secrets/recon/output). Page the Medic
+            # before concluding; it recovers or hands back a diagnosis.
             if len(findings) + len(secrets) + len(discovered_keys) + len(output_keys) == prev_progress:
                 stall += 1
                 if stall >= MAX_STALL_OBJECTIVES:
-                    # Page the Medic instead of giving up: it re-reads the engagement's own
-                    # evidence and either recovers (new objectives) or concludes with a diagnosis.
                     if medic_pages < MAX_MEDIC_PAGES:
-                        decision = medic_triage(planner_client, planner_model, goal=goal,
-                                                findings=findings, secrets=secrets,
-                                                tried_objectives=objectives_run,
-                                                recent_steps=recent_steps,
-                                                scope_targets=scope_targets)
-                        medic_pages += 1
-                        plan_log.append({"kind": "medic", "action": decision.action,
-                                         "objectives": list(decision.objectives),
-                                         "diagnosis": decision.diagnosis})
-                        if decision.action == "recover" and decision.objectives:
-                            for o in decision.objectives:
-                                key = (o.objective, o.target)
-                                if key not in seen:
-                                    seen.add(key)
-                                    queue.append(o)
+                        decision = _page_medic()
+                        if decision.action == "recover" and _apply_recover(decision):
                             stall = 0
+                            no_capture = 0
                             continue
                         findings.append(Finding(
                             title="Medic diagnosis", target=obj.target, severity="info",
@@ -214,6 +232,15 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                     return "completed"
             else:
                 stall = 0
+            # Productive-wandering rescue: output is moving but nothing is being CAPTURED. Page the
+            # Medic to redirect (e.g. "you have RCE — read the flag") before the budget runs out.
+            if no_capture >= MEDIC_NOCAPTURE_TRIGGER and medic_pages < MAX_MEDIC_PAGES:
+                decision = _page_medic()
+                no_capture = 0
+                if decision.action == "recover" and _apply_recover(decision):
+                    stall = 0
+                    continue
+                # eager conclude: nothing new to try right now — let the run proceed/end normally
         if aggressive and checkpoint_fn is not None:
             fresh = new_flags(res.secrets, flagged_seen)
             for f in fresh:
@@ -259,6 +286,12 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
 
     eff_planner = planner_model or model
     queue = initial_plan(planner_client, eff_planner, goal, eng.scope.include, seeds or [])
+    if not queue:
+        # Cold-start fallback: the planner returned no objectives (a model hiccup). Don't silently
+        # no-op with 0 objectives — seed a recon objective per in-scope target so the engagement
+        # actually runs (the Medic + normal flow take over from there).
+        queue = [Objective("enumerate services and identify the vulnerability to exploit", t,
+                           "active-scan") for t in eng.scope.include]
     findings: list = []
     objectives_run: list = []
     paused: list = []
