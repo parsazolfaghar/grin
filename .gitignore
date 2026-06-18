@@ -14,3 +14,6 @@ build/
 *.spec
 grin/app/assets/grin.icns
 .build-venv/
+
+# brainstorm visual-companion scratch
+.superpowers/
