@@ -1,8 +1,28 @@
 import json
-from grin.analyst import initial_plan, replan, AnalystDecision
+from grin.analyst import initial_plan, replan, AnalystDecision, _render_secrets
 from grin.objective import Objective
 from grin.inference import FakeClient
 from grin.finding import Finding
+from grin.secret import Secret
+
+
+def test_render_secrets_compacts_multiline_private_key():
+    """A captured private key must register so the planner knows we have it, but its multi-line PEM
+    body must not be dumped into the prompt — render one compact line per secret."""
+    key = Secret(label="private key",
+                 value="-----BEGIN OPENSSH PRIVATE KEY-----\nAAAA\nBBBB\nCCCC\n-----END OPENSSH PRIVATE KEY-----",
+                 target="172.30.0.16", tool="curl", command="curl ...")
+    rendered = _render_secrets([key])
+    assert rendered.count("\n") == 0          # exactly one line for the one secret
+    assert "private key" in rendered           # the planner still learns we hold a key
+    assert "AAAA" not in rendered              # raw key body is not leaked into the prompt
+    assert "172.30.0.16" in rendered
+
+
+def test_render_secrets_keeps_short_values_intact():
+    """Short secrets (creds/flags) render verbatim — only long/multiline values are compacted."""
+    cred = Secret(label="cracked password", value="hunter2", target="t", tool="john", command="c")
+    assert "hunter2" in _render_secrets([cred])
 
 
 def test_initial_plan_parses_objectives():

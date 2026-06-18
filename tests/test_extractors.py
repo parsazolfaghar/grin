@@ -63,6 +63,53 @@ def test_extract_weird_whitespace_hydra():
     assert creds[0].value == "user1:pass1"
 
 
+def test_extract_openssh_private_key():
+    """The T6 keystone: a stolen passphrase-protected SSH key in command output must be captured as
+    a secret so the orchestrator knows it has the key and plans crack->pivot instead of re-looting."""
+    out = (
+        "-----BEGIN OPENSSH PRIVATE KEY-----\n"
+        "b3BlbnNzaC1rZXktdjEAAAAACmFlczI1Ni1jdHIAAAAGYmNyeXB0AAAAGAAAABB0ylTslB\n"
+        "YAoJAhvnDd9k1AAAAEAAAAAEAAAGXAAAAB3NzaC1y\n"
+        "-----END OPENSSH PRIVATE KEY-----\n"
+    )
+    secs = extract("curl", "curl ... cat /opt/deploy/id_rsa", out, "172.30.0.16")
+    keys = [s for s in secs if s.label == "private key"]
+    assert len(keys) == 1
+    assert keys[0].value.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+    assert keys[0].value.rstrip().endswith("-----END OPENSSH PRIVATE KEY-----")
+    assert keys[0].target == "172.30.0.16"
+
+
+def test_extract_rsa_private_key():
+    """Classic PEM RSA key block is also captured."""
+    out = ("junk before\n-----BEGIN RSA PRIVATE KEY-----\nMIIEpAIBAAKCAQEA\n"
+           "-----END RSA PRIVATE KEY-----\njunk after")
+    secs = extract("cat", "cat id_rsa", out, "t")
+    assert sum(1 for s in secs if s.label == "private key") == 1
+
+
+def test_extract_john_cracked_password():
+    """john prints `<password>      (<source>)` when it cracks — capture the passphrase so the
+    next objective can use the key. This is what was missing when the T6 crack 'succeeded'."""
+    out = ("Using default input encoding: UTF-8\n"
+           "Loaded 1 password hash (SSH ...)\n"
+           "hunter2          (id_rsa)\n"
+           "1g 0:00:00:01 DONE\n")
+    secs = extract("john", "john --wordlist=rockyou.txt key.hash", out, "172.30.0.16")
+    creds = [s for s in secs if s.label == "cracked password"]
+    assert len(creds) == 1
+    assert creds[0].value == "hunter2"
+
+
+def test_extract_unix_password_hash():
+    """A shadow/backup hash line (T4 chain) is captured so it can be cracked offline."""
+    out = "deploy:$6$abc123$Z9xQwErTyUiOpAsDfGhJkLzXcVbNm1234567890qwertyuiop:19000:0:99999:7:::"
+    secs = extract("curl", "curl ... cat /var/backups/shadow.bak", out, "172.30.0.14")
+    hashes = [s for s in secs if s.label == "password hash"]
+    assert len(hashes) == 1
+    assert hashes[0].value.startswith("deploy:$6$")
+
+
 def test_extract_never_raises():
     """extract() must never raise regardless of garbage input."""
     try:

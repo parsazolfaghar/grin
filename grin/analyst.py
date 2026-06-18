@@ -77,10 +77,22 @@ def _render_findings(findings) -> str:
     return "\n".join(f"- [{f.severity}] {f.title} ({f.target}) via {f.tool}" for f in findings)
 
 
+def _compact_value(value: str, limit: int = 60) -> str:
+    """Keep the planner prompt readable: collapse a multi-line/long secret value (e.g. a PEM private
+    key) to a one-line summary. The full value is still stored in loot — the planner only needs to
+    know the secret exists, not its raw bytes."""
+    v = (value or "").strip()
+    if "\n" in v or len(v) > limit:
+        head = v.splitlines()[0][:limit]
+        return f"{head} …[{len(v)} chars]"
+    return v
+
+
 def _render_secrets(secrets) -> str:
     if not secrets:
         return "(none captured yet)"
-    return "\n".join(f"- [{s.label}] {s.value} ({s.target}) via {s.tool}" for s in secrets)
+    return "\n".join(
+        f"- [{s.label}] {_compact_value(s.value)} ({s.target}) via {s.tool}" for s in secrets)
 
 
 def replan(client, model: str, goal: str, findings, done_count: int,

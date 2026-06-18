@@ -69,6 +69,96 @@ def _extract_flags(tool: str, command: str, output: str, target: str) -> List[Se
 
 
 # ---------------------------------------------------------------------------
+# Private-key extractor
+# ---------------------------------------------------------------------------
+# Any PEM/OpenSSH private-key block exfiltrated into tool output. Capturing this is the T6 keystone:
+# once the key is a recorded Secret, the orchestrator sees it (via replan) and plans crack->pivot
+# instead of re-spawning the same "get a foothold" objective and re-stealing the same key.
+_PRIVKEY_RE = re.compile(
+    r"-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----.*?-----END [A-Z0-9 ]*PRIVATE KEY-----",
+    re.DOTALL,
+)
+
+
+def _extract_private_keys(tool: str, command: str, output: str, target: str) -> List[Secret]:
+    results: List[Secret] = []
+    seen: set[str] = set()
+    for m in _PRIVKEY_RE.finditer(output):
+        block = m.group(0).strip()
+        if block in seen:
+            continue
+        seen.add(block)
+        results.append(Secret(
+            label="private key",
+            value=block,
+            target=target,
+            tool=tool,
+            command=command,
+            context="Private key exfiltrated from tool output",
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Cracked-password extractor (john/hashcat)
+# ---------------------------------------------------------------------------
+# john prints `<password>      (<source>)` on a line of its own when it cracks a hash. Capturing the
+# plaintext lets the next objective actually use the key/credential — this was the missing piece when
+# the T6 crack "ran" but its result was never recorded.
+_JOHN_CRACK_RE = re.compile(r"^(\S+)\s+\(([^)]+)\)\s*$")
+
+
+def _extract_cracked(tool: str, command: str, output: str, target: str) -> List[Secret]:
+    results: List[Secret] = []
+    seen: set[str] = set()
+    for line in output.splitlines():
+        m = _JOHN_CRACK_RE.match(line)
+        if not m:
+            continue
+        password = m.group(1).strip()
+        source = m.group(2).strip()
+        if password in seen:
+            continue
+        seen.add(password)
+        results.append(Secret(
+            label="cracked password",
+            value=password,
+            target=target,
+            tool=tool,
+            command=command,
+            context=f"Cracked credential for {source}",
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
+# Unix password-hash extractor
+# ---------------------------------------------------------------------------
+# A shadow/backup line bearing a crypt hash ($1$/$5$/$6$/$y$/$2[aby]$) — the T4 chain: read it, then
+# crack it offline. Capturing it as a secret lets the orchestrator queue an offline-crack objective.
+_HASH_RE = re.compile(r"([A-Za-z0-9_.-]+:\$(?:1|5|6|y|2[aby])\$[^\s:]+)")
+
+
+def _extract_hashes(tool: str, command: str, output: str, target: str) -> List[Secret]:
+    results: List[Secret] = []
+    seen: set[str] = set()
+    for m in _HASH_RE.finditer(output):
+        h = m.group(1).strip()
+        if h in seen:
+            continue
+        seen.add(h)
+        results.append(Secret(
+            label="password hash",
+            value=h,
+            target=target,
+            tool=tool,
+            command=command,
+            context="Password hash for offline cracking",
+        ))
+    return results
+
+
+# ---------------------------------------------------------------------------
 # Public entry point
 # ---------------------------------------------------------------------------
 
@@ -89,11 +179,14 @@ def extract(tool: str, command: str, output: str, target: str) -> List[Secret]:
 
         creds = _extract_hydra(cmd, out, tgt)
         flags = _extract_flags(tl, cmd, out, tgt)
+        keys = _extract_private_keys(tl, cmd, out, tgt)
+        cracked = _extract_cracked(tl, cmd, out, tgt)
+        hashes = _extract_hashes(tl, cmd, out, tgt)
 
         # Global dedup by (label, value) — in case two extractors somehow produce the same fact
         seen: set[tuple[str, str]] = set()
         combined: List[Secret] = []
-        for sec in creds + flags:
+        for sec in creds + flags + keys + cracked + hashes:
             key = (sec.label, sec.value)
             if key not in seen:
                 seen.add(key)
