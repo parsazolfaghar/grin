@@ -193,6 +193,35 @@ def test_no_extraction_on_empty_output(tmp_path):
 # Test 6: extractor deduplicates — same cred from two runs
 # ---------------------------------------------------------------------------
 
+def test_executor_persists_captured_private_key_to_runner(tmp_path):
+    """When a stolen private key is extracted, the executor must write it to a real file on the
+    runner (/tmp/loot/id_rsa) so a later objective's ssh2john/ssh can use it — fixing the T6 crack
+    that read a non-existent /root/.ssh/id_rsa and aborted."""
+    eng = make_eng(tmp_path)
+    steal_cmd = f"curl -s -X POST http://{TARGET}/ping -d 'host=;cat /opt/deploy/id_rsa'"
+    KEY = ("-----BEGIN OPENSSH PRIVATE KEY-----\n"
+           "b3BlbnNzaC1rZXktdjEAAAAA\n-----END OPENSSH PRIVATE KEY-----")
+
+    class RecRunner:
+        def __init__(self):
+            self.commands = []
+
+        def run(self, target, command, timeout=60):
+            self.commands.append(command)
+            if command == steal_cmd:
+                return ExecResult(KEY, 0, 1.0, False)
+            return ExecResult("", 0, 0.0, False)
+
+    client = FakeClient([_action("curl", steal_cmd, TARGET, "exploit"), _done()])
+    runner = RecRunner()
+    res = execute_task(eng, objective="steal key", target=TARGET,
+                       client=client, runner=runner, now=NOW, max_steps=10)
+
+    assert any(s.label == "private key" for s in res.secrets), "key not captured"
+    persist = [c for c in runner.commands if "/tmp/loot/id_rsa" in c and "base64 -d" in c]
+    assert len(persist) == 1, f"key not persisted to runner; commands: {runner.commands}"
+
+
 def test_extractor_deduplicates_across_steps(tmp_path):
     """If two separate tool executions return the same credential, it must appear only once."""
     eng = make_eng(tmp_path)

@@ -8,6 +8,7 @@ from datetime import datetime
 
 from grin.engagement import Engagement
 from grin.extractors import extract
+from grin.lootfile import persist_artifact
 from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
@@ -114,6 +115,10 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
         if out.status == "executed":
             raw_output = out.result.output or ""
             found_secrets = extract(a["tool"], a["command"], raw_output, a["target"])
+            # Persist key/hash loot to a real file on the (objective-shared) runner so a LATER
+            # objective's ssh2john/john/ssh can use it instead of guessing a path on the target.
+            for sec in found_secrets:
+                persist_artifact(sec, runner, target=a["target"])
             extracted_tags = [{"label": s.label, "value": s.value} for s in found_secrets]
             journal.add_step(Step(action=a, decision="executed",
                                   output=raw_output, exit_code=out.result.exit_code,
