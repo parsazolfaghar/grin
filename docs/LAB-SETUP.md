@@ -107,6 +107,18 @@ docker exec grin-kali sh -c "chmod +x /usr/local/bin/suid-hijack"
 # usage: suid-hijack --url http://t/ --param name --mode ssti|cmdi|auto --flag /root/flag.txt
 ```
 
+`web-scan` is the FIND side of the web surface — before you can `web-rce` a foothold you have to
+discover the injectable parameter. `grin/tools/webscan.py` fetches the page, extracts every form
+input + query param, also probes a candidate list of commonly-unlinked params, sprays each with
+XSS payloads, and reports the exact `param=<p> payload=<...>` that reflects UNescaped (a real,
+reproducible reflected-XSS injection point — the web coverage CLI scanners miss or bury in noise):
+
+```bash
+docker cp grin/tools/webscan.py grin-kali:/usr/local/bin/web-scan
+docker exec grin-kali sh -c "chmod +x /usr/local/bin/web-scan"
+# usage: web-scan --url http://t/ [--param <p>] [--method GET|POST]
+```
+
 ## 3. Bring the lab up
 
 ```bash
