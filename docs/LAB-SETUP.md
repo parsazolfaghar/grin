@@ -119,6 +119,19 @@ docker exec grin-kali sh -c "chmod +x /usr/local/bin/web-scan"
 # usage: web-scan --url http://t/ [--param <p>] [--method GET|POST]
 ```
 
+`grin-shell` drives INTERACTIVE tools the one-shot executor can't (msfconsole / meterpreter /
+interactive sqlmap / evil-winrm / ssh / ftp): it spawns the tool, feeds each `--step` at its prompt,
+auto-answers routine confirmations, and returns the transcript. Needs `python3-pexpect` on the runner
+(the provisioner installs it). Fail-closed: password/sudo prompts are answered only from `--secret`,
+never fabricated.
+
+```bash
+docker cp grin/tools/idrive.py grin-kali:/usr/local/bin/grin-shell
+docker exec grin-kali sh -c "chmod +x /usr/local/bin/grin-shell"
+# usage: grin-shell --cmd 'msfconsole -q' --step 'use ...' --step 'run' --step 'exit'
+#        grin-shell --cmd 'ssh user@t' --step 'id' --step 'cat ~/flag.txt' [--secret password=<pw>]
+```
+
 ## 3. Bring the lab up
 
 ```bash
