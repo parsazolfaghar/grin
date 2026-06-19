@@ -260,6 +260,39 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
     return 0
 
 
+def cmd_ci(path: str, *, goal: str, seeds: str, model: str, max_objectives: int,
+           max_steps: int, fail_on: str, sarif_out=None, aggressive: bool = False) -> int:
+    """Headless CI/pipeline mode: run the engagement, then GATE the build on finding severity.
+    Exits 2 if any finding is at/above --fail-on, else 0 (1 stays for operational errors). Writes
+    a SARIF file when --sarif is given so the pipeline can upload it to code-scanning."""
+    try:
+        eng = load_engagement(path)
+    except EngagementError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 1
+    seed_list = [s.strip() for s in seeds.split(",") if s.strip()] if seeds else []
+    pins = _resolve_pins()
+    catalog = _load_catalog_or_none() if aggressive else None
+    res = orchestrate(eng, goal=goal, planner_client=_make_client(eng),
+                      executor_client=_make_executor_client(eng), runner=_runner_for(eng),
+                      now=datetime.now(), model=pins["planner"], planner_model=pins["planner"],
+                      objective_models=_objective_models(pins["recon"], pins["exploit"]),
+                      max_objectives=max_objectives, max_steps=max_steps, seeds=seed_list,
+                      engagement_path=path, aggressive=aggressive, catalog=catalog)
+    save_result(result_path(eng), res)
+    if sarif_out:
+        from grin.report import render_sarif
+        Path(sarif_out).parent.mkdir(parents=True, exist_ok=True)
+        Path(sarif_out).write_text(render_sarif(eng, res))
+        print(f"SARIF written to {sarif_out}")
+    from grin.cigate import ci_gate
+    code, offending, summary = ci_gate(res.findings, fail_on=fail_on)
+    print(summary)
+    for f in offending:
+        print(f"  [{f.severity}] {f.title} — {f.target}")
+    return code
+
+
 def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: int,
                       planner_model=None, recon_model=None, exploit_model=None) -> int:
     try:
@@ -826,6 +859,22 @@ def build_parser() -> argparse.ArgumentParser:
         help="when the Medic hits a capability wall, draft a code-patch PROPOSAL for review "
              "(written to audit/<id>.medic-patch.md; never auto-applied)")
 
+    ci = sub.add_parser("ci", help="headless CI mode: run the engagement, fail the build "
+                                   "(exit 2) on findings at/above a severity threshold")
+    ci.add_argument("file")
+    ci.add_argument("--goal", help="the engagement goal, in plain language")
+    ci.add_argument("--seeds", default="", help="optional comma-separated seed targets")
+    ci.add_argument("--model", default=DEFAULT_MODEL, help="local model name")
+    ci.add_argument("--max-objectives", type=int, default=10, dest="max_objectives")
+    ci.add_argument("--max-steps", type=int, default=12, dest="max_steps")
+    ci.add_argument("--fail-on", dest="fail_on", default="high",
+                    choices=["critical", "high", "medium", "low", "info"],
+                    help="fail the build on a finding at or above this severity (default: high)")
+    ci.add_argument("--sarif", dest="sarif_out", default=None,
+                    help="also write a SARIF file for the pipeline to upload to code-scanning")
+    ci.add_argument("--aggressive", action="store_true",
+                    help="exhaustive mode: sweep the ATT&CK catalog (more attempts, same guardrails)")
+
     rp = sub.add_parser("report", help="render a report from a finished engagement "
                                        "(markdown / sarif / html)")
     rp.add_argument("file")
@@ -918,6 +967,13 @@ def main(argv=None) -> int:
                           exploit_model=args.exploit_model, aggressive=args.aggressive,
                           strength=args.strength, stealth=args.stealth,
                           medic_patches=args.medic_patches)
+    if args.group == "ci":
+        if not args.goal:
+            print("ci needs --goal", file=sys.stderr)
+            return 2
+        return cmd_ci(args.file, goal=args.goal, seeds=args.seeds, model=args.model,
+                      max_objectives=args.max_objectives, max_steps=args.max_steps,
+                      fail_on=args.fail_on, sarif_out=args.sarif_out, aggressive=args.aggressive)
     if args.group == "report":
         return cmd_report(args.file, out=args.out, model=args.model, fmt=args.format)
     if args.group == "loot":
