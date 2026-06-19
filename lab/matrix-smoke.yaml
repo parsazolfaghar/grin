@@ -1,0 +1,7 @@
+default_pins:
+  planner: hermes3:8b
+  recon: qwen2.5-coder:7b
+  exploit: qwen3:14b
+candidates:
+  exploit: [qwen3:14b]
+repeats: 1

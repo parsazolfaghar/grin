@@ -1,0 +1,20 @@
+id: lab-t1-ssh
+name: Flag-lab t1-ssh (easy)
+mode: own-lab
+scope:
+  in:
+  - 172.30.0.11
+  exclude: []
+roe:
+  allowed_actions:
+  - passive
+  - active-scan
+  - exploit
+  - post-exploit
+  windows: []
+autonomy: autonomous
+env:
+  kind: docker
+  container: grin-kali
+audit_log: ./audit/lab-t1-ssh.jsonl
+state: active

@@ -1,0 +1,20 @@
+id: lab-t3-chain
+name: Flag-lab t3-chain (hard)
+mode: own-lab
+scope:
+  in:
+  - 172.30.0.13
+  exclude: []
+roe:
+  allowed_actions:
+  - passive
+  - active-scan
+  - exploit
+  - post-exploit
+  windows: []
+autonomy: autonomous
+env:
+  kind: docker
+  container: grin-kali
+audit_log: ./audit/lab-t3-chain.jsonl
+state: active
