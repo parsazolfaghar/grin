@@ -8,7 +8,7 @@ from pathlib import Path
 
 import subprocess
 
-from grin.engagement import load_engagement, EngagementError, pending_path
+from grin.engagement import load_engagement, validate_engagement, EngagementError, pending_path
 from grin.loot import LootStore, loot_dir
 from grin.executor import execute_task, resume_task, DEFAULT_MODEL
 from grin.inference import OllamaClient, make_inference_client, active_backend
@@ -257,6 +257,47 @@ def cmd_engage(path: str, *, goal: str, seeds: str, model: str, max_objectives: 
                       medic_patches=medic_patches)
     save_result(result_path(eng), res)
     _print_engagement_result(res)
+    return 0
+
+
+def cmd_engagement_playbooks() -> int:
+    from grin.playbooks import PLAYBOOKS, playbook_names
+    print("Available playbooks:\n")
+    for name in playbook_names():
+        print(f"  {name:<18} {PLAYBOOKS[name]['blurb']}")
+    print("\nUse: grin engagement new --playbook <name> --id <id> --scope <targets>")
+    return 0
+
+
+def cmd_engagement_new(*, playbook: str, eid: str, name, scope: str, exclude: str,
+                       env: str, out) -> int:
+    import yaml
+    from grin.playbooks import PlaybookError, build_engagement
+    scope_in = [s.strip() for s in scope.split(",") if s.strip()]
+    scope_ex = [s.strip() for s in exclude.split(",") if s.strip()]
+    if not scope_in:
+        print("--scope must list at least one in-scope target", file=sys.stderr)
+        return 2
+    try:
+        data = build_engagement(playbook, eid=eid, name=name or eid, scope_in=scope_in,
+                                scope_exclude=scope_ex, env={"kind": env})
+    except PlaybookError as e:
+        print(f"INVALID: {e}", file=sys.stderr)
+        return 2
+    # round-trip through the validator so we never write a file `grin` would later reject
+    try:
+        validate_engagement(data)
+    except EngagementError as e:
+        print(f"INTERNAL: playbook produced an invalid engagement ({e})", file=sys.stderr)
+        return 1
+    out_path = out or f"{eid}.yaml"
+    if Path(out_path).exists():
+        print(f"refusing to overwrite existing file: {out_path}", file=sys.stderr)
+        return 1
+    Path(out_path).parent.mkdir(parents=True, exist_ok=True)
+    Path(out_path).write_text(yaml.safe_dump(data, sort_keys=False))
+    print(f"wrote {out_path} (playbook: {playbook}). Review it, then: "
+          f"grin engage {out_path} --goal '<your goal>'")
     return 0
 
 
@@ -818,6 +859,19 @@ def build_parser() -> argparse.ArgumentParser:
     eng_sub = eng.add_subparsers(dest="action", required=True)
     v = eng_sub.add_parser("validate", help="load + sanity-check an engagement file")
     v.add_argument("file")
+    from grin.playbooks import playbook_names as _pb_names
+    nw = eng_sub.add_parser("new", help="scaffold an engagement file from a playbook")
+    nw.add_argument("--playbook", required=True, choices=_pb_names(),
+                    help="engagement template (sets mode/ROE/autonomy/strength/stealth)")
+    nw.add_argument("--id", required=True, dest="eid", help="engagement id (used in filenames)")
+    nw.add_argument("--name", default=None, help="human label (default: derived from --id)")
+    nw.add_argument("--scope", required=True,
+                    help="comma-separated in-scope targets (hosts/CIDRs/URL globs)")
+    nw.add_argument("--exclude", default="", help="comma-separated out-of-scope targets")
+    nw.add_argument("--env", default="local", choices=["local", "ssh", "docker", "arsenal", "auto"],
+                    help="runner environment kind (default: local)")
+    nw.add_argument("-o", "--out", default=None, help="output file (default: <id>.yaml)")
+    eng_sub.add_parser("playbooks", help="list available engagement playbooks")
 
     r = sub.add_parser("run", help="submit actions through the spine")
     r.add_argument("file")
@@ -937,6 +991,12 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     if args.group == "engagement" and args.action == "validate":
         return cmd_validate(args.file)
+    if args.group == "engagement" and args.action == "playbooks":
+        return cmd_engagement_playbooks()
+    if args.group == "engagement" and args.action == "new":
+        return cmd_engagement_new(playbook=args.playbook, eid=args.eid, name=args.name,
+                                  scope=args.scope, exclude=args.exclude, env=args.env,
+                                  out=args.out)
     if args.group == "run":
         return cmd_run(args.file)
     if args.group == "gate":
