@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Install Grin
+Comment=Install Grin on this machine (one-time setup)
+Icon=system-software-install
+Terminal=false
+Categories=Development;Security;
+# Self-locating via %k so it works wherever the repo lives. Runs the installer in a terminal.
+Exec=sh -c 'P="$(printf %s "%k" | sed "s,^file://,,")"; R="$(CDPATH= cd "$(dirname "$P")/.." && pwd)"; x-terminal-emulator -e bash -lc "\"$R/scripts/install-on-kali.sh\"; echo; read -n1 -r -p \"Setup finished. Press any key to close.\""'
