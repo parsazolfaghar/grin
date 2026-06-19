@@ -148,7 +148,12 @@ def make_inference_client():
         key = os.environ.get("GRIN_MODEL_API_KEY")
         if not url or not key:
             raise ValueError("GRIN_MODEL_BACKEND=openai requires GRIN_MODEL_URL and GRIN_MODEL_API_KEY")
-        return OpenAICompatClient(base_url=url, api_key=key)
+        cloud = OpenAICompatClient(base_url=url, api_key=key)
+        # Opt-in resilience: GRIN_MODEL_FALLBACK=local keeps a local Ollama as a backup brain so a
+        # cloud outage/rate-limit doesn't kill the engagement. Default (unset) = cloud only, unchanged.
+        if os.environ.get("GRIN_MODEL_FALLBACK", "").strip().lower() in ("local", "1", "ollama"):
+            return FallbackClient([cloud, OllamaClient()])
+        return cloud
     return OllamaClient()
 
 
@@ -174,3 +179,51 @@ class FakeClient:
         reply = self._replies[min(self._i, len(self._replies) - 1)]
         self._i += 1
         return reply
+
+
+class FallbackClient:
+    """Tiered brain: try an ordered list of InferenceClients (e.g. cloud primary -> local backup, or
+    several providers) and use the first that answers. A provider that is down (is_up False) is
+    skipped; one that errors mid-generate (500 / rate-limited past its own retries) falls through to
+    the next. This keeps an engagement alive across a provider outage — resilience the other tools
+    don't offer. Implements the same Protocol, so the engine is unchanged."""
+
+    def __init__(self, clients: list):
+        if not clients:
+            raise ValueError("FallbackClient needs at least one client")
+        self._clients = list(clients)
+
+    def is_up(self) -> bool:
+        return any(self._safe_up(c) for c in self._clients)
+
+    @staticmethod
+    def _safe_up(c) -> bool:
+        try:
+            return bool(c.is_up())
+        except Exception:        # noqa: BLE001 - a health check must never crash selection
+            return False
+
+    def installed_models(self) -> list:
+        for c in self._clients:
+            if self._safe_up(c):
+                try:
+                    return list(c.installed_models())
+                except Exception:        # noqa: BLE001
+                    continue
+        return []
+
+    def generate(self, model: str, system: str, prompt: str, temperature: float = 0.3,
+                 keep_alive: str = "10m") -> str:
+        last_err: Exception | None = None
+        for c in self._clients:
+            if not self._safe_up(c):
+                continue
+            try:
+                return c.generate(model, system, prompt, temperature=temperature,
+                                  keep_alive=keep_alive)
+            except Exception as e:        # noqa: BLE001 - try the next tier on any provider error
+                last_err = e
+                continue
+        if last_err is not None:
+            raise last_err
+        raise RuntimeError("no healthy client available in FallbackClient")
