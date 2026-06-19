@@ -1,6 +1,9 @@
-"""The Reporter — pure Markdown rendering of a finished engagement, plus deterministic and
-optional-LLM summaries. Read-only: no tools, no spine. The LLM summary degrades gracefully."""
+"""The Reporter — pure rendering of a finished engagement (Markdown, SARIF, HTML) plus
+deterministic and optional-LLM summaries. Read-only: no tools, no spine. The LLM summary
+degrades gracefully."""
+import html as _html
 import json
+import re
 from pathlib import Path
 
 SEVERITY_ORDER = ("critical", "high", "medium", "low", "info")
@@ -207,3 +210,143 @@ def render_report(engagement, result, *, audit_summary: str, summary_text: str,
                     mark = "succeeded" if tid in cov["succeeded"] else "attempted"
                     out.append(f"  - {tid} {id_to_name.get(tid, '')} ({mark})")
     return "\n".join(out)
+
+
+# ---------------------------------------------------------------------------
+# SARIF 2.1.0 — machine-readable output for CI / GitHub code-scanning. Closes the gap vs Swarm,
+# and lets grin findings flow into the same dashboards as SAST/DAST tooling. Pure.
+# ---------------------------------------------------------------------------
+
+# SARIF has three levels; map pentest severity onto them. Unknown -> "note" (never over-state).
+_SARIF_LEVEL = {"critical": "error", "high": "error", "medium": "warning",
+                "low": "note", "info": "note"}
+
+
+def sarif_level(severity: str) -> str:
+    return _SARIF_LEVEL.get((severity or "").strip().lower(), "note")
+
+
+def _rule_id(severity: str, title: str) -> str:
+    """Stable, slug-ish rule id from a finding's class. SARIF requires every result.ruleId to be
+    defined in the driver's rules, so we derive both from the same function."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (title or "finding").strip().lower()).strip("-") or "finding"
+    return f"grin/{(severity or 'info').strip().lower()}/{slug}"
+
+
+def render_sarif(engagement, result, *, version: str = "0.1.0") -> str:
+    """Render findings as a SARIF 2.1.0 document (JSON string). One run, one result per finding;
+    each finding's target becomes the result location URI."""
+    rules: dict[str, dict] = {}
+    results = []
+    for f in result.findings:
+        rid = _rule_id(f.severity, f.title)
+        if rid not in rules:
+            rules[rid] = {
+                "id": rid,
+                "name": re.sub(r"\s+", "", f.title.title()) or "Finding",
+                "shortDescription": {"text": f.title},
+                "defaultConfiguration": {"level": sarif_level(f.severity)},
+            }
+        msg = f.title
+        if f.evidence:
+            msg += f" — {f.evidence}"
+        results.append({
+            "ruleId": rid,
+            "level": sarif_level(f.severity),
+            "message": {"text": msg},
+            "locations": [{
+                "physicalLocation": {
+                    "artifactLocation": {"uri": f.target or "engagement"},
+                },
+            }],
+            "properties": {
+                "severity": f.severity,
+                "tool": f.tool,
+                "command": f.command,
+                "recommendation": f.recommendation,
+            },
+        })
+    doc = {
+        "$schema": "https://json.schemastore.org/sarif-2.1.0.json",
+        "version": "2.1.0",
+        "runs": [{
+            "tool": {"driver": {
+                "name": "Grin",
+                "informationUri": "https://github.com/parsazolfaghar/grin",
+                "version": version,
+                "rules": list(rules.values()),
+            }},
+            "results": results,
+        }],
+    }
+    return json.dumps(doc, indent=2)
+
+
+# ---------------------------------------------------------------------------
+# HTML — a standalone, shareable, self-contained report (no external assets). Pure. Everything
+# from the engagement is HTML-escaped: a finding title/evidence is attacker-influenced text and
+# must NEVER render as live markup in the report.
+# ---------------------------------------------------------------------------
+
+_SEV_COLOR = {"critical": "#b3001b", "high": "#d1495b", "medium": "#e3a008",
+              "low": "#3a86ff", "info": "#6c757d"}
+
+_HTML_CSS = """
+:root{color-scheme:dark}
+body{background:#0f1115;color:#e6e6e6;font:15px/1.55 ui-sans-serif,system-ui,-apple-system,sans-serif;
+  max-width:880px;margin:0 auto;padding:2.5rem 1.25rem}
+h1{font-size:1.7rem;letter-spacing:-.02em;margin:0 0 .25rem}
+h2{font-size:1.15rem;border-bottom:1px solid #2a2e37;padding-bottom:.3rem;margin:2.2rem 0 1rem}
+.meta{color:#8b919e;font-size:.85rem;margin-bottom:1.5rem}
+.sum{background:#161922;border:1px solid #2a2e37;border-radius:10px;padding:1rem 1.15rem}
+.f{background:#161922;border:1px solid #2a2e37;border-left-width:4px;border-radius:8px;
+  padding:.85rem 1rem;margin:.7rem 0}
+.f h3{margin:0 0 .35rem;font-size:1rem}
+.badge{display:inline-block;font-size:.7rem;font-weight:600;text-transform:uppercase;
+  letter-spacing:.04em;color:#fff;padding:.1rem .5rem;border-radius:4px;margin-right:.5rem}
+.kv{color:#8b919e;font-size:.82rem;margin:.15rem 0}
+code{background:#0b0d12;padding:.1rem .35rem;border-radius:4px;font-size:.82rem}
+.none{color:#8b919e}
+"""
+
+
+def _esc(s) -> str:
+    return _html.escape(str(s or ""))
+
+
+def render_html(engagement, result, *, summary_text: str) -> str:
+    eng = engagement
+    p = ['<!doctype html><html lang="en"><head><meta charset="utf-8">',
+         '<meta name="viewport" content="width=device-width,initial-scale=1">',
+         f"<title>Grin Report — {_esc(eng.name)}</title>",
+         f"<style>{_HTML_CSS}</style></head><body>"]
+    p.append(f"<h1>Grin Engagement Report — {_esc(eng.name)}</h1>")
+    p.append(f'<div class="meta">Engagement <code>{_esc(eng.id)}</code> · '
+             f"status {_esc(result.status)} · "
+             f"{len(result.objectives_run)} objective(s) · "
+             f"scope: {_esc(', '.join(eng.scope.include) or '(none)')}</div>")
+    p.append("<h2>Executive summary</h2>")
+    p.append(f'<div class="sum">{_esc(summary_text)}</div>')
+    p.append("<h2>Findings</h2>")
+    if not result.findings:
+        p.append('<p class="none">No findings.</p>')
+    else:
+        ordered = sorted(result.findings,
+                         key=lambda f: SEVERITY_ORDER.index(f.severity)
+                         if f.severity in SEVERITY_ORDER else len(SEVERITY_ORDER))
+        for f in ordered:
+            color = _SEV_COLOR.get(f.severity, "#6c757d")
+            p.append(f'<div class="f" style="border-left-color:{color}">')
+            p.append(f'<h3><span class="badge" style="background:{color}">{_esc(f.severity)}</span>'
+                     f"{_esc(f.title)}</h3>")
+            p.append(f'<div class="kv">Target: {_esc(f.target)}</div>')
+            if f.tool or f.command:
+                p.append(f'<div class="kv">Tool: <code>{_esc(f.tool)}</code> · '
+                         f"Command: <code>{_esc(f.command)}</code></div>")
+            if f.evidence:
+                p.append(f'<div class="kv">Evidence: {_esc(f.evidence)}</div>')
+            if f.recommendation:
+                p.append(f'<div class="kv">Recommendation: {_esc(f.recommendation)}</div>')
+            p.append("</div>")
+    p.append("</body></html>")
+    return "\n".join(p)

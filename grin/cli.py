@@ -293,7 +293,7 @@ def cmd_engage_resume(path: str, *, model: str, max_objectives: int, max_steps: 
     return 0
 
 
-def cmd_report(path: str, *, out, model: str) -> int:
+def cmd_report(path: str, *, out, model: str, fmt: str = "markdown") -> int:
     try:
         eng = load_engagement(path)
     except EngagementError as e:
@@ -309,27 +309,35 @@ def cmd_report(path: str, *, out, model: str) -> int:
               file=sys.stderr)
         return 1
     summary = llm_summary(_make_client(eng), model, result)
-    _audit_records = []
-    _ap = _Path(eng.audit_log)
-    if _ap.exists():
-        for _ln in _ap.read_text().splitlines():
-            _ln = _ln.strip()
-            if _ln:
-                try:
-                    _audit_records.append(json.loads(_ln))
-                except json.JSONDecodeError:
-                    continue
-    from grin.discoveries import discover, gather_records
-    _disc = discover(gather_records(eng))
-    md = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
-                       summary_text=summary, catalog=_load_catalog_or_none(),
-                       audit_records=_audit_records, discoveries=_disc)
+
+    if fmt == "sarif":
+        from grin.report import render_sarif
+        doc = render_sarif(eng, result)
+    elif fmt == "html":
+        from grin.report import render_html
+        doc = render_html(eng, result, summary_text=summary)
+    else:
+        _audit_records = []
+        _ap = _Path(eng.audit_log)
+        if _ap.exists():
+            for _ln in _ap.read_text().splitlines():
+                _ln = _ln.strip()
+                if _ln:
+                    try:
+                        _audit_records.append(json.loads(_ln))
+                    except json.JSONDecodeError:
+                        continue
+        from grin.discoveries import discover, gather_records
+        _disc = discover(gather_records(eng))
+        doc = render_report(eng, result, audit_summary=summarize_audit(eng.audit_log),
+                            summary_text=summary, catalog=_load_catalog_or_none(),
+                            audit_records=_audit_records, discoveries=_disc)
     if out:
         Path(out).parent.mkdir(parents=True, exist_ok=True)
-        Path(out).write_text(md)
+        Path(out).write_text(doc)
         print(f"report written to {out}")
     else:
-        print(md)
+        print(doc)
     return 0
 
 
@@ -818,9 +826,13 @@ def build_parser() -> argparse.ArgumentParser:
         help="when the Medic hits a capability wall, draft a code-patch PROPOSAL for review "
              "(written to audit/<id>.medic-patch.md; never auto-applied)")
 
-    rp = sub.add_parser("report", help="render a Markdown report from a finished engagement")
+    rp = sub.add_parser("report", help="render a report from a finished engagement "
+                                       "(markdown / sarif / html)")
     rp.add_argument("file")
     rp.add_argument("-o", "--out", default=None, help="output file (default: stdout)")
+    rp.add_argument("--format", dest="format", choices=["markdown", "sarif", "html"],
+                    default="markdown",
+                    help="markdown (default), sarif (CI/code-scanning), or html (shareable)")
     rp.add_argument("--model", default=DEFAULT_MODEL, help="local model for the optional summary")
 
     hp = sub.add_parser("honeypot", help="advisory honeypot/trap assessment of an engagement")
@@ -907,7 +919,7 @@ def main(argv=None) -> int:
                           strength=args.strength, stealth=args.stealth,
                           medic_patches=args.medic_patches)
     if args.group == "report":
-        return cmd_report(args.file, out=args.out, model=args.model)
+        return cmd_report(args.file, out=args.out, model=args.model, fmt=args.format)
     if args.group == "loot":
         return cmd_loot(args.file)
     if args.group == "honeypot":
