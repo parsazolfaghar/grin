@@ -15,8 +15,10 @@ _DISTRO = {"grin-kali": "apt", "grin-blackarch": "pacman"}
 BASELINE = {
     "apt": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "netcat-traditional",
             "openssh-client", "sshpass", "curl", "wget", "iputils-ping", "wordlists", "john"],
-    "pacman": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "gnu-netcat",
-               "openssh", "sshpass", "curl", "wget", "iputils", "wordlists", "john"],
+    # pacman/BlackArch package names differ: netcat is openbsd-netcat (gnu-netcat isn't in the synced
+    # repos); there is no 'wordlists' meta-package (run_up writes its own curated lists anyway).
+    "pacman": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "openbsd-netcat",
+               "openssh", "sshpass", "curl", "wget", "iputils", "john"],
 }
 
 
@@ -28,11 +30,23 @@ def run_container_argv(name: str, image: str) -> list:
     return ["docker", "run", "-d", "--name", name, "--network", "host", image, "sleep", "infinity"]
 
 
-def install_cmd(distro: str, tools: list) -> str:
-    pkgs = " ".join(tools)
+def install_cmd(distro: str, tools: list, tolerant: bool = False) -> str:
+    """Build the in-container install command. tolerant=True installs each package separately and
+    swallows per-package failures (`|| true`) so ONE bad/renamed package name doesn't abort the whole
+    batch — critical for pacman, which fails the entire transaction on a single unknown target. Used
+    for the baseline sweep. Non-tolerant (default) keeps the single-shot form add_cmd relies on for a
+    real exit code."""
+    pkgs = list(tools)
     if distro == "pacman":
-        return f"pacman -Sy --noconfirm {pkgs}"
-    return f"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {pkgs}"
+        if tolerant:
+            inner = "; ".join(f"pacman -S --noconfirm --needed {p} || true" for p in pkgs)
+            return f"pacman -Sy --noconfirm; {inner}"
+        return f"pacman -Sy --noconfirm {' '.join(pkgs)}"
+    if tolerant:
+        inner = "; ".join(
+            f"DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {p} || true" for p in pkgs)
+        return f"apt-get update -qq; {inner}"
+    return f"apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq {' '.join(pkgs)}"
 
 
 def add_cmd(distro: str, tool: str) -> str:
@@ -72,7 +86,10 @@ def run_up() -> int:
             _run(["docker", "start", name])
         distro = distro_for(name)
         print(f"provisioning {name} ({distro}) ...")
-        ic = _run(["docker", "exec", name, "sh", "-lc", install_cmd(distro, BASELINE[distro])])
+        # tolerant: a single renamed/missing package must not abort the whole baseline (pacman aborts
+        # the entire transaction otherwise). Per-package failures are surfaced by `arsenal status`.
+        ic = _run(["docker", "exec", name, "sh", "-lc",
+                   install_cmd(distro, BASELINE[distro], tolerant=True)])
         if ic.returncode != 0:
             print(ic.stderr[-400:], end="")
             return ic.returncode

@@ -33,6 +33,25 @@ def test_add_cmd():
     assert "nikto" in add_cmd("pacman", "nikto")
 
 
+def test_install_cmd_tolerant_isolates_each_package():
+    # tolerant mode must install packages one-by-one and swallow per-package failures so one bad
+    # name can't abort the whole batch (the pacman whole-transaction-abort bug).
+    pac = install_cmd("pacman", ["nmap", "boguspkg", "hydra"], tolerant=True)
+    assert pac.count("|| true") == 3
+    assert "pacman -Sy --noconfirm;" in pac
+    apt = install_cmd("apt", ["nmap", "boguspkg"], tolerant=True)
+    assert apt.count("|| true") == 2
+    # non-tolerant default keeps the single-shot form (so add_cmd still gets a real exit code)
+    assert "|| true" not in install_cmd("pacman", ["nmap"])
+
+
+def test_pacman_baseline_has_no_known_bad_names():
+    from grin.arsenal import BASELINE
+    assert "gnu-netcat" not in BASELINE["pacman"]      # not in synced repos
+    assert "wordlists" not in BASELINE["pacman"]       # no such pacman package
+    assert "openbsd-netcat" in BASELINE["pacman"]      # the correct Arch netcat
+
+
 def test_probe_argv():
     argv = probe_argv("grin-kali", "nmap")
     assert argv[:3] == ["docker", "exec", "grin-kali"]
