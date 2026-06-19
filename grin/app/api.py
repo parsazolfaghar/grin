@@ -267,6 +267,37 @@ class GrinApi:
         self._jobs[job_id] = (file, job)
         return {"job_id": job_id, "started": True}
 
+    def export_report(self, file, fmt, out_path):
+        """Write a shareable report (html|sarif|markdown) for a finished engagement to out_path.
+        Uses the deterministic summary (no LLM call) so export is instant + offline. Never raises
+        across the bridge — a missing result returns a friendly error, not an exception."""
+        try:
+            eng = self._load(file)
+            res = load_result(result_path(eng))
+        except FileNotFoundError:
+            return {"error": "no results yet — run an engagement first"}
+        except Exception as ex:  # noqa: BLE001
+            return {"error": str(ex)}
+        try:
+            from grin.report import (deterministic_summary, render_html, render_report,
+                                     render_sarif, summarize_audit)
+            if fmt == "sarif":
+                doc = render_sarif(eng, res)
+            elif fmt == "html":
+                doc = render_html(eng, res, summary_text=deterministic_summary(res))
+            else:  # markdown
+                doc = render_report(eng, res, audit_summary=summarize_audit(eng.audit_log),
+                                    summary_text=deterministic_summary(res))
+            out = os.path.expanduser(out_path)
+            d = os.path.dirname(out)
+            if d:
+                os.makedirs(d, exist_ok=True)
+            with open(out, "w") as f:
+                f.write(doc)
+            return {"status": "written", "path": out, "format": fmt}
+        except Exception as ex:  # noqa: BLE001 - never raise across the bridge
+            return {"error": str(ex)}
+
     def interpret(self, text):
         """Parse free text -> {goal, targets, target_type, bare_target, can_engage, allowed_actions,
         manual}. Used for the live preview as the operator types. Never raises across the bridge."""

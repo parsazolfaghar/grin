@@ -13,7 +13,7 @@ from PyQt6.QtGui import (QFontDatabase, QFont, QPixmap, QPainter, QColor, QRadia
 from PyQt6.QtWidgets import (
     QApplication, QWidget, QLabel, QPushButton, QFrame, QVBoxLayout, QHBoxLayout,
     QScrollArea, QSizePolicy, QGraphicsDropShadowEffect, QSplitter, QLineEdit,
-    QDialog,
+    QDialog, QFileDialog,
 )
 
 HERE = os.path.dirname(__file__)
@@ -107,6 +107,7 @@ class Chrome(QWidget):
     strength_toggle = pyqtSignal()
     tools_toggle = pyqtSignal()
     stop_run = pyqtSignal()
+    export_report = pyqtSignal()
 
     def __init__(self, window):
         super().__init__()
@@ -167,6 +168,13 @@ class Chrome(QWidget):
         self.tools_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tools_btn.clicked.connect(self.tools_toggle.emit)
         _track(self.tools_btn, 1.6); row.addWidget(self.tools_btn)
+
+        # save a shareable report (HTML / SARIF / Markdown) of the current engagement — no terminal
+        self.export_btn = QPushButton("EXPORT"); self.export_btn.setObjectName("modebtn")
+        self.export_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.export_btn.setToolTip("Save a report (HTML / SARIF / Markdown) of the current engagement")
+        self.export_btn.clicked.connect(self.export_report.emit)
+        _track(self.export_btn, 1.6); row.addWidget(self.export_btn)
 
         for glyph, oid, slot in (("−", "wcmin", window.showMinimized),
                                  ("□", "wcmax", self._toggle_max),
@@ -1002,6 +1010,7 @@ class GrinWindow(QWidget):
         self._tool_acquire = "ask"
         self.chrome.tools_toggle.connect(self._toggle_tools)
         self.chrome.stop_run.connect(self._stop_engagement)
+        self.chrome.export_report.connect(self._export_report)
         self._apply_active_profile()   # set endpoint + tool env from the persisted profile
         self.refresh_boot()
 
@@ -1051,6 +1060,33 @@ class GrinWindow(QWidget):
         seg = self.status
         # transient feedback in the status bar
         seg.set([("COPIED", "segy"), (short, "segdim"), ("", "stretch"), ("FAIL-CLOSED", "acc")])
+
+    def _export_report(self):
+        """Save a shareable report of the current engagement via a file dialog — pure GUI, no terminal.
+        Format is taken from the filter the operator picks; the extension is enforced to match."""
+        if not self._job_file:
+            self.status.set([("EXPORT", "segy"), ("run an engagement first", "segdim"),
+                             ("", "stretch"), ("FAIL-CLOSED", "acc")])
+            return
+        filters = "HTML report (*.html);;SARIF (*.sarif);;Markdown (*.md)"
+        path, sel = QFileDialog.getSaveFileName(self, "Export report", "grin-report.html", filters)
+        if not path:
+            return
+        if "SARIF" in sel:
+            fmt, ext = "sarif", ".sarif"
+        elif "Markdown" in sel:
+            fmt, ext = "markdown", ".md"
+        else:
+            fmt, ext = "html", ".html"
+        if not path.lower().endswith(ext):
+            path += ext
+        res = self.api.export_report(self._job_file, fmt, path)
+        if isinstance(res, dict) and "error" in res:
+            self.status.set([("EXPORT FAILED", "segy"), (res["error"][:48], "segdim"),
+                             ("", "stretch"), ("FAIL-CLOSED", "acc")])
+        else:
+            self.status.set([("EXPORTED", "segy"), (f"{fmt} -> {path}"[:64], "segdim"),
+                             ("", "stretch"), ("FAIL-CLOSED", "acc")])
 
     def closeEvent(self, e):
         QSettings("grin", "app").setValue("geometry", self.saveGeometry())
