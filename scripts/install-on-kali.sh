@@ -42,6 +42,31 @@ update-desktop-database "$APPS" 2>/dev/null || true
 mkdir -p "$HOME/.config/grin"
 printf '%s\n' "$REPO" > "$HOME/.config/grin/source_repo"
 
+# A working "Update Grin" button on the Desktop (wrapper with the resolved repo path; the
+# install/*.desktop self-location breaks once copied off the repo).
+if [ -d "$HOME/Desktop" ]; then
+  mkdir -p "$HOME/.local/bin"
+  cat > "$HOME/.local/bin/grin-update-term.sh" <<W
+#!/usr/bin/env bash
+"$REPO/scripts/update.sh"
+echo; read -n1 -r -p "Update finished. Press any key to close."
+W
+  chmod +x "$HOME/.local/bin/grin-update-term.sh"
+  cat > "$HOME/Desktop/Update Grin.desktop" <<DESK
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=Update Grin
+Comment=Pull the latest Grin and reinstall
+Icon=system-software-update
+Terminal=false
+Categories=Development;Security;
+Exec=x-terminal-emulator -e $HOME/.local/bin/grin-update-term.sh
+DESK
+  chmod +x "$HOME/Desktop/Update Grin.desktop"
+  gio set "$HOME/Desktop/Update Grin.desktop" metadata::trusted true 2>/dev/null || true
+fi
+
 say "Done"
 echo "Launch 'Grin' from your applications menu. It reads your DeepSeek key from ~/.grin/deepseek.env."
 echo "Update any time with: $SCRIPT_DIR/update.sh  (or the 'Update Grin' launcher)."
