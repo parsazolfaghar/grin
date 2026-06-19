@@ -164,7 +164,7 @@ class Chrome(QWidget):
         _track(self.strength_btn, 1.6); row.addWidget(self.strength_btn)
 
         # tool-acquire policy: default ASK; cycles ASK -> AUTO -> NEVER
-        self.tools_btn = QPushButton("TOOLS: ASK"); self.tools_btn.setObjectName("modebtn")
+        self.tools_btn = QPushButton("TOOLS: AUTO"); self.tools_btn.setObjectName("modebtn")
         self.tools_btn.setCursor(Qt.CursorShape.PointingHandCursor)
         self.tools_btn.clicked.connect(self.tools_toggle.emit)
         _track(self.tools_btn, 1.6); row.addWidget(self.tools_btn)
@@ -1007,7 +1007,7 @@ class GrinWindow(QWidget):
         self.chrome.stealth_toggle.connect(self._toggle_stealth)
         self._strength_level = "normal"
         self.chrome.strength_toggle.connect(self._toggle_strength)
-        self._tool_acquire = "ask"
+        self._tool_acquire = "auto"   # frictionless default; cycles auto -> never -> ask
         self.chrome.tools_toggle.connect(self._toggle_tools)
         self.chrome.stop_run.connect(self._stop_engagement)
         self.chrome.export_report.connect(self._export_report)

@@ -12,6 +12,28 @@ def _api(tmp_path):
     return api
 
 
+def test_default_tool_acquire_is_auto(tmp_path):
+    # frictionless-within-authorization: missing tools auto-install instead of stalling the run.
+    api = GrinApi(engagements_dir=str(tmp_path), ollama=FakeOllama())
+    assert api._tool_acquire == "auto"
+
+
+def test_effective_env_merges_tool_acquire_into_override(tmp_path):
+    # the cloud profile override ({kind: arsenal}) must NOT drop tool_acquire — else the arsenal
+    # falls back to 'ask' and stalls on a missing tool mid-engagement.
+    api = GrinApi(engagements_dir=str(tmp_path), ollama=FakeOllama())
+    api.set_backend({"kind": "arsenal"})
+    assert api._effective_env() == {"kind": "arsenal", "tool_acquire": "auto"}
+    api.set_tool_acquire("never")
+    assert api._effective_env() == {"kind": "arsenal", "tool_acquire": "never"}
+
+
+def test_effective_env_none_without_override(tmp_path):
+    api = GrinApi(engagements_dir=str(tmp_path), ollama=FakeOllama())
+    api._tool_env = None
+    assert api._effective_env() is None
+
+
 def test_interpret_returns_intent_and_manual(tmp_path):
     api = _api(tmp_path)
     out = api.interpret("bypass login page for www.test.com")

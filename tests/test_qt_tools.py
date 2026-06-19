@@ -27,14 +27,15 @@ class FakeApi:
 def test_tools_toggle_cycles_and_sets_api(app):
     api = FakeApi()
     _a, w = build_app(api)
-    assert "ASK" in w.chrome.tools_btn.text()
-    w._toggle_tools()
+    # frictionless default: starts at AUTO, cycles AUTO -> NEVER -> ASK -> AUTO
     assert "AUTO" in w.chrome.tools_btn.text()
-    assert api.tool_acquire == "auto"
     w._toggle_tools()
     assert "NEVER" in w.chrome.tools_btn.text()
     assert api.tool_acquire == "never"
     w._toggle_tools()
     assert "ASK" in w.chrome.tools_btn.text()
     assert api.tool_acquire == "ask"
+    w._toggle_tools()
+    assert "AUTO" in w.chrome.tools_btn.text()
+    assert api.tool_acquire == "auto"
     w.deleteLater()

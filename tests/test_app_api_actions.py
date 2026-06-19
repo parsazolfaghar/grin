@@ -71,4 +71,5 @@ def test_set_backend_threads_tool_env_into_jobrunner(tmp_path):
                   job_runner_factory=lambda eng, **kw: FakeJob(eng, **kw))
     api.set_backend({"kind": "ssh", "ssh_host": "root@rig"})
     api.start_engagement(_eng(tmp_path), "goal")
-    assert captured["env"] == {"kind": "ssh", "ssh_host": "root@rig"}
+    # the override env is threaded through WITH the active tool-acquire policy merged in (default auto)
+    assert captured["env"] == {"kind": "ssh", "ssh_host": "root@rig", "tool_acquire": "auto"}

@@ -45,7 +45,10 @@ class GrinApi:
         self._tool_env = None   # active deployment profile's tool env (None -> use the engagement's)
         self._stealth = "off"
         self._strength = "normal"
-        self._tool_acquire = "ask"
+        # frictionless-within-authorization default: auto-install missing tools into the (sandboxed,
+        # firm-owned) arsenal and keep going, rather than stopping the run for an Allow/Deny prompt.
+        # Scope + audit are unchanged. Operators can dial back to ask/never with the TOOLS button.
+        self._tool_acquire = "auto"
 
     def set_stealth(self, level):
         """Set the stealth level applied to app-launched (ad-hoc) engagements (off|quiet|paranoid)."""
@@ -69,6 +72,16 @@ class GrinApi:
     # ---- helpers ----
     def _load(self, file):
         return load_engagement(file)
+
+    def _effective_env(self):
+        """The deployment-profile tool-env override, with the current tool-acquire policy merged in.
+        Without this, a profile override like {kind: arsenal} would REPLACE the engagement's env and
+        silently drop tool_acquire — making the arsenal fall back to 'ask' and stall on a missing
+        tool. Returns None when there's no override (the engagement's own env, incl. its tool_acquire,
+        is used)."""
+        if self._tool_env is None:
+            return None
+        return {**self._tool_env, "tool_acquire": self._tool_acquire}
 
     def _who(self):
         import getpass
@@ -250,8 +263,9 @@ class GrinApi:
         opts.setdefault("planner_model", pins["planner"])
         opts.setdefault("objective_models", _objective_models(pins["recon"], pins["exploit"]))
         job_id = uuid.uuid4().hex[:12]
+        eff_env = self._effective_env()
         if self._job_runner_factory is not None:
-            job = self._job_runner_factory(eng, goal=goal, env=self._tool_env, **opts)
+            job = self._job_runner_factory(eng, goal=goal, env=eff_env, **opts)
         else:
             from grin.cli import _make_client, _make_executor_client
             # mirror the CLI: orchestrate needs the engagement file path so sub-tasks write
@@ -262,7 +276,7 @@ class GrinApi:
                 snapshot_reader=lambda e: self._merged_snapshot(file),
                 client_factory=_make_client, executor_factory=_make_executor_client,
                 runner_factory=self._runner_factory, now_fn=self._now, opts=run_opts,
-                env=self._tool_env)
+                env=eff_env)
         job.start()
         self._jobs[job_id] = (file, job)
         return {"job_id": job_id, "started": True}

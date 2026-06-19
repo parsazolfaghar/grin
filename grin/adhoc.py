@@ -39,7 +39,7 @@ def _slug(s: str) -> str:
 
 def build_adhoc_engagement(intent: Intent, *, now: datetime,
                            operator: str, root: str | None = None, stealth: str = "off",
-                           strength: str = "normal", tool_acquire: str = "ask"):
+                           strength: str = "normal", tool_acquire: str = "auto"):
     if not intent.targets:
         raise ValueError("no target in intent")
     if root is None:
