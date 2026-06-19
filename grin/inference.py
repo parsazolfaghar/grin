@@ -149,9 +149,15 @@ def make_inference_client():
         if not url or not key:
             raise ValueError("GRIN_MODEL_BACKEND=openai requires GRIN_MODEL_URL and GRIN_MODEL_API_KEY")
         cloud = OpenAICompatClient(base_url=url, api_key=key)
-        # Opt-in resilience: GRIN_MODEL_FALLBACK=local keeps a local Ollama as a backup brain so a
-        # cloud outage/rate-limit doesn't kill the engagement. Default (unset) = cloud only, unchanged.
-        if os.environ.get("GRIN_MODEL_FALLBACK", "").strip().lower() in ("local", "1", "ollama"):
+        # Opt-in resilience for a cloud-only deployment: a SECOND provider as backup so an outage /
+        # rate-limit on the primary doesn't kill the engagement. Set GRIN_MODEL_FALLBACK_URL +
+        # GRIN_MODEL_FALLBACK_API_KEY. Default (unset) = primary cloud only, unchanged.
+        fb_url = os.environ.get("GRIN_MODEL_FALLBACK_URL")
+        fb_key = os.environ.get("GRIN_MODEL_FALLBACK_API_KEY")
+        if fb_url and fb_key:
+            return FallbackClient([cloud, OpenAICompatClient(base_url=fb_url, api_key=fb_key)])
+        # Back-compat: GRIN_MODEL_FALLBACK=local still adds a local Ollama backup if one is running.
+        if os.environ.get("GRIN_MODEL_FALLBACK", "").strip().lower() in ("local", "ollama"):
             return FallbackClient([cloud, OllamaClient()])
         return cloud
     return OllamaClient()
