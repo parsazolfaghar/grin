@@ -28,7 +28,8 @@ def test_closer_commands_for_web_foothold_try_both_privesc():
     joined = "\n".join(cmds)
     assert "suid-hijack" in joined          # SUID PATH-hijack closer
     assert "sudo-gtfo" in joined            # sudo-NOPASSWD closer
-    assert "web-rce" in joined and "cat /root/flag.txt" in joined  # direct read attempt
+    # direct read tries the standard flag locations, not just /root
+    assert "web-rce" in joined and "cat /flag.txt /root/flag.txt ~/flag.txt" in joined
     # the three privesc commands target the discovered foothold (param + host)
     privesc = [c for c in cmds if c.startswith(("suid-hijack", "sudo-gtfo")) or "flag.txt" in c]
     assert privesc and all("172.30.0.15" in c and "--param name" in c for c in privesc)
