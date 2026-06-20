@@ -1,12 +1,49 @@
-Copyright (c) 2026 Parsa Zolfaghar. All rights reserved.
+GRIN — PROPRIETARY LICENSE
+All Rights Reserved
 
-Grin is proprietary software. No license is granted to use, copy, modify, merge,
-publish, distribute, sublicense, or sell copies of this software or its source,
-in whole or in part, without the express prior written permission of the
-copyright holder.
+Copyright (c) 2026 Parsa Zolfaghar ("the Author"). All rights reserved.
 
-Grin is intended solely for AUTHORIZED security testing — engagements you own or
-have explicit written permission to assess. You are responsible for ensuring your
-use complies with all applicable laws and contracts. The software is provided
-"AS IS", without warranty of any kind; the copyright holder is not liable for any
-claim, damage, or other liability arising from its use.
+THIS SOFTWARE IS NOT OPEN SOURCE.
+
+The source code of grin ("the Software") is made publicly viewable for evaluation
+and transparency only. Public visibility does NOT grant any license to use, copy,
+or distribute it beyond the single narrow permission stated below.
+
+1. NO REUSE. No part of the Software — code, configuration, prompts, helpers,
+   documentation, design, or assets — may be copied, reproduced, modified,
+   translated, adapted, merged, published, distributed, sublicensed, sold, rented,
+   leased, mirrored, or used to create derivative or competing works, in whole or
+   in part, by any means or in any form, without the Author's prior WRITTEN
+   permission. This includes use for training or fine-tuning machine-learning
+   models.
+
+2. LIMITED PERMISSION TO RUN. The Author grants you a personal, non-transferable,
+   revocable permission to install and run an unmodified copy of the Software
+   SOLELY for your own lawful security testing of systems you own or for which you
+   hold prior, explicit, written authorization. No other use is permitted.
+
+3. AUTHORIZED USE ONLY. The Software is offensive security tooling. You may use it
+   only within the scope you are legally authorized to test. Using it against any
+   system without authorization is prohibited and may be a crime (e.g. the U.S.
+   Computer Fraud and Abuse Act and equivalent laws worldwide). Compliance with all
+   applicable laws is solely your responsibility.
+
+4. YOUR OWN API / MODELS. The Software ships with no API access or credentials. You
+   must supply your own model provider and API key. The Author does not operate,
+   proxy, or have any visibility into your model traffic, targets, or activity.
+
+5. NO WARRANTY. THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT.
+
+6. NO LIABILITY. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY CLAIM, DAMAGES,
+   LOSS, OR OTHER LIABILITY — WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE —
+   ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR ITS USE, INCLUDING
+   ANY acts taken with it by you or any third party. You assume all risk and all
+   responsibility for your use of the Software.
+
+7. TERMINATION. This permission terminates automatically and immediately upon any
+   breach of these terms, or at the Author's discretion. On termination you must
+   cease all use and destroy all copies.
+
+For any permission beyond Section 2, contact the Author in writing.

@@ -1,0 +1,256 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GRIN // autonomous red-team orchestrator</title>
+<meta name="description" content="GRIN — an autonomous, fail-closed red-team orchestrator. Deterministic exploit closers, a learning brain, Kali+BlackArch arsenal. Bring your own API key. Authorized testing only.">
+<meta property="og:title" content="GRIN // autonomous red-team orchestrator">
+<meta property="og:description" content="Deterministic exploit closers. A learning brain. Kali+BlackArch arsenal. Fail-closed by design. Bring your own key.">
+<meta property="og:type" content="website">
+<meta name="theme-color" content="#0a0a0a">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='bold' fill='%23f3df33' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+<script>document.documentElement.className+=" js";</script>
+</head>
+<body>
+
+<!-- fixed analog-degradation overlays (pointer-events none) -->
+<div class="fx fx-grid" aria-hidden="true"></div>
+<div class="fx fx-scan" aria-hidden="true"></div>
+<div class="fx fx-noise" aria-hidden="true"></div>
+<div class="fx fx-vignette" aria-hidden="true"></div>
+
+<!-- floating telemetry nav -->
+<nav class="nav" aria-label="primary">
+  <a class="nav-mark" href="#top">GRIN<sup>®</sup></a>
+  <div class="nav-links">
+    <a href="#what">WHAT</a>
+    <a href="#caps">CAPABILITIES</a>
+    <a href="#install">INSTALL</a>
+    <a href="#rules">RULES</a>
+  </div>
+  <a class="nav-star" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">
+    <span class="star">★</span> STAR ON GITHUB
+  </a>
+  <button class="nav-burger" aria-label="menu" aria-expanded="false"><span></span><span></span></button>
+</nav>
+<div class="navmodal" hidden>
+  <a href="#what">WHAT</a><a href="#caps">CAPABILITIES</a><a href="#install">INSTALL</a>
+  <a href="#rules">RULES</a>
+  <a class="navmodal-star" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">★ STAR ON GITHUB</a>
+</div>
+
+<main id="top">
+
+<!-- ░░ HERO ░░ -->
+<header class="hero">
+  <div class="hero-meta reveal">
+    <span>[ AUTONOMOUS RED-TEAM ORCHESTRATOR ]</span>
+    <span class="blink">REV 0.2.0</span>
+  </div>
+
+  <h1 class="hero-word reveal">GRIN</h1>
+
+  <p class="hero-tag reveal">
+    It finds the foothold, escalates, pivots, and captures proof &mdash;
+    <em>on its own</em>. Fail-closed by design. <span class="hl">You bring the key.</span>
+  </p>
+
+  <div class="hero-cmd reveal">
+    <div class="cmd-label">&gt;&gt; ONE-LINER INSTALL <span class="dim">/ kali · debian</span></div>
+    <div class="cmd-row">
+      <code id="cmd">curl -fsSL https://raw.githubusercontent.com/parsazolfaghar/grin/main/scripts/install.sh | bash</code>
+      <button class="cmd-copy" data-copy="#cmd" aria-label="copy install command">COPY</button>
+    </div>
+  </div>
+
+  <div class="hero-cta reveal">
+    <a class="btn btn-primary" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">
+      STAR ON GITHUB <span class="btn-ico">★</span>
+    </a>
+    <a class="btn btn-ghost" href="#rules">READ THE RULES <span class="btn-ico">↓</span></a>
+  </div>
+
+  <dl class="hero-tele reveal">
+    <div><dt>BRAIN</dt><dd>CLOUD / LOCAL · BYO&nbsp;KEY</dd></div>
+    <div><dt>ARSENAL</dt><dd>KALI&nbsp;+&nbsp;BLACKARCH</dd></div>
+    <div><dt>SPINE</dt><dd>FAIL-CLOSED · AUDITED</dd></div>
+    <div><dt>USE</dt><dd>AUTHORIZED&nbsp;ONLY</dd></div>
+  </dl>
+</header>
+
+<hr class="rule">
+
+<!-- ░░ WHAT ░░ -->
+<section id="what" class="band">
+  <div class="band-head reveal">
+    <span class="eyebrow">[ 01 / WHAT IT IS ]</span>
+    <h2>An operator that doesn't wait for you.</h2>
+  </div>
+  <p class="lead reveal">
+    GRIN is an autonomous offensive-security orchestrator. Give it an authorized target and a goal;
+    it plans the engagement, drives Kali &amp; BlackArch tooling, gets a foothold, escalates,
+    pivots across hosts, and captures the proof &mdash; then writes it up. Every action passes through
+    a single <strong>fail-closed spine</strong> that enforces scope and logs an audit trail, so it
+    cannot wander off the targets you authorized.
+  </p>
+</section>
+
+<hr class="rule">
+
+<!-- ░░ CAPABILITIES ░░ -->
+<section id="caps" class="band">
+  <div class="band-head reveal">
+    <span class="eyebrow">[ 02 / CAPABILITIES ]</span>
+    <h2>Why it actually lands.</h2>
+  </div>
+
+  <div class="bento">
+    <article class="cell cell-lg reveal">
+      <div class="cell-id">D-01</div>
+      <h3>Deterministic closers</h3>
+      <p>When the model would stall, <em>code</em> takes the last mile through the spine: default-cred
+      sweep, command-injection, sudo &amp; SUID privesc, LFI&rarr;crack, SQLi, and SSH-key lateral
+      movement. The win isn't left to luck.</p>
+      <samp class="cell-tags">cred-sweep / web-rce / sudo-gtfo / suid-hijack / lfi-crack / ssh-loot</samp>
+    </article>
+
+    <article class="cell reveal">
+      <div class="cell-id">D-02</div>
+      <h3>The Grin Brain</h3>
+      <p>Persistent, cross-engagement memory. It recognizes the situation and applies the proven play
+      every time &mdash; and learns from every success and wall.</p>
+    </article>
+
+    <article class="cell reveal">
+      <div class="cell-id">D-03</div>
+      <h3>Dual arsenal</h3>
+      <p>Self-provisioning <strong>Kali + BlackArch</strong> containers, complementary by design &mdash;
+      tools route across both. A laptop with Docker is a full rig.</p>
+    </article>
+
+    <article class="cell reveal">
+      <div class="cell-id">D-04</div>
+      <h3>Fail-closed spine</h3>
+      <p>Every action: resolve &rarr; authorize &rarr; gate &rarr; execute &rarr; audit. Out-of-scope
+      is <span class="hl">refused</span>, not run. The model can't go around it.</p>
+    </article>
+
+    <article class="cell reveal">
+      <div class="cell-id">D-05</div>
+      <h3>Broad coverage</h3>
+      <p>Integrated nuclei brings thousands of CVE/misconfig checks &mdash; every hit becomes an
+      evidence-backed finding.</p>
+    </article>
+
+    <article class="cell cell-wide reveal">
+      <div class="cell-id">D-06</div>
+      <h3>One-button updates</h3>
+      <p>Install once. One update pulls the code, re-deploys the in-container helpers, and syncs the
+      brain &mdash; all three layers, current, in a click.</p>
+      <samp class="cell-tags">code · helpers · brain &mdash; one button</samp>
+    </article>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ░░ INSTALL ░░ -->
+<section id="install" class="band">
+  <div class="band-head reveal">
+    <span class="eyebrow">[ 03 / INSTALL ]</span>
+    <h2>One line. Then your key.</h2>
+  </div>
+
+  <div class="install-grid">
+    <div class="install-cmd reveal">
+      <div class="cmd-label">&gt;&gt; RUN ON KALI / DEBIAN</div>
+      <div class="cmd-row">
+        <code id="cmd2">curl -fsSL https://raw.githubusercontent.com/parsazolfaghar/grin/main/scripts/install.sh | bash</code>
+        <button class="cmd-copy" data-copy="#cmd2" aria-label="copy install command">COPY</button>
+      </div>
+      <p class="install-note">Installs the CLI + desktop app, the Kali/BlackArch arsenal, and the
+      seeded brain. Needs <samp>git</samp> and <samp>docker</samp>.</p>
+    </div>
+
+    <aside class="install-key reveal">
+      <div class="cell-id">KEY</div>
+      <h3>Bring your own API</h3>
+      <p>GRIN ships with <strong>no API and no credentials</strong>. It never proxies a model and
+      never sees your traffic. You wire your own key into <samp>~/.grin/deepseek.env</samp>.</p>
+      <dl class="models">
+        <div><dt>RECOMMENDED</dt><dd>DeepSeek-V3 (cheap, strong)</dd></div>
+        <div><dt>ANY</dt><dd>OpenAI-compatible endpoint</dd></div>
+        <div><dt>NO CLOUD</dt><dd>local via Ollama (qwen3:14b)</dd></div>
+      </dl>
+    </aside>
+  </div>
+</section>
+
+<hr class="rule">
+
+<!-- ░░ RULES / POLICY ░░ -->
+<section id="rules" class="band band-rules">
+  <div class="band-head reveal">
+    <span class="eyebrow eyebrow-warn">[ 04 / RULES &amp; TERMS — READ THIS ]</span>
+    <h2>What you do with this is on you.</h2>
+    <p class="lead">GRIN is real offensive tooling. The guardrails keep it inside the scope
+    <em>you</em> authorize &mdash; they don't make unauthorized use lawful. By installing or running
+    it, you accept the following.</p>
+  </div>
+
+  <ol class="terms">
+    <li class="reveal"><span class="t-no">01</span>
+      <h4>Authorized targets only</h4>
+      <p>Use GRIN exclusively against systems you own or hold <strong>prior, explicit, written
+      authorization</strong> to test. Attacking anything else is illegal (CFAA &amp; equivalents
+      worldwide) and entirely your responsibility.</p>
+    </li>
+    <li class="reveal"><span class="t-no">02</span>
+      <h4>Bring your own API key</h4>
+      <p>We provide no API, no model, no credentials. GRIN never routes your traffic through us &mdash;
+      your key, your endpoint, your data. We have zero visibility into your targets or activity.</p>
+    </li>
+    <li class="reveal"><span class="t-no">03</span>
+      <h4>No warranty, no liability</h4>
+      <p>The software is provided <samp>AS IS</samp>. The author is not liable for any damage, loss,
+      or claim arising from it &mdash; including actions you or anyone else take with it. You assume
+      all risk.</p>
+    </li>
+    <li class="reveal"><span class="t-no">04</span>
+      <h4>All rights reserved &mdash; no reuse</h4>
+      <p>Source-available for viewing only. You may run an unmodified copy for your own authorized
+      testing. You may <strong>not</strong> copy, modify, redistribute, sell, or build derivatives,
+      in whole or part. See <a href="https://github.com/parsazolfaghar/grin/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE</a>.</p>
+    </li>
+    <li class="reveal"><span class="t-no">05</span>
+      <h4>The guardrails are a feature, not a leash</h4>
+      <p>The fail-closed spine, scope enforcement, and audit trail exist to keep your authorized
+      engagement <em>clean and defensible</em>. Don't try to defeat them.</p>
+    </li>
+  </ol>
+</section>
+
+</main>
+
+<footer class="foot">
+  <div class="foot-mark">GRIN<sup>®</sup></div>
+  <div class="foot-meta">
+    <span>© 2026 PARSA ZOLFAGHAR</span>
+    <span>ALL RIGHTS RESERVED</span>
+    <span>AUTHORIZED USE ONLY</span>
+    <span>REV 0.2.0</span>
+  </div>
+  <div class="foot-links">
+    <a href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">GITHUB ↗</a>
+    <a href="https://github.com/parsazolfaghar/grin/blob/main/LICENSE" target="_blank" rel="noopener">LICENSE ↗</a>
+  </div>
+</footer>
+
+<script src="app.js" defer></script>
+</body>
+</html>
