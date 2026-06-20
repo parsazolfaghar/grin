@@ -14,6 +14,8 @@ captures the proof — *on its own*. Fail-closed by design.
 
 **⭐ Star it if grin is your kind of tool.**
 
+<img src="demo.gif" alt="grin capturing a flag autonomously — one goal, hands off the keyboard" width="760">
+
 </div>
 
 ```bash

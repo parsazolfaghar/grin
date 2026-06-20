@@ -135,6 +135,12 @@ main,.nav,.foot{position:relative;z-index:1}
 .spec li::before{content:"+";position:absolute;left:0;color:var(--blue-deep);background:var(--yellow);width:11px;height:11px;display:grid;place-items:center;font-size:9px;top:3px;line-height:1}
 .spec b{color:var(--yellow);font-weight:700}
 
+/* ── demo strip ──────────────────────────────────────────────────────────── */
+.demo{padding-top:clamp(40px,7vw,90px);padding-bottom:clamp(40px,7vw,90px)}
+.demo .band-head{margin-bottom:24px}
+.demo-frame{border:1px solid var(--line);background:#000;padding:8px;box-shadow:0 0 60px rgba(0,0,0,.35)}
+.demo-frame img{display:block;width:100%;height:auto;image-rendering:auto}
+
 /* ── buttons ─────────────────────────────────────────────────────────────── */
 .btn{font-family:var(--mono);font-size:12px;font-weight:700;letter-spacing:.14em;text-transform:uppercase;display:inline-flex;align-items:center;gap:14px;padding:15px 20px;border:1px solid var(--ink);transition:transform .4s var(--ease),background .3s var(--ease),color .3s var(--ease),border-color .3s var(--ease)}
 .btn:active{transform:scale(.97)}
