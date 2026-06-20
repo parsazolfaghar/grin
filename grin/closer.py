@@ -136,6 +136,15 @@ def closer_commands(history: str, target: str) -> list[str]:
             if sub:
                 cmds.append(f"nmap -sn {sub}")
 
+    # Cross-objective pivot: when this objective targets a bare host (no web foothold of its own) and
+    # an SSH key was captured in an EARLIER objective (it persists at /tmp/loot/id_rsa on the runner),
+    # try ssh-loot against this host — the lateral move where the key and the flag live on different
+    # hosts/objectives. ssh-loot no-ops gracefully if the key file isn't there.
+    if fh is None and re.match(r"^\d{1,3}(?:\.\d{1,3}){3}$", target or ""):
+        readme = _readme_clue(h)
+        r = f" --readme '{readme}'" if readme else ""
+        cmds.append(f"ssh-loot --host {target} --key /tmp/loot/id_rsa{r}")
+
     # Default-credential sweep when an SSH service is indicated (bounded, online-safe).
     if "22/tcp" in low or "open ssh" in low or "ssh://" in low or "port 22" in low:
         cmds.append(f"cred-sweep --target {target}")

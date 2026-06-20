@@ -95,6 +95,12 @@ def test_command_target_extracts_true_destination():
     assert command_target("nmap -sn 10.0.0.0/24", "10.0.0.5") == "10.0.0.5"  # no host -> default
 
 
+def test_closer_commands_ssh_loot_on_bare_host_pivot():
+    # cross-objective pivot: bare-host target, no web foothold -> try ssh-loot with the persisted key
+    cmds = closer_commands("scanning the vault host\n22/tcp open ssh", "172.30.0.17")
+    assert any(c.startswith("ssh-loot --host 172.30.0.17 --key /tmp/loot/id_rsa") for c in cmds)
+
+
 def test_closer_commands_empty_when_no_foothold():
-    # no web foothold AND no ssh signal -> nothing to deterministically close
-    assert closer_commands("nmap only, nothing found", "10.0.0.5") == []
+    # no web foothold, no ssh signal, and not a bare IP host -> nothing to deterministically close
+    assert closer_commands("nmap only, nothing found", "example.test") == []
