@@ -167,6 +167,20 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                          "patch": getattr(d, "patch", "")})
         if getattr(d, "patch", ""):
             _write_medic_patch(eng, d.patch, d.diagnosis)
+        # Grin Brain: a Medic page means grin hit a wall here. Record a pitfall against the situations
+        # active in the recent trail so the next run goes straight to the deterministic helper for
+        # that situation instead of looping. This is how the Medic makes grin learn from failure.
+        try:
+            from grin.brain import Brain, detect_situations, learn_failure
+            hist = " ".join(str(getattr(s, "output", "") or s) for s in recent_steps)
+            sits = detect_situations(hist)
+            _b = Brain()
+            for sit in sits:
+                learn_failure(_b, sit,
+                              "grin STALLED here before (Medic paged) — go straight to the proven "
+                              "deterministic helper for this situation; do not loop or re-enumerate.")
+        except Exception:  # noqa: BLE001 - learning must never break the engagement
+            pass
         return d
 
     def _apply_recover(d) -> bool:
