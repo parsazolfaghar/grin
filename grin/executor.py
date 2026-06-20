@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from datetime import datetime
 
 from grin.engagement import Engagement
-from grin.extractors import extract
+from grin.extractors import extract, extract_findings
 from grin.lootfile import persist_artifact, decrypt_persisted_key
 from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
@@ -138,7 +138,15 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                 if noprogress >= MAX_NOPROGRESS:
                     break
                 continue
-            journal.set_findings(decision.findings or [])
+            # Merge model-reported findings with the deterministic ones already recorded (e.g. nuclei),
+            # dedup by title — so model claims add to, never erase, evidence-backed auto-findings.
+            merged = list(journal.findings)
+            _ft = {f.title for f in merged}
+            for fnd in (decision.findings or []):
+                if fnd.title not in _ft:
+                    merged.append(fnd)
+                    _ft.add(fnd.title)
+            journal.set_findings(merged)
             # Merge model-reported secrets with already auto-extracted secrets so
             # neither source overwrites the other. Dedup by (label, value).
             existing = list(journal.secrets)
@@ -202,6 +210,13 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                 if (sec.label, sec.value) not in existing_keys:
                     journal.secrets.append(sec)
                     existing_keys.add((sec.label, sec.value))
+            # Deterministic findings (nuclei): record vuln hits as evidence-backed findings,
+            # model-independent — broad real-world coverage that doesn't rely on the model reporting.
+            existing_titles = {f.title for f in journal.findings}
+            for fnd in extract_findings(a["tool"], a["command"], raw_output, a["target"]):
+                if fnd.title not in existing_titles:
+                    journal.findings.append(fnd)
+                    existing_titles.add(fnd.title)
             # A captured flag is terminal proof for this objective — finish now instead of taking
             # more steps. (The Orchestrator decides whether the whole engagement is done.)
             if any(getattr(s, "label", "") == "flag" for s in found_secrets):

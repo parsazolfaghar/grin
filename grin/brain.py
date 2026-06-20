@@ -52,6 +52,12 @@ DEFAULT_SEEDS = [
      "host (from `nmap -sn <range>`), pivot with ssh-loot: "
      "`ssh-loot --host <discovered-host> --key /tmp/loot/id_rsa --readme '<README/clue text>'` — it "
      "cracks the passphrase and logs in as the right account. Do NOT brute root or run nmap NSE."),
+    ("web-target", "playbook",
+     "A web service is in scope. For broad real-world coverage run nuclei EARLY — it checks thousands "
+     "of known CVEs + misconfigurations deterministically and each hit is evidence-backed: "
+     "`nuclei -u http://<target> -severity low,medium,high,critical -silent` (use httpx/subfinder for "
+     "live-host + subdomain discovery on external scope first). Record every nuclei hit as a finding, "
+     "then chase the exploitable ones (RCE/SSTI/SQLi/auth-bypass) with web-rce/sqlmap."),
     ("flag-not-captured", "pitfall",
      "Do NOT declare the objective done/complete until you have CONCRETE PROOF — the actual sensitive "
      "file contents, a confirmed shell, or a captured credential (a CTF GRIN{...} flag is one example "
@@ -203,6 +209,10 @@ def detect_situations(history: str, *, target: str = "") -> list[str]:
         add("ssti-foothold")
     if "uid=" in low and ("web-rce" in low or "ping" in low or "?host=" in low or "cmd" in low):
         add("cmdi-foothold")
+    # a web service is present (URL seen, or an http/https port found) -> broad nuclei coverage applies
+    if ("http://" in low or "https://" in low or "80/tcp" in low or "443/tcp" in low
+            or "8080/tcp" in low or "8443/tcp" in low):
+        add("web-target")
     # "unproven": only nag once a foothold exists but no concrete proof yet (a CTF flag is one proof
     # form). Avoids firing on step 1 before there's anything to prove; general to real engagements.
     foothold = bool(sits)

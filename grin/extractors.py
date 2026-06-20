@@ -11,6 +11,7 @@ import re
 from typing import List
 
 from grin.secret import Secret
+from grin.finding import Finding, normalize_severity
 
 # ---------------------------------------------------------------------------
 # Hydra credential extractor
@@ -196,5 +197,53 @@ def extract(tool: str, command: str, output: str, target: str) -> List[Secret]:
                 combined.append(sec)
 
         return combined
+    except Exception:
+        return []
+
+
+# ---------------------------------------------------------------------------
+# Deterministic FINDINGS extractors (vulnerabilities, not secrets).
+# nuclei is grin's broad real-world coverage tool: thousands of CVE/misconfig templates, and its
+# output IS the evidence. Turn each hit into an evidence-backed Finding so coverage doesn't depend on
+# the model remembering to report it.
+# ---------------------------------------------------------------------------
+# nuclei default line:  [template-id] [protocol] [severity] matched-at [optional name]
+_NUCLEI_RE = re.compile(
+    r"\[([^\]]+?)\]\s+\[(\w+)\]\s+\[(info|low|medium|high|critical|unknown)\]\s+(\S+)", re.I)
+
+
+def _extract_nuclei(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    seen: set[str] = set()
+    for line in (output or "").splitlines():
+        m = _NUCLEI_RE.search(line)
+        if not m:
+            continue
+        tid, proto, sev, matched = m.group(1).strip(), m.group(2), m.group(3), m.group(4)
+        # strip a :variant suffix from the template id for a clean title, keep full id in evidence
+        title = tid.split(":", 1)[0]
+        if title in seen:
+            continue
+        seen.add(title)
+        out.append(Finding(
+            title=title,
+            target=target,
+            severity=normalize_severity(sev),
+            evidence=f"nuclei [{tid}] [{proto}] matched at {matched}",
+            tool="nuclei",
+            command=command,
+            recommendation="Triage the matched nuclei template and remediate the underlying issue.",
+        ))
+    return out
+
+
+def extract_findings(tool: str, command: str, output: str, target: str) -> List[Finding]:
+    """Deterministic vulnerability findings parsed from a known tool's output. Never raises; [] when
+    nothing matches. Currently: nuclei."""
+    try:
+        tl = (tool or "").lower()
+        if "nuclei" in tl or "nuclei" in (command or "").lower():
+            return _extract_nuclei(command or "", output or "", target or "")
+        return []
     except Exception:
         return []

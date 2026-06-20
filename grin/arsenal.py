@@ -22,13 +22,17 @@ BASELINE = {
             "openssh-client", "sshpass", "curl", "wget", "iputils-ping", "wordlists", "john"],
     # pacman/BlackArch package names differ: netcat is openbsd-netcat (gnu-netcat isn't in the synced
     # repos); there is no 'wordlists' meta-package (run_up writes its own curated lists anyway).
-    # hydra/medusa live HERE ONLY (not in the apt list) so brute-force routes to BlackArch.
-    "pacman": ["hydra", "medusa", "nmap", "sqlmap", "nikto", "gobuster", "ffuf", "openbsd-netcat",
+    # hydra/medusa (brute) + the ProjectDiscovery suite (nuclei/httpx/subfinder) live HERE ONLY, so
+    # brute-force AND broad CVE/misconfig scanning route to BlackArch — real-world coverage + every
+    # web engagement exercises BlackArch.
+    "pacman": ["hydra", "medusa", "nuclei", "httpx", "subfinder",
+               "nmap", "sqlmap", "nikto", "gobuster", "ffuf", "openbsd-netcat",
                "openssh", "sshpass", "curl", "wget", "iputils", "john"],
 }
 
-# Tools intentionally kept OFF the Kali arsenal so they route to BlackArch (verifies cross-arsenal use).
-BLACKARCH_ONLY = ("hydra", "medusa")
+# Tools intentionally kept OFF the Kali arsenal so they route to BlackArch (verifies cross-arsenal use
+# and gives grin ProjectDiscovery-grade real-world coverage).
+BLACKARCH_ONLY = ("hydra", "medusa", "nuclei", "httpx", "subfinder")
 
 
 def distro_for(container: str) -> str:
