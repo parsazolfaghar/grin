@@ -17,9 +17,14 @@ docker exec "$C" sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt
 echo "[*] rockyou"
 docker exec "$C" sh -c "gunzip -f /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true"
 
-echo "[*] curated credential lists"
-docker exec "$C" sh -c "printf 'root\nadmin\nuser\noperator\nubuntu\npi\nguest\ntest\noracle\npostgres\nmysql\nadministrator\ndeploy\nservice\n' > /usr/share/wordlists/users.txt"
-docker exec "$C" sh -c "printf 'password\n123456\nadmin\nroot\npassword123\nletmein\nqwerty\nchangeme\ntoor\n12345678\nadmin123\nwelcome\nP@ssw0rd\niloveyou\nmonkey\ndragon\n' > /usr/share/wordlists/passwords.txt"
+echo "[*] curated credential lists (into the runner AND the brute arsenal that owns hydra)"
+# hydra/medusa live on grin-blackarch (arsenal split), so the curated wordlists MUST exist there too
+# — otherwise an SSH/web brute routed to BlackArch has no list. Seed both, best-effort.
+_USERS='root\nadmin\nuser\noperator\nubuntu\npi\nguest\ntest\noracle\npostgres\nmysql\nadministrator\ndeploy\nservice\n'
+_PASS='password\n123456\nadmin\nroot\npassword123\nletmein\nqwerty\nchangeme\ntoor\n12345678\nadmin123\nwelcome\nP@ssw0rd\niloveyou\nmonkey\ndragon\n'
+for WC in "$C" grin-blackarch; do
+  docker exec "$WC" sh -c "mkdir -p /usr/share/wordlists; printf '$_USERS' > /usr/share/wordlists/users.txt; printf '$_PASS' > /usr/share/wordlists/passwords.txt" 2>/dev/null || true
+done
 
 echo "[*] ssh client (don't prompt on unknown host keys)"
 docker exec "$C" sh -c "grep -q 'StrictHostKeyChecking no' /etc/ssh/ssh_config 2>/dev/null || \
