@@ -29,8 +29,12 @@ def test_closer_commands_for_web_foothold_try_both_privesc():
     assert "suid-hijack" in joined          # SUID PATH-hijack closer
     assert "sudo-gtfo" in joined            # sudo-NOPASSWD closer
     assert "web-rce" in joined and "cat /root/flag.txt" in joined  # direct read attempt
-    assert all("172.30.0.15" in c for c in cmds)
-    assert all("--param name" in c for c in cmds)
+    # the three privesc commands target the discovered foothold (param + host)
+    privesc = [c for c in cmds if c.startswith(("suid-hijack", "sudo-gtfo")) or "flag.txt" in c]
+    assert privesc and all("172.30.0.15" in c and "--param name" in c for c in privesc)
+    # with no key yet, it also emits enabling steps: key exfil + a subnet scan for the pivot host
+    assert "cat /opt/deploy/id_rsa" in joined
+    assert "nmap -sn 172.30.0.0/24" in joined
 
 
 def test_closer_commands_ssh_pivot_when_key_and_host():

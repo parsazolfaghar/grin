@@ -45,34 +45,41 @@ def _closer_pass(eng, *, target, journal, runner, now, executed_commands, brain)
     from grin.closer import closer_commands
     if _has_flag(journal):
         return False
-    for cmd in closer_commands(journal.render_history(), target):
-        norm = _canonical_cmd(cmd)
-        if norm in executed_commands:
-            continue
-        tool = cmd.split()[0]
-        out = submit_action(eng, target=target, tool=tool, command=cmd,
-                            declared_class="post-exploit", runner=runner, now=now)
-        executed_commands.add(norm)
-        if out.status != "executed":
-            continue
-        raw = out.result.output or ""
-        found = extract(tool, cmd, raw, target)
-        journal.add_step(Step(action={"tool": tool, "command": cmd, "target": target,
-                                      "declared_class": "post-exploit",
-                                      "why": "deterministic closer (model bypass)"},
-                              decision="executed", output=raw, exit_code=out.result.exit_code,
-                              extracted=[{"label": s.label, "value": s.value} for s in found]))
-        existing_keys = {(s.label, s.value) for s in journal.secrets}
-        for sec in found:
-            if (sec.label, sec.value) not in existing_keys:
-                journal.secrets.append(sec)
-                existing_keys.add((sec.label, sec.value))
-                persist_artifact(sec, runner, target=target)
-        if _has_flag(journal):
-            if brain is not None:
-                from grin.brain import reinforce_success
-                reinforce_success(brain, journal.render_history(), target)
-            return True
+    # Up to 2 passes: pass 1 may run ENABLING steps (exfiltrate a key, scan for the pivot host);
+    # pass 2 re-derives from the updated history so the now-possible ssh-loot pivot fires.
+    for _pass in range(2):
+        ran_any = False
+        for cmd in closer_commands(journal.render_history(), target):
+            norm = _canonical_cmd(cmd)
+            if norm in executed_commands:
+                continue
+            tool = cmd.split()[0]
+            out = submit_action(eng, target=target, tool=tool, command=cmd,
+                                declared_class="post-exploit", runner=runner, now=now)
+            executed_commands.add(norm)
+            ran_any = True
+            if out.status != "executed":
+                continue
+            raw = out.result.output or ""
+            found = extract(tool, cmd, raw, target)
+            journal.add_step(Step(action={"tool": tool, "command": cmd, "target": target,
+                                          "declared_class": "post-exploit",
+                                          "why": "deterministic closer (model bypass)"},
+                                  decision="executed", output=raw, exit_code=out.result.exit_code,
+                                  extracted=[{"label": s.label, "value": s.value} for s in found]))
+            existing_keys = {(s.label, s.value) for s in journal.secrets}
+            for sec in found:
+                if (sec.label, sec.value) not in existing_keys:
+                    journal.secrets.append(sec)
+                    existing_keys.add((sec.label, sec.value))
+                    persist_artifact(sec, runner, target=target)
+            if _has_flag(journal):
+                if brain is not None:
+                    from grin.brain import reinforce_success
+                    reinforce_success(brain, journal.render_history(), target)
+                return True
+        if not ran_any:
+            break
     return False
 
 

