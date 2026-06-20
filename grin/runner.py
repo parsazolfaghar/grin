@@ -178,6 +178,15 @@ class ArsenalRunner:
         if container is None:
             return ExecResult(output=f"tool '{tool}' not in arsenal — run `grin arsenal add {tool}`",
                               exit_code=127, duration_s=0.0, timed_out=False)
+        # routing visibility: when GRIN_ARSENAL_LOG is set, record which arsenal container served each
+        # tool, so a run can be shown to genuinely reach BOTH grin-kali and grin-blackarch.
+        _log = os.environ.get("GRIN_ARSENAL_LOG")
+        if _log:
+            try:
+                with open(_log, "a") as _fh:
+                    _fh.write(f"{container}\t{tool}\n")
+            except OSError:
+                pass
         t0 = time.monotonic()
         wrapped = ["sh", "-lc", f"timeout {timeout or self._timeout} {command}"]
         code, out = self._client.containers.get(container).exec_run(wrapped, demux=False)

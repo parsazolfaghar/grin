@@ -711,7 +711,8 @@ def _lab_targets():
     return _load_lab_answers(str(_LAB_DIR / "answers.yaml"))
 
 
-def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali") -> int:
+def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali",
+            arsenal: bool = False) -> int:
     if action == "up":
         return run_up()
     if action == "down":
@@ -725,10 +726,11 @@ def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali") -> int:
         from pathlib import Path
         dest = Path(out_dir or ".")
         dest.mkdir(parents=True, exist_ok=True)
+        env_kind = "arsenal" if arsenal else "docker"
         for t in _lab_targets():
             p = dest / f"lab-{t.id}.yaml"
-            p.write_text(yaml.safe_dump(engagement_dict(t, runner_container=runner),
-                                        sort_keys=False))
+            p.write_text(yaml.safe_dump(
+                engagement_dict(t, runner_container=runner, env_kind=env_kind), sort_keys=False))
             print(f"wrote {p}")
         return 0
     print(f"unknown lab action {action!r}", file=sys.stderr)
@@ -967,6 +969,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_lab.add_argument("out_dir", nargs="?", default=None,
                        help="(engagements) directory to write engagement YAMLs into")
     p_lab.add_argument("--runner", default="grin-kali", help="runner container name")
+    p_lab.add_argument("--arsenal", action="store_true",
+                       help="(engagements) route tools across the Kali+BlackArch arsenal "
+                            "(env kind=arsenal) instead of pinning one runner container")
 
     p_lb = sub.add_parser("labbench", help="benchmark local LLMs per role against the flag-lab")
     p_lb.add_argument("--matrix", default="lab/matrix.yaml", dest="matrix_path")
@@ -1049,7 +1054,8 @@ def main(argv=None) -> int:
         return cmd_bench(models=args.models, roles=args.roles, base_url=args.base_url,
                          out=args.out, json_out=args.json_out, repeats=args.repeats)
     if args.group == "lab":
-        return cmd_lab(args.action, out_dir=args.out_dir, runner=args.runner)
+        return cmd_lab(args.action, out_dir=args.out_dir, runner=args.runner,
+                       arsenal=args.arsenal)
     if args.group == "labbench":
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
     if args.group == "arsenal":

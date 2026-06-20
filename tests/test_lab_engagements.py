@@ -19,6 +19,12 @@ def test_engagement_dict_shape():
     assert d["audit_log"] == "./audit/lab-t2-web.jsonl"
 
 
+def test_engagement_dict_arsenal_env():
+    # --arsenal -> route across the Kali+BlackArch arsenal, auto-install missing tools.
+    d = engagement_dict(_t(), env_kind="arsenal")
+    assert d["env"] == {"kind": "arsenal", "tool_acquire": "auto"}
+
+
 def test_engagement_dict_is_loadable(tmp_path):
     import yaml
     from grin.engagement import load_engagement
