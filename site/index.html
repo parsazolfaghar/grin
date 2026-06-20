@@ -56,8 +56,8 @@
   <h1 class="hero-word reveal">GRIN</h1>
 
   <p class="hero-tag reveal">
-    The autonomous operator that <em>doesn't stall</em>. Foothold &rarr; root &rarr; flag &mdash;
-    hands off the keyboard. <span class="hl">You bring the key.</span>
+    Foothold &rarr; root &rarr; flag, fully autonomous.
+    <span class="hl">You bring the key.</span>
   </p>
 
   <div class="hero-cmd reveal">
@@ -96,13 +96,9 @@
     <h2>A full red-team operator in one command.</h2>
   </div>
   <p class="lead reveal">
-    Point GRIN at an authorized target, give it a goal, and walk away. It plans the engagement, drives
-    Kali &amp; BlackArch tooling, gets a foothold, escalates to root, pivots across hosts, captures the
-    proof, and writes the report &mdash; <strong>no keyboard required</strong>. Other "AI hacking"
-    demos flail the moment the model gets unlucky; GRIN finishes, because the last mile is
-    deterministic code, not a hopeful prompt. And every action runs through a single
-    <strong>fail-closed spine</strong> that enforces scope and logs an audit trail &mdash; it
-    physically cannot wander off the targets you authorized.
+    Point it at an authorized target, give it a goal, walk away. It footholds, escalates, pivots, and
+    captures proof on its own &mdash; the last mile is deterministic code, not a hopeful prompt. Every
+    action runs through a <strong>fail-closed spine</strong>, so it can't leave the scope you set.
   </p>
 </section>
 
@@ -119,45 +115,38 @@
     <article class="cell cell-lg reveal">
       <div class="cell-id">D-01</div>
       <h3>Deterministic closers</h3>
-      <p>When the model would stall, <em>code</em> takes the last mile through the spine: default-cred
-      sweep, command-injection, sudo &amp; SUID privesc, LFI&rarr;crack, SQLi, and SSH-key lateral
-      movement. The win isn't left to luck.</p>
+      <p>When the model would stall, code finishes the job through the spine &mdash; the win isn't left to luck.</p>
       <samp class="cell-tags">cred-sweep / web-rce / sudo-gtfo / suid-hijack / lfi-crack / ssh-loot</samp>
     </article>
 
     <article class="cell reveal">
       <div class="cell-id">D-02</div>
       <h3>The Grin Brain</h3>
-      <p>Persistent, cross-engagement memory. It recognizes the situation and applies the proven play
-      every time &mdash; and learns from every success and wall.</p>
+      <p>Cross-engagement memory &mdash; applies the proven play every time, learns from every win and wall.</p>
     </article>
 
     <article class="cell reveal">
       <div class="cell-id">D-03</div>
       <h3>Dual arsenal</h3>
-      <p>Self-provisioning <strong>Kali + BlackArch</strong> containers, complementary by design &mdash;
-      tools route across both. A laptop with Docker is a full rig.</p>
+      <p>Self-provisioning <strong>Kali + BlackArch</strong>. A laptop with Docker is a full rig.</p>
     </article>
 
     <article class="cell reveal">
       <div class="cell-id">D-04</div>
       <h3>Fail-closed spine</h3>
-      <p>Every action: resolve &rarr; authorize &rarr; gate &rarr; execute &rarr; audit. Out-of-scope
-      is <span class="hl">refused</span>, not run. The model can't go around it.</p>
+      <p>resolve &rarr; authorize &rarr; gate &rarr; execute &rarr; audit. Out-of-scope is <span class="hl">refused</span>.</p>
     </article>
 
     <article class="cell reveal">
       <div class="cell-id">D-05</div>
       <h3>Broad coverage</h3>
-      <p>Integrated nuclei brings thousands of CVE/misconfig checks &mdash; every hit becomes an
-      evidence-backed finding.</p>
+      <p>nuclei brings thousands of CVE/misconfig checks &mdash; each an evidence-backed finding.</p>
     </article>
 
     <article class="cell cell-wide reveal">
       <div class="cell-id">D-06</div>
       <h3>One-button updates</h3>
-      <p>Install once. One update pulls the code, re-deploys the in-container helpers, and syncs the
-      brain &mdash; all three layers, current, in a click.</p>
+      <p>One click updates the code, the in-container helpers, and the brain &mdash; all three layers.</p>
       <samp class="cell-tags">code · helpers · brain &mdash; one button</samp>
     </article>
   </div>
@@ -170,8 +159,7 @@
   <div class="band-head reveal">
     <span class="eyebrow">[ 03 / FULL FEATURE SET ]</span>
     <h2>Everything it does.</h2>
-    <p class="lead">The actual machinery, not a buzzword list. <strong>Runs on macOS, Windows, and
-    Linux</strong> &mdash; the app is cross-platform, and the arsenal runs anywhere Docker does.</p>
+    <p class="lead">The actual machinery. <strong>Runs on macOS, Windows, and Linux.</strong></p>
     <dl class="platforms reveal">
       <div><dt>DESKTOP APP</dt><dd>macOS · Windows · Linux</dd></div>
       <div><dt>BRAIN</dt><dd>Cloud or Local</dd></div>
@@ -382,8 +370,7 @@
   <div class="ctaband-in reveal">
     <span class="eyebrow">[ 06 / SHIP IT ]</span>
     <h2>Point it. Authorize it.<br>Walk away.</h2>
-    <p class="lead">One command installs the whole thing. If grin is your kind of tool, the star
-    button's right here &mdash; it's how this gets found.</p>
+    <p class="lead">One command installs the whole thing. If it's your kind of tool, star it.</p>
     <div class="ctaband-cmd">
       <div class="cmd-row">
         <code id="cmd3">curl -fsSL https://raw.githubusercontent.com/parsazolfaghar/grin/main/scripts/install.sh | bash</code>
