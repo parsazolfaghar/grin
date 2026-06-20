@@ -94,7 +94,7 @@ main,.nav,.foot{position:relative;z-index:1}
 .hero-logo{width:clamp(120px,17vw,168px);aspect-ratio:1;border:1px solid var(--line);background:var(--blue-deep);padding:6px;box-shadow:0 0 50px rgba(0,0,0,.3)}
 .hero-logo img{width:100%;height:100%;object-fit:cover;display:block;image-rendering:auto}
 .hero-word{font-family:var(--grot);font-weight:900;text-transform:uppercase;font-size:clamp(4rem,15vw,11rem);line-height:.82;letter-spacing:-.05em;margin:clamp(14px,2.5vw,26px) 0 0;text-shadow:0 0 30px rgba(0,0,0,.25)}
-.hero-tag{font-size:clamp(1.05rem,2vw,1.5rem);max-width:34ch;line-height:1.3;color:var(--ink);margin-top:16px;font-weight:600}
+.hero-tag{font-size:clamp(1.05rem,2vw,1.5rem);max-width:min(34ch,100%);line-height:1.3;color:var(--ink);margin-top:16px;font-weight:600;text-wrap:balance;overflow-wrap:break-word}
 .hero-cmd{margin-top:clamp(26px,4vw,40px);width:100%;max-width:720px}
 .cmd-label{font-family:var(--mono);font-size:11px;letter-spacing:.2em;color:var(--dim);margin-bottom:9px;text-align:left}
 .cmd-row{display:flex;border:1px solid var(--line);background:rgba(7,15,158,.45);text-align:left}

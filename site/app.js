@@ -4,19 +4,26 @@
 
   // ── staggered scroll reveals ──────────────────────────────────────────────
   const reveals = document.querySelectorAll(".reveal");
-  if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
-    const io = new IntersectionObserver((entries) => {
-      entries.forEach((e, i) => {
-        if (!e.isIntersecting) return;
-        // stagger siblings entering together
-        e.target.style.transitionDelay = Math.min(i * 70, 280) + "ms";
-        e.target.classList.add("in");
-        io.unobserve(e.target);
-      });
-    }, { threshold: 0.14, rootMargin: "0px 0px -8% 0px" });
-    reveals.forEach((el) => io.observe(el));
-  } else {
-    reveals.forEach((el) => el.classList.add("in"));
+  const showAll = () => reveals.forEach((el) => el.classList.add("in"));
+  try {
+    if ("IntersectionObserver" in window && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+      const io = new IntersectionObserver((entries) => {
+        entries.forEach((e, i) => {
+          if (!e.isIntersecting) return;
+          e.target.style.transitionDelay = Math.min(i * 70, 280) + "ms";
+          e.target.classList.add("in");
+          io.unobserve(e.target);
+        });
+      }, { threshold: 0.12, rootMargin: "0px 0px -6% 0px" });
+      reveals.forEach((el) => io.observe(el));
+      // Safety net: nothing may stay hidden. If an element is still unrevealed after 4s
+      // (slow IO, edge cases, capture tools), force it visible. Content > animation.
+      setTimeout(showAll, 4000);
+    } else {
+      showAll();
+    }
+  } catch {
+    showAll();
   }
 
   // ── copy install one-liner ────────────────────────────────────────────────
