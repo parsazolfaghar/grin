@@ -31,7 +31,7 @@ docker exec "$C" sh -c "grep -q 'StrictHostKeyChecking no' /etc/ssh/ssh_config 2
   printf 'Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR\n' >> /etc/ssh/ssh_config"
 
 echo "[*] deterministic exploit helpers"
-for h in webexec:web-rce sshloot:ssh-loot suidhijack:suid-hijack webscan:web-scan idrive:grin-shell sudoesc:sudo-gtfo credsweep:cred-sweep; do
+for h in webexec:web-rce sshloot:ssh-loot suidhijack:suid-hijack webscan:web-scan idrive:grin-shell sudoesc:sudo-gtfo credsweep:cred-sweep lficrack:lfi-crack; do
   src="${h%%:*}"; dst="${h##*:}"
   docker cp "$ROOT/grin/tools/$src.py" "$C:/usr/local/bin/$dst" >/dev/null
   docker exec "$C" sh -c "sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/$dst && chmod +x /usr/local/bin/$dst"

