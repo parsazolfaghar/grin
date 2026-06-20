@@ -192,3 +192,31 @@ def test_secrets_also_evidence_gated(tmp_path):
                        now=datetime(2026,1,1), max_steps=2)
     assert res.status == "budget_exhausted"
     assert res.secrets == []
+
+
+def test_should_stop_halts_immediately(tmp_path):
+    # operator hit Stop: execute_task bails before running any step
+    eng = make_eng(tmp_path)
+    client = FakeClient([_action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan")])
+    res = execute_task(eng, objective="scan", target="203.0.113.7", client=client,
+                       runner=FakeRunner(), now=NOW, brain=None, should_stop=lambda: True)
+    assert res.status == "completed"
+    assert len([s for s in res.journal.steps if s.decision == "executed"]) == 0
+
+
+def test_recon_loop_is_capped(tmp_path):
+    # nmap re-run with different flags on the same host doesn't dedup — cap stops the re-scan spin
+    eng = make_eng(tmp_path)
+    client = FakeClient([
+        _action("nmap", "nmap -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _action("nmap", "nmap -p- 203.0.113.7", "203.0.113.7", "active-scan"),
+        _action("nmap", "nmap -p- -sV 203.0.113.7", "203.0.113.7", "active-scan"),
+        _action("nmap", "nmap -p- -sC 203.0.113.7", "203.0.113.7", "active-scan"),
+        _action("nmap", "nmap -A 203.0.113.7", "203.0.113.7", "active-scan"),
+    ])
+    res = execute_task(eng, objective="scan", target="203.0.113.7", client=client,
+                       runner=FakeRunner(), now=NOW, brain=None)
+    executed = [s for s in res.journal.steps if s.decision == "executed"]
+    dups = [s for s in res.journal.steps if s.decision == "duplicate"]
+    assert len(executed) <= 2          # recon capped at 2 nmap runs on the host
+    assert len(dups) >= 1              # further nmap flagged as non-progress

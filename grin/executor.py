@@ -98,7 +98,8 @@ class TaskResult:
 def execute_task(eng: Engagement, *, objective: str, target: str, client, runner,
                  now: datetime, model: str = DEFAULT_MODEL, max_steps: int = 12,
                  journal: Journal | None = None, engagement_path: str = "",
-                 executed_commands: set | None = None, brain: "Brain | None" = None) -> TaskResult:
+                 executed_commands: set | None = None, brain: "Brain | None" = None,
+                 should_stop=None) -> TaskResult:
     # Grin Brain: load (and seed once) the persistent lessons store unless a caller injected one
     # (tests pass their own / None-via-env). Failures here must never break a run.
     if brain is None:
@@ -124,8 +125,13 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
     if executed_commands is None:
         executed_commands = set()
     noprogress = 0
+    recon_count: dict = {}   # (tool, target) -> times a recon tool has run; caps the re-scan loop
 
     while len(journal.steps) < journal.max_steps:
+        # Operator hit Stop: bail immediately, mid-objective (not just between objectives).
+        if should_stop is not None and should_stop():
+            journal.save()
+            return TaskResult("completed", journal.findings, journal, secrets=journal.secrets)
         system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions,
                                          brain=brain)
         raw = client.generate(model=model, system=system, prompt=user, temperature=0.3)
@@ -185,6 +191,21 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             if noprogress >= MAX_NOPROGRESS:
                 break
             continue
+
+        # Anti-loop: recon tools (nmap/masscan) re-run with slightly different flags don't dedup, so
+        # the agent can spin re-scanning the same host forever. Cap recon at 2 runs per (tool,target);
+        # after that it's treated as non-progress so the loop moves on / aborts instead of re-scanning.
+        _t0 = (a["command"] or "").split()[0] if (a["command"] or "").split() else ""
+        if _t0 in ("nmap", "masscan", "rustscan"):
+            rk = (_t0, a["target"])
+            recon_count[rk] = recon_count.get(rk, 0) + 1
+            if recon_count[rk] > 2:
+                journal.add_step(Step(action=a, decision="duplicate",
+                                      reason="recon already done on this target — stop re-scanning"))
+                noprogress += 1
+                if noprogress >= MAX_NOPROGRESS:
+                    break
+                continue
 
         out = submit_action(eng, target=a["target"], tool=a["tool"], command=a["command"],
                             declared_class=a["declared_class"], runner=runner, now=now)

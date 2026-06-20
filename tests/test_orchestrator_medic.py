@@ -30,7 +30,7 @@ def _no_progress_executor(tmp_path):
     # Every objective "runs" an executed command but yields NO output/findings/secrets -> the
     # orchestrator sees no progress and the stall counter climbs.
     def fake_execute(eng, *, objective, target, client, runner, now, model, max_steps,
-                     engagement_path, executed_commands):
+                     engagement_path, executed_commands, **kwargs):
         j = Journal(task_id="x", objective=objective, target=target, engagement_path="",
                     path=str(tmp_path / "j.json"), max_steps=max_steps)
         j.add_step(Step(action={"command": "curl ...", "target": target, "tool": "curl",
@@ -79,7 +79,7 @@ def test_empty_initial_plan_seeds_fallback_objective(tmp_path, monkeypatch):
     ran = {"objectives": []}
 
     def fake_execute(eng, *, objective, target, client, runner, now, model, max_steps,
-                     engagement_path, executed_commands):
+                     engagement_path, executed_commands, **kwargs):
         ran["objectives"].append(objective)
         j = Journal(task_id="x", objective=objective, target=target, engagement_path="",
                     path=str(tmp_path / "j.json"), max_steps=max_steps)
@@ -130,7 +130,7 @@ def _activity_no_capture_executor(tmp_path):
     n = {"i": 0}
 
     def fake_execute(eng, *, objective, target, client, runner, now, model, max_steps,
-                     engagement_path, executed_commands):
+                     engagement_path, executed_commands, **kwargs):
         n["i"] += 1
         j = Journal(task_id="x", objective=objective, target=target, engagement_path="",
                     path=str(tmp_path / "j.json"), max_steps=max_steps)

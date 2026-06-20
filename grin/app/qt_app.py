@@ -1136,9 +1136,17 @@ class GrinWindow(QWidget):
             self.api.stop_engagement(self._job_id)
 
     def _clear_engagements(self):
+        # Stop a running job first so it can't keep appending after we clear.
+        if self._job_id and hasattr(self.api, "stop_engagement"):
+            try:
+                self.api.stop_engagement(self._job_id)
+            except Exception:  # noqa: BLE001
+                pass
+        self._job_id = None
+        self._job_file = None
         if hasattr(self.api, "clear_engagements"):
             self.api.clear_engagements()
-        self.refresh_boot()   # re-render the (now-empty) engagements list
+        self.refresh_boot()   # returns to the boot screen, clears the running banner + re-lists
 
     def resizeEvent(self, e):
         self.overlay.resize(self.size()); self.overlay.raise_()

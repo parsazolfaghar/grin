@@ -211,7 +211,7 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                            client=executor_client, runner=runner, now=now,
                            model=_model_for(obj, objective_models, base_model),
                            max_steps=max_steps, engagement_path=engagement_path,
-                           executed_commands=executed_commands)
+                           executed_commands=executed_commands, should_stop=should_stop)
         objectives_run.append(obj)
         _merge_findings(findings, res.findings)
         _flag_honeypot(findings)   # advisory; never alters the queue/execution
