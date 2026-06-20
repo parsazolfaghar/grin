@@ -28,7 +28,8 @@ from grin.bench.runner import run_bench
 from grin.bench.report import to_text, to_json
 from grin.lab.control import run_up, run_down, run_reset, run_status
 from grin.arsenal import (run_up as arsenal_up, run_down as arsenal_down,
-                          run_status as arsenal_status, run_add as arsenal_add)
+                          run_status as arsenal_status, run_add as arsenal_add,
+                          run_deploy_helpers as arsenal_deploy)
 from grin.lab.answers import load_answers as _load_lab_answers
 from grin.lab.engagements import engagement_dict
 from grin.lab.control import LAB_DIR as _LAB_DIR
@@ -742,9 +743,11 @@ def cmd_brain(action: str) -> int:
     from grin.brain import Brain, DEFAULT_SEEDS
     b = Brain()
     if action == "seed":
-        b.ensure_seeded()
+        # idempotent: adds any missing current seeds to an EXISTING brain (post-update) without
+        # wiping learned tallies; on an empty brain it adds them all.
+        added = b.sync_seeds()
         sits = {s for s, _, _ in DEFAULT_SEEDS}
-        print(f"brain seeded ({len(sits)} situations) at {b.path}")
+        print(f"brain synced: {added} new lesson(s) added; {len(sits)} seeded situations at {b.path}")
         return 0
     if action == "path":
         print(b.path)
@@ -773,6 +776,8 @@ def cmd_arsenal(action: str, tool: str = None) -> int:
             print("usage: grin arsenal add <tool>", file=sys.stderr)
             return 2
         return arsenal_add(tool)
+    if action == "deploy":
+        return arsenal_deploy()
     print(f"unknown arsenal action {action!r}", file=sys.stderr)
     return 2
 
@@ -879,6 +884,8 @@ def cmd_labbench(*, matrix_path: str, out: str, runner: str = "grin-kali") -> in
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
+    from grin import __version__
+    parser.add_argument("--version", action="version", version=f"grin {__version__}")
     sub = parser.add_subparsers(dest="group", required=True)
 
     eng = sub.add_parser("engagement", help="engagement operations")
@@ -1003,8 +1010,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_lb.add_argument("--runner", default="grin-kali")
 
     p_ars = sub.add_parser("arsenal", help="provision/manage the Kali+BlackArch tool arsenals")
-    p_ars.add_argument("action", choices=["up", "down", "status", "add"])
-    p_ars.add_argument("tool", nargs="?", default=None, help="(add) tool to install")
+    p_ars.add_argument("action", choices=["up", "down", "status", "add", "deploy"])
+    p_ars.add_argument("tool", nargs="?", default=None,
+                       help="(add) tool to install; (deploy) re-push helpers into the containers")
 
     p_brain = sub.add_parser("brain", help="manage the Grin Brain (persistent learned lessons)")
     p_brain.add_argument("action", choices=["seed", "list", "path"])

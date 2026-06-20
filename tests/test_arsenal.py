@@ -52,6 +52,17 @@ def test_pacman_baseline_has_no_known_bad_names():
     assert "openbsd-netcat" in BASELINE["pacman"]      # the correct Arch netcat
 
 
+def test_helpers_map_covers_every_tools_module():
+    # guard: every runnable helper in grin/tools/ must be in HELPERS so `arsenal deploy` (and updates)
+    # push it into the containers — otherwise a new closer ships but never reaches the arsenal.
+    import os
+    from grin.arsenal import HELPERS
+    tools_dir = os.path.join(os.path.dirname(__import__("grin").__file__), "tools")
+    modules = {f[:-3] for f in os.listdir(tools_dir)
+               if f.endswith(".py") and f != "__init__.py"}
+    assert modules == set(HELPERS), f"HELPERS out of sync with grin/tools: {modules ^ set(HELPERS)}"
+
+
 def test_arsenals_are_complementary_hydra_blackarch_only():
     # the two arsenals must NOT be redundant: hydra/medusa live only on BlackArch so brute-force
     # routes there, verifying grin reaches both arsenals during a real run.

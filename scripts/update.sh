@@ -14,10 +14,21 @@ if [ ! -d .git ]; then
 fi
 
 say "Pulling the latest grin"
+BEFORE="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 git pull --ff-only
+AFTER="$(git rev-parse --short HEAD 2>/dev/null || echo '?')"
 
 # Editable install means the pull already updated the code; reinstall picks up any new deps.
 say "Reinstalling (picks up new dependencies)"
 pipx install --force -e ".[app]"
 
-say "Done — relaunch Grin from the menu."
+GRIN="$HOME/.local/bin/grin"
+
+# A complete update touches all THREE layers, not just the Python code:
+say "Re-deploying helpers into the arsenal containers (closers run there, not in the venv)"
+"$GRIN" arsenal deploy 2>/dev/null || echo "  (arsenal not up / no docker — skipped)"
+
+say "Syncing the Grin Brain (adds new learned plays without wiping what it learned)"
+"$GRIN" brain seed 2>/dev/null || echo "  (brain sync skipped)"
+
+say "Done — now on $("$GRIN" --version 2>/dev/null || echo grin) ($BEFORE -> $AFTER). Relaunch Grin from the menu."

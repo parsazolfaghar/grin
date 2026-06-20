@@ -102,6 +102,35 @@ def test_ensure_seeded_populates_then_is_idempotent(tmp_path):
     assert len(again.lessons_for(["root-owned-flag"])) == 1
 
 
+def test_sync_seeds_adds_new_without_wiping_learning(tmp_path):
+    from grin.brain import DEFAULT_SEEDS
+    p = str(tmp_path / "l.jsonl")
+    b = Brain(path=p)
+    b.ensure_seeded()
+    # simulate a learned reinforcement on an existing seed
+    s0_sit, _s0_kind, s0_text = DEFAULT_SEEDS[0]
+    b.record(s0_sit, s0_text, kind="playbook", outcome="worked")
+    learned = next(x for x in b.lessons_for([s0_sit]) if x.text == s0_text).worked
+    # a new release adds a brand-new lesson the user's brain hasn't seen
+    b.record("new-situation-xyz", "obsolete user lesson", kind="pitfall", outcome="failed")
+    before = len(b._lessons)
+    added = Brain(path=p).sync_seeds()        # update path on a fresh instance
+    assert added == 0                          # all current seeds already present -> nothing new
+    # the learned reinforcement is untouched
+    b2 = Brain(path=p)
+    assert next(x for x in b2.lessons_for([s0_sit]) if x.text == s0_text).worked == learned
+    # the user's own learned lesson survives the sync
+    assert any(x.text == "obsolete user lesson" for x in b2.lessons_for(["new-situation-xyz"]))
+    assert len(b2._lessons) == before
+
+
+def test_sync_seeds_on_empty_adds_all(tmp_path):
+    from grin.brain import DEFAULT_SEEDS
+    b = Brain(path=str(tmp_path / "l.jsonl"))
+    added = b.sync_seeds()
+    assert added == len(DEFAULT_SEEDS)
+
+
 def test_seeded_brain_renders_helper_for_situation(tmp_path):
     b = Brain(path=str(tmp_path / "l.jsonl"))
     b.ensure_seeded()

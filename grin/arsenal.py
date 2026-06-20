@@ -12,6 +12,16 @@ ARSENAL_IMAGES = {
 }
 _DISTRO = {"grin-kali": "apt", "grin-blackarch": "pacman"}
 
+# The deterministic helpers/closers (grin/tools/<src>.py) deployed into the arsenal containers as
+# /usr/local/bin/<name>. They run INSIDE the containers, so an update must re-deploy them here — a
+# `git pull` alone leaves the containers on the old helper. Single source of truth (provision-runner
+# mirrors this list).
+HELPERS = {
+    "webexec": "web-rce", "sshloot": "ssh-loot", "suidhijack": "suid-hijack",
+    "webscan": "web-scan", "idrive": "grin-shell", "sudoesc": "sudo-gtfo",
+    "credsweep": "cred-sweep", "lficrack": "lfi-crack",
+}
+
 # The two arsenals are COMPLEMENTARY, not redundant: tools are split so a real engagement must reach
 # BOTH. Kali carries recon + web exploitation + the deterministic helpers; BlackArch owns the
 # brute-force / online-cracking tools (hydra, medusa). Because ArsenalRunner prefers Kali first, a
@@ -136,6 +146,28 @@ def run_status() -> int:
                             "; do command -v $t >/dev/null && echo $t; done | wc -l"])
             ntools = (present.stdout or "0").strip()
         print(f"  {name:16s} running={up} baseline_tools={ntools}")
+    return 0
+
+
+def run_deploy_helpers() -> int:
+    """Deploy grin/tools/<src>.py into each running arsenal container as /usr/local/bin/<name>, so an
+    update's helper/closer fixes actually reach the containers (where they run). Idempotent."""
+    import os
+    tools_dir = os.path.join(os.path.dirname(__file__), "tools")
+    n = 0
+    for name in ARSENAL_IMAGES:
+        if not _exists(name):
+            continue
+        for src, dst in HELPERS.items():
+            sp = os.path.join(tools_dir, f"{src}.py")
+            if not os.path.exists(sp):
+                continue
+            if _run(["docker", "cp", sp, f"{name}:/usr/local/bin/{dst}"]).returncode == 0:
+                _run(["docker", "exec", name, "sh", "-lc",
+                      f"sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/{dst} "
+                      f"&& chmod +x /usr/local/bin/{dst}"])
+                n += 1
+    print(f"deployed {n} helper instance(s) across arsenal containers")
     return 0
 
 

@@ -135,6 +135,18 @@ class Brain:
         for situation, kind, text in DEFAULT_SEEDS:
             self.record(situation, text, kind=kind, outcome="worked")
 
+    def sync_seeds(self) -> int:
+        """Bring an EXISTING brain up to date with the current DEFAULT_SEEDS on update: add any seed
+        that isn't already present, WITHOUT touching the worked/failed tallies of what the brain has
+        learned. Returns how many new seeds were added. (record() would bump an existing seed's count,
+        so we add only the missing ones.)"""
+        added = 0
+        for situation, kind, text in DEFAULT_SEEDS:
+            if (situation, text) not in self._lessons:
+                self.record(situation, text, kind=kind, outcome="worked")
+                added += 1
+        return added
+
     def lessons_for(self, situations: list[str]) -> list[Lesson]:
         """Lessons matching any current situation: playbooks first (by net score desc), then pitfalls
         (by times-failed desc)."""
