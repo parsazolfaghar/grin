@@ -1,4 +1,4 @@
-from grin.closer import closer_commands, extract_web_foothold
+from grin.closer import closer_commands, command_target, extract_web_foothold
 
 
 def test_extract_foothold_from_web_rce_command():
@@ -71,6 +71,28 @@ def test_closer_commands_smb_enum_when_445_open():
     h = "Nmap scan report for 10.0.0.9\n445/tcp open microsoft-ds"
     cmds = closer_commands(h, "10.0.0.9")
     assert any("smbclient -L //10.0.0.9 -N" in c for c in cmds)
+
+
+def test_foothold_ignores_out_of_scope_url_from_banner():
+    # REGRESSION: nmap prints "https://nmap.org" in its banner; the closer must NOT target it —
+    # it must fall back to the in-scope target, never attack a leaked external URL.
+    h = "Starting Nmap 7.99 ( https://nmap.org ) scan of 172.30.0.16\n80/tcp open http"
+    fh = extract_web_foothold(h, "172.30.0.16")
+    assert fh is not None
+    assert "nmap.org" not in fh["url"]
+    assert "172.30.0.16" in fh["url"]
+    # and no closer command may reference the out-of-scope host
+    assert all("nmap.org" not in c for c in closer_commands(h, "172.30.0.16"))
+
+
+def test_command_target_extracts_true_destination():
+    assert command_target("ssh-loot --host 172.30.0.17 --key /tmp/loot/id_rsa", "172.30.0.16") \
+        == "172.30.0.17"
+    assert command_target("cred-sweep --target 10.0.0.5", "x") == "10.0.0.5"
+    assert command_target("sqlmap -u 'http://evil.com/?id=1' -p id --batch", "10.0.0.5") \
+        == "evil.com"   # so the spine scope-check sees evil.com and REFUSES it
+    assert command_target("suid-hijack --url http://172.30.0.15/ --param name", "t") == "172.30.0.15"
+    assert command_target("nmap -sn 10.0.0.0/24", "10.0.0.5") == "10.0.0.5"  # no host -> default
 
 
 def test_closer_commands_empty_when_no_foothold():

@@ -42,7 +42,7 @@ def _closer_pass(eng, *, target, journal, runner, now, executed_commands, brain)
     (suid-hijack / sudo-gtfo / ssh-loot / web-rce) THROUGH THE SPINE — no model in the loop — and
     capture the flag if one comes back. Returns True iff a flag was captured. This is what makes 6/6
     consistent despite a stochastic model."""
-    from grin.closer import closer_commands
+    from grin.closer import closer_commands, command_target
     if _has_flag(journal):
         return False
     # Up to 2 passes: pass 1 may run ENABLING steps (exfiltrate a key, scan for the pivot host);
@@ -54,14 +54,17 @@ def _closer_pass(eng, *, target, journal, runner, now, executed_commands, brain)
             if norm in executed_commands:
                 continue
             tool = cmd.split()[0]
-            out = submit_action(eng, target=target, tool=tool, command=cmd,
+            # submit with the command's TRUE destination as the target, so the spine scope-checks the
+            # real host the tool will hit (refuses an out-of-scope URL/host embedded in the command).
+            dest = command_target(cmd, target)
+            out = submit_action(eng, target=dest, tool=tool, command=cmd,
                                 declared_class="post-exploit", runner=runner, now=now)
             executed_commands.add(norm)
             ran_any = True
             if out.status != "executed":
                 continue
             raw = out.result.output or ""
-            found = extract(tool, cmd, raw, target)
+            found = extract(tool, cmd, raw, dest)
             journal.add_step(Step(action={"tool": tool, "command": cmd, "target": target,
                                           "declared_class": "post-exploit",
                                           "why": "deterministic closer (model bypass)"},

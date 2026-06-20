@@ -54,11 +54,17 @@ def extract_web_foothold(history: str, target: str) -> dict | None:
             param = m.group(1)
 
     if url is None:
-        m = re.search(r"https?://[^\s'\"]+", h)
-        if m:
-            url = m.group(0)
-            # collapse to the endpoint root (helpers take the endpoint, not a full query)
-            url = url.split("?", 1)[0]
+        # only accept a URL whose host is the in-scope TARGET — never a URL leaked in a tool banner
+        # (e.g. nmap prints "https://nmap.org"); attacking that would be out of scope.
+        for cand in re.findall(r"https?://[^\s'\"]+", h):
+            cand = cand.split("?", 1)[0]
+            if target and target in cand:
+                url = cand
+                break
+
+    # a URL we DID find (e.g. from --url) must still be the in-scope target, else discard it
+    if url is not None and target and target not in url:
+        url = None
 
     # require SOME web signal tied to this engagement
     has_web = url is not None or param is not None or "http" in h.lower()
@@ -142,3 +148,23 @@ def closer_commands(history: str, target: str) -> list[str]:
 def _subnet24(target: str) -> str | None:
     m = re.match(r"^(\d{1,3}\.\d{1,3}\.\d{1,3})\.\d{1,3}$", target or "")
     return f"{m.group(1)}.0/24" if m else None
+
+
+def command_target(cmd: str, default: str) -> str:
+    """The TRUE destination host a closer command will hit — so _closer_pass can submit it through the
+    spine with THAT as the target and the spine's scope check applies to the real destination (not
+    just the engagement target). This is what stops an out-of-scope host/URL embedded in a command."""
+    import urllib.parse
+    m = re.search(r"--host\s+(\S+)", cmd) or re.search(r"--target\s+(\S+)", cmd)
+    if m:
+        return m.group(1).strip("'\"")
+    m = re.search(r"--url\s+(\S+)", cmd)
+    if m:
+        host = urllib.parse.urlsplit(m.group(1).strip("'\"")).hostname
+        if host:
+            return host
+    # sqlmap -u 'http://h/...' / a bare URL in the command
+    m = re.search(r"https?://([^/\s'\"]+)", cmd)
+    if m:
+        return m.group(1)
+    return default
