@@ -20,9 +20,10 @@ import sys
 # world-readable places a unix password hash leaks from (no breadcrumb needed)
 _HASH_FILES = ["var/backups/shadow.bak", "var/backups/passwd.bak", "etc/shadow",
                "var/backups/shadow", "etc/passwd"]
-# a crackable hash: $1$ md5, $5$ sha256, $6$ sha512, $y$ yescrypt, $2[aby]$ bcrypt
+# a crackable hash: $1$ md5, $5$ sha256, $6$ sha512, $y$ yescrypt, $2[aby]$ bcrypt.
+# NOT anchored to line start — the hash often arrives wrapped (e.g. inside an HTML <pre>devops:$6$...).
 _SHADOW_RE = re.compile(
-    r"^([a-z_][a-z0-9_-]*):(\$(?:1|5|6|y|2[aby])\$[^\s:]+):", re.M)
+    r"([a-z_][a-z0-9_-]*):(\$(?:1|5|6|y|2[aby])\$[^\s:]+)")
 _FLAG_READ = "id; cat ~/flag.txt 2>/dev/null; cat /root/flag.txt 2>/dev/null; cat /flag.txt 2>/dev/null"
 
 
