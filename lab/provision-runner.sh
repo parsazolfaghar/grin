@@ -37,6 +37,9 @@ for h in webexec:web-rce sshloot:ssh-loot suidhijack:suid-hijack webscan:web-sca
   docker exec "$C" sh -c "sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/$dst && chmod +x /usr/local/bin/$dst"
 done
 
+echo "[*] ProjectDiscovery suite into BlackArch (broad real-world coverage; routes there)"
+docker exec grin-blackarch sh -lc "for t in nuclei httpx subfinder; do command -v \$t >/dev/null || pacman -Sy --noconfirm --needed \$t >/dev/null 2>&1 || true; done; nuclei -update-templates -silent >/dev/null 2>&1 || true" 2>/dev/null || true
+
 echo "[*] verify"
 docker exec "$C" sh -c "command -v nmap hydra john ssh-loot web-rce suid-hijack web-scan grin-shell sudo-gtfo >/dev/null && echo '    OK: tools + helpers present' || echo '    WARN: something missing'"
 echo "[done] runner '$C' provisioned"
