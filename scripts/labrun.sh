@@ -43,7 +43,7 @@ for t in "${ORDER[@]}"; do
 d=yaml.safe_load(open('lab/answers.yaml')); rows=d['targets'] if isinstance(d,dict) else d
 print(next(r['flag'] for r in rows if r['id']=='$t'))")"
   "$VENV" -m grin.cli engage "examples/lab/lab-$t.yaml" --goal "${GOALS[$t]}" \
-      >/tmp/grin-$t.log 2>&1
+      --max-objectives 14 --max-steps 16 >/tmp/grin-$t.log 2>&1
   if grep -rqF "$EXP" loot audit 2>/dev/null; then
     echo "  $t   PASS  flag captured"; pass=$((pass+1))
   else
