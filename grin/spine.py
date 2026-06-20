@@ -70,6 +70,16 @@ def submit_action(eng: Engagement, *, target: str, tool: str, command: str,
         return _audit_refuse(eng, target=target, tool=tool, command=command,
                              action_class=action_class, gated=False, reason=decision.reason)
 
+    # Defense in depth: even with an in-scope target, refuse a command that names an out-of-scope
+    # host/CIDR (e.g. a subnet sweep `nmap -sn 192.168.1.0/24` while scope is a single host). The
+    # target check above only sees the target field; this catches hosts smuggled into the command.
+    from grin.scope import command_out_of_scope
+    oos = command_out_of_scope(command, eng.scope.include, eng.scope.exclude)
+    if oos:
+        return _audit_refuse(eng, target=target, tool=tool, command=command,
+                             action_class=action_class, gated=False,
+                             reason=f"command targets out-of-scope host(s): {', '.join(oos)}")
+
     store = PendingStore(pending_path(eng))
     if gate(action_class, eng.autonomy, store.approved_phases()) == "pending":
         pid = store.add(target=target, tool=tool, command=command, resolved_class=action_class)

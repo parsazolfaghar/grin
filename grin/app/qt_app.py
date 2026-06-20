@@ -588,11 +588,17 @@ class DiscoveredStrip(QFrame):
             return f"{n} {w}" + ("" if n == 1 else "s")
         self.summary.setText(" · ".join([_n(cmds, "cmd"), _n(len(hosts), "host"),
                                          _n(len(creds), "cred"), _n(len(flags), "flag")]).upper())
+        # Cap rendering so a big sweep (e.g. a whole /24) can't freeze the UI; show hosts WITH open
+        # services first (the interesting ones), then a "+N more" tail.
+        MAX_HOSTS = 14
+        ranked = sorted(hosts, key=lambda h: -len(h.get("services") or []))
         lines = []
-        for h in hosts:
+        for h in ranked[:MAX_HOSTS]:
             svcs = "   ".join(f"{s.get('port')}/tcp {s.get('name','')}"
                               for s in (h.get("services") or [])) or "(no open ports)"
             lines.append(f"{h.get('target') or '(unattributed)'}    {svcs}")
+        if len(ranked) > MAX_HOSTS:
+            lines.append(f"… +{len(ranked) - MAX_HOSTS} more hosts")
         cred_txt = ", ".join(c.get("value", "") for c in creds) or "—"
         flag_txt = ", ".join(f.get("value", "") for f in flags) or "—"
         lines.append(f"creds: {cred_txt}    flags: {flag_txt}")

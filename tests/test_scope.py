@@ -38,3 +38,23 @@ def test_url_host_is_authorized_by_host_entry():
 
 def test_host_port_authorized_by_bare_host():
     assert in_scope("10.0.0.5:8080", INC, EXC) is True
+
+
+def test_command_out_of_scope_catches_subnet_sweep():
+    from grin.scope import command_out_of_scope
+    inc, exc = ["192.168.1.250"], []
+    # the exact freeze trigger: a /24 sweep while scope is a single host
+    assert command_out_of_scope("nmap -sn 192.168.1.0/24", inc, exc) == ["192.168.1.0/24"]
+    # in-scope host in the command is fine
+    assert command_out_of_scope("nmap -sV 192.168.1.250", inc, exc) == []
+    # loopback is ignored; no host tokens is fine
+    assert command_out_of_scope("sshpass -p x ssh u@127.0.0.1 id", inc, exc) == []
+    assert command_out_of_scope("cat /etc/passwd", inc, exc) == []
+    # a second out-of-scope host is caught
+    assert command_out_of_scope("ssh 10.0.0.9; nmap 8.8.8.8", inc, exc) == ["10.0.0.9", "8.8.8.8"]
+
+
+def test_command_in_scope_when_cidr_authorized():
+    from grin.scope import command_out_of_scope
+    # if the engagement authorizes the /24, a /24 sweep is allowed
+    assert command_out_of_scope("nmap -sn 192.168.1.0/24", ["192.168.1.0/24"], []) == []
