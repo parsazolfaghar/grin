@@ -12,14 +12,23 @@ ARSENAL_IMAGES = {
 }
 _DISTRO = {"grin-kali": "apt", "grin-blackarch": "pacman"}
 
+# The two arsenals are COMPLEMENTARY, not redundant: tools are split so a real engagement must reach
+# BOTH. Kali carries recon + web exploitation + the deterministic helpers; BlackArch owns the
+# brute-force / online-cracking tools (hydra, medusa). Because ArsenalRunner prefers Kali first, a
+# tool present ONLY on BlackArch (hydra) deterministically routes there — so e.g. an SSH-brute step
+# exercises BlackArch every run. This is what makes "grin uses both" verifiable, not incidental.
 BASELINE = {
-    "apt": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "netcat-traditional",
+    "apt": ["nmap", "sqlmap", "nikto", "gobuster", "ffuf", "netcat-traditional",
             "openssh-client", "sshpass", "curl", "wget", "iputils-ping", "wordlists", "john"],
     # pacman/BlackArch package names differ: netcat is openbsd-netcat (gnu-netcat isn't in the synced
     # repos); there is no 'wordlists' meta-package (run_up writes its own curated lists anyway).
-    "pacman": ["nmap", "hydra", "sqlmap", "nikto", "gobuster", "ffuf", "openbsd-netcat",
+    # hydra/medusa live HERE ONLY (not in the apt list) so brute-force routes to BlackArch.
+    "pacman": ["hydra", "medusa", "nmap", "sqlmap", "nikto", "gobuster", "ffuf", "openbsd-netcat",
                "openssh", "sshpass", "curl", "wget", "iputils", "john"],
 }
+
+# Tools intentionally kept OFF the Kali arsenal so they route to BlackArch (verifies cross-arsenal use).
+BLACKARCH_ONLY = ("hydra", "medusa")
 
 
 def distro_for(container: str) -> str:

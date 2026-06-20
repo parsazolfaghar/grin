@@ -52,6 +52,17 @@ def test_pacman_baseline_has_no_known_bad_names():
     assert "openbsd-netcat" in BASELINE["pacman"]      # the correct Arch netcat
 
 
+def test_arsenals_are_complementary_hydra_blackarch_only():
+    # the two arsenals must NOT be redundant: hydra/medusa live only on BlackArch so brute-force
+    # routes there, verifying grin reaches both arsenals during a real run.
+    from grin.arsenal import BASELINE, BLACKARCH_ONLY
+    assert "hydra" not in BASELINE["apt"]
+    assert "hydra" in BASELINE["pacman"]
+    assert "hydra" in BLACKARCH_ONLY
+    # the common recon tool stays on Kali (so most tools still resolve to Kali first)
+    assert "nmap" in BASELINE["apt"]
+
+
 def test_probe_argv():
     argv = probe_argv("grin-kali", "nmap")
     assert argv[:3] == ["docker", "exec", "grin-kali"]

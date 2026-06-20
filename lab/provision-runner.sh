@@ -7,9 +7,12 @@ C="${1:-grin-kali}"
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 
 echo "[*] toolset"
+# NOTE: hydra/medusa are deliberately NOT installed here — they live ONLY on the BlackArch arsenal,
+# so brute-force steps route there (verifies grin uses both arsenals). Keep this list helper-friendly.
 docker exec "$C" sh -c "apt-get update -qq && DEBIAN_FRONTEND=noninteractive apt-get install -y -qq \
-  openssh-client sshpass hydra curl wget netcat-traditional sqlmap nikto nmap iputils-ping \
-  wordlists john python3 python3-pexpect >/dev/null 2>&1 || true"
+  openssh-client sshpass curl wget netcat-traditional sqlmap nikto nmap iputils-ping \
+  wordlists john python3 python3-pexpect >/dev/null 2>&1 || true; \
+  apt-get remove -y -qq hydra medusa >/dev/null 2>&1 || true"
 
 echo "[*] rockyou"
 docker exec "$C" sh -c "gunzip -f /usr/share/wordlists/rockyou.txt.gz 2>/dev/null || true"
