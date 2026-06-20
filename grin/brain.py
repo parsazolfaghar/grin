@@ -55,7 +55,7 @@ DEFAULT_SEEDS = [
     ("web-target", "playbook",
      "A web service is in scope. For broad real-world coverage run nuclei EARLY — it checks thousands "
      "of known CVEs + misconfigurations deterministically and each hit is evidence-backed: "
-     "`nuclei -u http://<target> -severity low,medium,high,critical -silent` (use httpx/subfinder for "
+     "`nuclei -u http://<target> -severity low,medium,high,critical -nc -silent` (use httpx/subfinder for "
      "live-host + subdomain discovery on external scope first). Record every nuclei hit as a finding, "
      "then chase the exploitable ones (RCE/SSTI/SQLi/auth-bypass) with web-rce/sqlmap."),
     ("flag-not-captured", "pitfall",

@@ -210,12 +210,13 @@ def extract(tool: str, command: str, output: str, target: str) -> List[Secret]:
 # nuclei default line:  [template-id] [protocol] [severity] matched-at [optional name]
 _NUCLEI_RE = re.compile(
     r"\[([^\]]+?)\]\s+\[(\w+)\]\s+\[(info|low|medium|high|critical|unknown)\]\s+(\S+)", re.I)
+_ANSI_RE = re.compile(r"\x1b\[[0-9;]*m")
 
 
 def _extract_nuclei(command: str, output: str, target: str) -> List[Finding]:
     out: List[Finding] = []
     seen: set[str] = set()
-    for line in (output or "").splitlines():
+    for line in _ANSI_RE.sub("", output or "").splitlines():   # strip color so titles parse clean
         m = _NUCLEI_RE.search(line)
         if not m:
             continue
