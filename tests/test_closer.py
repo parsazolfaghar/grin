@@ -48,5 +48,19 @@ def test_closer_commands_ssh_pivot_when_key_and_host():
     assert "/tmp/loot/id_rsa" in joined
 
 
+def test_closer_commands_includes_sqlmap_for_web_foothold():
+    h = "web-rce --url http://t/search --param q --method GET --mode cmdi -> uid=33"
+    cmds = closer_commands(h, "t")
+    sql = [c for c in cmds if c.startswith("sqlmap")]
+    assert sql and "--batch" in sql[0] and "--dump" in sql[0] and "-p q" in sql[0]
+
+
+def test_closer_commands_cred_sweep_when_ssh_open():
+    h = "Nmap scan report for 10.0.0.5\n22/tcp open ssh OpenSSH 8.2"
+    cmds = closer_commands(h, "10.0.0.5")
+    assert any(c == "cred-sweep --target 10.0.0.5" for c in cmds)
+
+
 def test_closer_commands_empty_when_no_foothold():
+    # no web foothold AND no ssh signal -> nothing to deterministically close
     assert closer_commands("nmap only, nothing found", "10.0.0.5") == []

