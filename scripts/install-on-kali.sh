@@ -20,6 +20,9 @@ say "Installing Grin via pipx (editable, with GUI + docker support)"
 pipx install --force -e ".[app]"
 pipx ensurepath
 
+say "Seeding the Grin Brain (persistent learned lessons — ships ready, then learns as it runs)"
+"$HOME/.local/bin/grin" brain seed || true
+
 say "Desktop launcher (sources your cloud key + uses grin's full path)"
 APPS="$HOME/.local/share/applications"
 ICONS="$HOME/.local/share/icons/hicolor/256x256/apps"

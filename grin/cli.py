@@ -737,6 +737,30 @@ def cmd_lab(action: str, out_dir: str = None, runner: str = "grin-kali",
     return 2
 
 
+def cmd_brain(action: str) -> int:
+    """Manage the Grin Brain (persistent cross-engagement lessons). Ships seeded; learns as it runs."""
+    from grin.brain import Brain, DEFAULT_SEEDS
+    b = Brain()
+    if action == "seed":
+        b.ensure_seeded()
+        sits = {s for s, _, _ in DEFAULT_SEEDS}
+        print(f"brain seeded ({len(sits)} situations) at {b.path}")
+        return 0
+    if action == "path":
+        print(b.path)
+        return 0
+    if action == "list":
+        b.ensure_seeded()
+        sits = sorted({s for s, _, _ in DEFAULT_SEEDS} | {le.situation for le in b._lessons.values()})
+        for s in sits:
+            for le in b.lessons_for([s]):
+                tag = "DO " if le.kind == "playbook" else "AVOID"
+                print(f"[{s}] {tag} (+{le.worked}/-{le.failed}) {le.text[:100]}")
+        return 0
+    print(f"unknown brain action {action!r}", file=sys.stderr)
+    return 2
+
+
 def cmd_arsenal(action: str, tool: str = None) -> int:
     if action == "up":
         return arsenal_up()
@@ -982,6 +1006,9 @@ def build_parser() -> argparse.ArgumentParser:
     p_ars.add_argument("action", choices=["up", "down", "status", "add"])
     p_ars.add_argument("tool", nargs="?", default=None, help="(add) tool to install")
 
+    p_brain = sub.add_parser("brain", help="manage the Grin Brain (persistent learned lessons)")
+    p_brain.add_argument("action", choices=["seed", "list", "path"])
+
     dc = sub.add_parser("discoveries", help="print deterministic discoveries from an engagement's results store")
     dc.add_argument("file")
 
@@ -1060,6 +1087,8 @@ def main(argv=None) -> int:
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
     if args.group == "arsenal":
         return cmd_arsenal(args.action, tool=args.tool)
+    if args.group == "brain":
+        return cmd_brain(args.action)
     if args.group == "discoveries":
         return cmd_discoveries(args.file)
     return 2

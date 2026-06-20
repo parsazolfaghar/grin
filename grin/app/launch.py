@@ -45,6 +45,11 @@ def main(argv=None) -> int:
     try:
         from grin.config import load_env_file
         load_env_file()
+        try:                          # the Grin Brain ships seeded; make sure it's populated
+            from grin.brain import Brain
+            Brain().ensure_seeded()
+        except Exception as e:  # noqa: BLE001
+            log(f"brain seed skipped: {e}")
         from grin.toolpath import ensure_tool_path
         added = ensure_tool_path()   # a Finder-clicked app lacks Homebrew on PATH -> add it
         if added:

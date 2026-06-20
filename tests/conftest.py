@@ -17,4 +17,6 @@ def _isolate_user_env(monkeypatch, tmp_path):
     monkeypatch.setattr("grin.config.load_env_file", lambda *a, **k: {})
     monkeypatch.setenv("GRIN_APP_LOG", str(tmp_path / "app.log"))
     monkeypatch.setenv("GRIN_ENGAGEMENTS_ROOT", str(tmp_path / "engagements"))
+    # the Grin Brain must not read/write the developer's real ~/.grin/brain during tests
+    monkeypatch.setenv("GRIN_BRAIN_PATH", str(tmp_path / "brain" / "lessons.jsonl"))
     yield

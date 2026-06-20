@@ -13,6 +13,7 @@ from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
 from grin.results import ResultStore
+from grin.brain import Brain, detect_situations
 
 DEFAULT_MODEL = "qwen3:14b"   # config default; the real pin is set on the rig, not in code
 
@@ -44,7 +45,15 @@ class TaskResult:
 def execute_task(eng: Engagement, *, objective: str, target: str, client, runner,
                  now: datetime, model: str = DEFAULT_MODEL, max_steps: int = 12,
                  journal: Journal | None = None, engagement_path: str = "",
-                 executed_commands: set | None = None) -> TaskResult:
+                 executed_commands: set | None = None, brain: "Brain | None" = None) -> TaskResult:
+    # Grin Brain: load (and seed once) the persistent lessons store unless a caller injected one
+    # (tests pass their own / None-via-env). Failures here must never break a run.
+    if brain is None:
+        try:
+            brain = Brain()
+            brain.ensure_seeded()
+        except Exception:  # noqa: BLE001
+            brain = None
     if journal is None:
         task_id = uuid.uuid4().hex[:8]
         journal = Journal(task_id=task_id, objective=objective, target=target,
@@ -64,7 +73,8 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
     noprogress = 0
 
     while len(journal.steps) < journal.max_steps:
-        system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions)
+        system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions,
+                                         brain=brain)
         raw = client.generate(model=model, system=system, prompt=user, temperature=0.3)
         decision = parse_step(raw, target)
 
@@ -140,6 +150,9 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             # A captured flag is terminal proof for this objective — finish now instead of taking
             # more steps. (The Orchestrator decides whether the whole engagement is done.)
             if any(getattr(s, "label", "") == "flag" for s in found_secrets):
+                if brain is not None:
+                    from grin.brain import reinforce_success
+                    reinforce_success(brain, journal.render_history(), target)
                 journal.save()
                 return TaskResult("completed", journal.findings, journal,
                                   secrets=journal.secrets)

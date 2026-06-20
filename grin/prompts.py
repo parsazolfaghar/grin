@@ -59,13 +59,24 @@ def _self_correct_banner(journal) -> str:
     )
 
 
-def build_step_prompt(objective: str, target: str, journal, allowed_classes) -> tuple[str, str]:
+def build_step_prompt(objective: str, target: str, journal, allowed_classes,
+                      brain=None) -> tuple[str, str]:
     history = journal.render_history()
+    # Grin Brain: inject the proven plays for the situations detected in this run's history, so the
+    # right deterministic helper is applied EVERY time instead of rediscovered by luck.
+    learned = ""
+    if brain is not None:
+        try:
+            from grin.brain import detect_situations
+            learned = brain.render(detect_situations(history, target=target))
+        except Exception:  # noqa: BLE001 - the brain must never break a run
+            learned = ""
     user = (
         f"Objective: {objective}\n"
         f"Authorized target: {target}\n"
         f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
-        f"History so far:\n{history}\n\n"
+        + learned
+        + f"History so far:\n{history}\n\n"
         + _self_correct_banner(journal)
         + "## Read the result, then chase the lead (most important rule)\n"
         "Before deciding, READ the most recent result above. If it reveals anything specific — an "
