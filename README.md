@@ -1,32 +1,130 @@
-# Grin
+<div align="center">
 
-A multi-agent autonomous red-team orchestrator for **authorized** engagements. An LLM brain (cloud or
-local) plans and drives offensive tools, but **every action is forced through a fail-closed spine** —
-the sole path that resolves the action class, authorizes it against the engagement scope/ROE, gates it
-by autonomy level, executes it on the bound arsenal, and appends an append-only audit record. The
-orchestrator can go fully autonomous or pause for your approval; it never widens scope or runs an
-out-of-scope/out-of-window action.
+<img src="grin/app/assets/logo.png" alt="GRIN" width="150">
 
-> Authorized engagements only. The operator-side audit trail is always intact — it is for
-> accountability, never to dodge authorization or attribution.
+# GRIN
 
-## Quickstart — the desktop app (standalone)
+**Autonomous red-team orchestrator.** It finds the foothold, escalates, pivots across hosts, and
+captures the proof — *on its own*. Fail-closed by design.
 
-Three things make a full Grin on one machine: the **app**, a **brain**, and an **arsenal**.
+[![ci](https://github.com/parsazolfaghar/grin/actions/workflows/ci.yml/badge.svg)](https://github.com/parsazolfaghar/grin/actions/workflows/ci.yml)
+![python](https://img.shields.io/badge/python-3.12+-0b18e8)
+![license](https://img.shields.io/badge/license-all--rights--reserved-f3df33)
+![status](https://img.shields.io/badge/use-authorized--only-red)
 
-1. **Install / build the app** — see [Desktop app](#desktop-app). On macOS you get a clickable
-   `Grin.app`.
-2. **Brain** — put your cloud key in `~/.grin/env` (loaded at startup):
+**⭐ Star it if grin is your kind of tool.**
+
+</div>
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/parsazolfaghar/grin/main/scripts/install.sh | bash
+```
+
+> **Authorized security testing only.** You bring your own API key — grin ships with no API and
+> **never proxies or sees your traffic**. What you do with it is your responsibility. Not open
+> source: see [LICENSE](LICENSE).
+
+---
+
+## Why it actually lands
+
+Most "AI hacks for you" demos stall the moment the model gets unlucky. Grin doesn't, because the
+*model isn't the last mile* — code is.
+
+- **Deterministic closers.** When the model would give up, grin's code takes over through the spine
+  and finishes the job: default-cred sweep, command-injection, sudo & SUID privesc, LFI→crack, SQLi,
+  and SSH-key lateral movement. The win isn't left to luck.
+- **A brain that learns.** Persistent, cross-engagement memory recognizes the situation and applies
+  the proven play every time — and learns from every success and wall.
+- **Dual arsenal.** Self-provisioning **Kali + BlackArch** containers, complementary by design — a
+  laptop with Docker is a full rig.
+- **Fail-closed spine.** Every action: resolve → authorize → gate → execute → audit. Out-of-scope is
+  *refused*, not run. The model can't go around it.
+- **Broad coverage.** Integrated nuclei brings thousands of CVE/misconfig checks; every hit is an
+  evidence-backed finding.
+- **One-button updates.** One click pulls the code, re-deploys the in-container helpers, and syncs the
+  brain — all three layers, current.
+
+## Quickstart
+
+1. **Install** — the one-liner above (Kali/Debian; needs `git` + `docker`). Or `pip install -e ".[app]"`.
+2. **Bring your own brain** — drop a key in `~/.grin/deepseek.env` (any OpenAI-compatible endpoint;
+   DeepSeek-V3 recommended), or run a local model with Ollama and skip the cloud entirely:
    ```
    GRIN_MODEL_BACKEND=openai
-   GRIN_MODEL_URL=https://api.deepseek.com
-   GRIN_MODEL_API_KEY=sk-...
+   GRIN_MODEL_URL=https://api.deepseek.com/v1
+   GRIN_MODEL_API_KEY=sk-...        # YOUR key. grin never proxies it.
    ```
-   (Or run a local Ollama and leave these unset.)
-3. **Arsenal** — install **Docker**; Grin provisions its own Kali/BlackArch tool containers
-   (`grin arsenal up`), or auto-detects a local pentest host. See [Arsenal](#arsenal).
+3. **Go** — launch the app, type a target + goal in the Engage bar, and watch it work. Or use the CLI
+   below.
 
-Then open the app, type a task or a target in the **Engage bar**, set the dashboard toggles, and go.
+## Platforms
+
+Runs on **macOS, Windows, and Linux**. The desktop app + engine are cross-platform Python; the
+**arsenal runs anywhere Docker does**, so the same task works on a Kali laptop (native tools) and on a
+Mac or Windows box (Docker Kali/BlackArch). The `curl | bash` one-liner targets Kali/Debian; on
+macOS/Windows install with `pip install -e ".[app]"` + Docker Desktop.
+
+## Full feature set
+
+<details open>
+<summary><b>Everything it does</b> — the actual machinery.</summary>
+
+**Fail-closed spine**
+- One execution path: resolve → authorize → gate → execute → audit (no other code runs a command)
+- Scope + exclude enforcement — out-of-scope is *refused*
+- Action classes: passive / active-scan / exploit / post-exploit; ROE time-window enforcement
+- Append-only audit log of every allow & refuse; self-host destruction guard
+
+**Autonomy & control**
+- Modes: autonomous / action-gated / phase-gated
+- Per-action approve/deny gating; pause & `--resume`
+- Capture checkpoints on each new flag (aggressive); cooperative Stop mid-run
+- Frictionless-within-authorization defaults (auto tool-install, no nag prompts)
+
+**Multi-agent core**
+- **Orchestrator** plans objectives, chases leads, replans · **Executor** per-objective observe→act loop
+- **Analyst** reads findings & proposes follow-ups · **Medic** rescues stalls + records lessons · **Reporter** writes the deliverable
+
+**Grin Brain (learning)**
+- Persistent cross-engagement memory; detects the live situation and injects the proven play
+- Playbooks (do) + pitfalls (avoid), reinforced by real outcomes; ships seeded; syncs new plays on update
+
+**Deterministic closers** (the model-free last mile, all run through the spine)
+- `cred-sweep` default/weak SSH creds · `web-rce` cmd-injection/SSTI RCE · `sudo-gtfo` sudo-NOPASSWD GTFOBins
+- `suid-hijack` SUID PATH-hijack · `lfi-crack` traversal→offline-crack→SSH · `ssh-loot` SSH-key lateral movement
+
+**Recon & exploitation**
+- nmap · gobuster/ffuf fuzzing · **nuclei** (thousands of CVE/misconfig templates → evidence-backed findings)
+- `web-scan` reflected-XSS discovery · sqlmap SQLi test/dump · subfinder/httpx external surface
+- `grin-shell` drives interactive tools (msfconsole/meterpreter/ssh) · john + rockyou offline cracking
+
+**Arsenal & environments**
+- Self-provisioning **Kali + BlackArch** containers, complementary tool split across both distros
+- Auto-install missing tools (ask/auto/never) · envs: local / ssh / docker / arsenal / auto · a laptop with Docker = a full rig
+
+**Brains & models**
+- Any OpenAI-compatible cloud (DeepSeek/Groq/OpenRouter) or local Ollama
+- Per-role model routing (planner/recon/exploit) · cloud→cloud fallback tiers · **BYO key, never proxied**
+
+**Strength & stealth**
+- Strength: recon / normal / aggressive (full ATT&CK sweep) / max
+- Stealth: off / quiet / paranoid — egress proxy/Tor, slow timing, UA rotation, MAC/hostname spoof where it bites
+
+**Output & evidence**
+- Reports: **Markdown / SARIF / HTML** · full loot capture (creds, keys, flags) · evidence-gated findings
+- ATT&CK coverage mapping · deterministic "discoveries" view · **CI mode** (`grin ci`, fail a build on findings ≥ severity)
+
+**Desktop app & workflow**
+- Natural-language Engage bar (target+goal → scope-locked run) · MODE/STRENGTH/STEALTH/TOOLS toggles
+- Live findings/loot/audit/discoveries · approve/deny actions + tool installs · Export Report button
+- Engagement playbooks: recon-only / external-asm / internal-network / bug-bounty / ctf-solver
+
+**Platform & ops**
+- macOS · Windows · Linux · one-button complete update (code + helpers + brain) · `grin doctor` preflight
+- `grin --version` + CHANGELOG · full CLI (engage/ci/report/loot/arsenal/brain/doctor/lab/labbench/…) · built-in graded lab + benchmark
+
+</details>
 
 ## Install (CLI / dev)
 ```bash

@@ -8,8 +8,8 @@
 <meta property="og:title" content="GRIN // autonomous red-team orchestrator">
 <meta property="og:description" content="Deterministic exploit closers. A learning brain. Kali+BlackArch arsenal. Fail-closed by design. Bring your own key.">
 <meta property="og:type" content="website">
-<meta name="theme-color" content="#0a0a0a">
-<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230a0a0a'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='bold' fill='%23f3df33' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
+<meta name="theme-color" content="#0b18e8">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b18e8'/%3E%3Ctext x='16' y='23' font-family='monospace' font-size='20' font-weight='bold' fill='%23f3df33' text-anchor='middle'%3EG%3C/text%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@600;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
@@ -29,6 +29,7 @@
   <a class="nav-mark" href="#top">GRIN<sup>®</sup></a>
   <div class="nav-links">
     <a href="#what">WHAT</a>
+    <a href="#features">FEATURES</a>
     <a href="#caps">CAPABILITIES</a>
     <a href="#install">INSTALL</a>
     <a href="#rules">RULES</a>
@@ -39,7 +40,7 @@
   <button class="nav-burger" aria-label="menu" aria-expanded="false"><span></span><span></span></button>
 </nav>
 <div class="navmodal" hidden>
-  <a href="#what">WHAT</a><a href="#caps">CAPABILITIES</a><a href="#install">INSTALL</a>
+  <a href="#what">WHAT</a><a href="#features">FEATURES</a><a href="#caps">CAPABILITIES</a><a href="#install">INSTALL</a>
   <a href="#rules">RULES</a>
   <a class="navmodal-star" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">★ STAR ON GITHUB</a>
 </div>
@@ -55,8 +56,8 @@
   <h1 class="hero-word reveal">GRIN</h1>
 
   <p class="hero-tag reveal">
-    Autonomous red-team orchestrator. Fail-closed by design.
-    <span class="hl">You bring the key.</span>
+    The autonomous operator that <em>doesn't stall</em>. Foothold &rarr; root &rarr; flag &mdash;
+    hands off the keyboard. <span class="hl">You bring the key.</span>
   </p>
 
   <div class="hero-cmd reveal">
@@ -71,7 +72,16 @@
     <a class="btn btn-primary" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">
       STAR ON GITHUB <span class="btn-ico">★</span>
     </a>
-    <a class="btn btn-ghost" href="#rules">READ THE RULES <span class="btn-ico">↓</span></a>
+    <a class="btn btn-ghost" href="#install">GET IT <span class="btn-ico">↓</span></a>
+    <span class="gh-star reveal">
+      <a class="github-button" href="https://github.com/parsazolfaghar/grin"
+         data-color-scheme="dark" data-size="large" data-show-count="true"
+         aria-label="Star parsazolfaghar/grin on GitHub">Star</a>
+    </span>
+  </div>
+
+  <div class="hero-chips reveal">
+    <span>★ 6/6 ON THE GAUNTLET</span><span>KALI + BLACKARCH</span><span>FAIL-CLOSED</span><span>ZERO BABYSITTING</span>
   </div>
 
   <div class="hero-scroll reveal">[ SCROLL <span class="blink">&#9662;</span> ]</div>
@@ -83,14 +93,16 @@
 <section id="what" class="band">
   <div class="band-head reveal">
     <span class="eyebrow">[ 01 / WHAT IT IS ]</span>
-    <h2>An operator that doesn't wait for you.</h2>
+    <h2>A full red-team operator in one command.</h2>
   </div>
   <p class="lead reveal">
-    GRIN is an autonomous offensive-security orchestrator. Give it an authorized target and a goal;
-    it plans the engagement, drives Kali &amp; BlackArch tooling, gets a foothold, escalates,
-    pivots across hosts, and captures the proof &mdash; then writes it up. Every action passes through
-    a single <strong>fail-closed spine</strong> that enforces scope and logs an audit trail, so it
-    cannot wander off the targets you authorized.
+    Point GRIN at an authorized target, give it a goal, and walk away. It plans the engagement, drives
+    Kali &amp; BlackArch tooling, gets a foothold, escalates to root, pivots across hosts, captures the
+    proof, and writes the report &mdash; <strong>no keyboard required</strong>. Other "AI hacking"
+    demos flail the moment the model gets unlucky; GRIN finishes, because the last mile is
+    deterministic code, not a hopeful prompt. And every action runs through a single
+    <strong>fail-closed spine</strong> that enforces scope and logs an audit trail &mdash; it
+    physically cannot wander off the targets you authorized.
   </p>
 </section>
 
@@ -153,10 +165,134 @@
 
 <hr class="rule">
 
+<!-- ░░ FULL FEATURE SET ░░ -->
+<section id="features" class="band">
+  <div class="band-head reveal">
+    <span class="eyebrow">[ 03 / FULL FEATURE SET ]</span>
+    <h2>Everything it does.</h2>
+    <p class="lead">The actual machinery, not a buzzword list. <strong>Runs on macOS, Windows, and
+    Linux</strong> &mdash; the app is cross-platform, and the arsenal runs anywhere Docker does.</p>
+    <dl class="platforms reveal">
+      <div><dt>DESKTOP APP</dt><dd>macOS · Windows · Linux</dd></div>
+      <div><dt>BRAIN</dt><dd>Cloud or Local</dd></div>
+      <div><dt>ARSENAL</dt><dd>Docker, anywhere</dd></div>
+    </dl>
+  </div>
+
+  <div class="specs">
+    <div class="spec reveal"><h3>Fail-closed spine</h3><ul>
+      <li>One execution path: resolve &rarr; authorize &rarr; gate &rarr; execute &rarr; audit</li>
+      <li>Scope + exclude enforcement &mdash; out-of-scope is <b>refused</b></li>
+      <li>Action classes: passive / active-scan / exploit / post-exploit</li>
+      <li>ROE time-window enforcement</li>
+      <li>Append-only audit log of every allow &amp; refuse</li>
+      <li>Self-host destruction guard</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Autonomy &amp; control</h3><ul>
+      <li>Modes: <b>autonomous</b> / action-gated / phase-gated</li>
+      <li>Per-action approve / deny gating</li>
+      <li>Capture checkpoints on each new flag</li>
+      <li>Cooperative Stop mid-run</li>
+      <li>Pause &amp; resume gated engagements</li>
+      <li>Frictionless-within-authorization defaults</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Multi-agent core</h3><ul>
+      <li><b>Orchestrator</b> &mdash; plans objectives, chases leads, replans</li>
+      <li><b>Executor</b> &mdash; per-objective observe&rarr;act loop</li>
+      <li><b>Analyst</b> &mdash; reads findings, proposes follow-ups</li>
+      <li><b>Medic</b> &mdash; rescues stalls, records lessons</li>
+      <li><b>Reporter</b> &mdash; writes the deliverable</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Grin Brain (learning)</h3><ul>
+      <li>Persistent cross-engagement memory</li>
+      <li>Detects the live situation, injects the proven play</li>
+      <li>Playbooks (do) + pitfalls (avoid), reinforced by outcome</li>
+      <li>Ships seeded; learns from every win &amp; wall</li>
+      <li>Syncs new plays on update</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Deterministic closers</h3><ul>
+      <li><b>cred-sweep</b> &mdash; default / weak SSH creds</li>
+      <li><b>web-rce</b> &mdash; command-injection / SSTI RCE</li>
+      <li><b>sudo-gtfo</b> &mdash; sudo-NOPASSWD GTFOBins privesc</li>
+      <li><b>suid-hijack</b> &mdash; SUID PATH-hijack privesc</li>
+      <li><b>lfi-crack</b> &mdash; traversal &rarr; offline crack &rarr; SSH</li>
+      <li><b>ssh-loot</b> &mdash; SSH-key lateral movement</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Recon &amp; exploitation</h3><ul>
+      <li>nmap service / port discovery</li>
+      <li>gobuster / ffuf content + parameter fuzzing</li>
+      <li><b>nuclei</b> &mdash; thousands of CVE / misconfig templates</li>
+      <li>web-scan &mdash; reflected-XSS discovery</li>
+      <li>sqlmap &mdash; SQLi test &amp; dump</li>
+      <li>subfinder / httpx &mdash; external attack surface</li>
+      <li>grin-shell &mdash; drives interactive tools (msf / ssh)</li>
+      <li>john + rockyou &mdash; offline cracking</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Arsenal &amp; environments</h3><ul>
+      <li>Self-provisioning <b>Kali + BlackArch</b> containers</li>
+      <li>Complementary tool split across both distros</li>
+      <li>Auto-install missing tools (ask / auto / never)</li>
+      <li>Envs: local / ssh / docker / arsenal / auto</li>
+      <li>A laptop with Docker = a full rig</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Brains &amp; models</h3><ul>
+      <li>Any OpenAI-compatible cloud (DeepSeek / Groq / OpenRouter)</li>
+      <li>Local Ollama &mdash; no cloud at all</li>
+      <li>Per-role model routing (planner / recon / exploit)</li>
+      <li>Cloud&rarr;cloud fallback tiers (survive an outage)</li>
+      <li><b>BYO key</b> &mdash; never proxied, never seen</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Strength &amp; stealth</h3><ul>
+      <li>Strength: recon / normal / aggressive / max</li>
+      <li>Aggressive = full ATT&amp;CK catalog sweep</li>
+      <li>Stealth: off / quiet / paranoid</li>
+      <li>Egress proxy / Tor, slow timing, UA rotation</li>
+      <li>MAC / hostname spoof where it bites</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Output &amp; evidence</h3><ul>
+      <li>Reports: <b>Markdown / SARIF / HTML</b></li>
+      <li>Loot capture (credentials, keys, flags) in full</li>
+      <li>Evidence-gated findings &mdash; a tool actually ran</li>
+      <li>ATT&amp;CK coverage mapping</li>
+      <li>Deterministic "discoveries" view</li>
+      <li><b>CI mode</b> &mdash; fail a build on findings &ge; severity</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>App &amp; workflow</h3><ul>
+      <li>Natural-language Engage bar (target + goal &rarr; scoped run)</li>
+      <li>MODE / STRENGTH / STEALTH / TOOLS toggles</li>
+      <li>Live findings / loot / audit / discoveries</li>
+      <li>Approve / deny actions + tool installs</li>
+      <li>Export Report button (no terminal)</li>
+      <li>Playbooks: recon / external-asm / internal / bug-bounty / ctf</li>
+    </ul></div>
+
+    <div class="spec reveal"><h3>Platform &amp; ops</h3><ul>
+      <li><b>macOS · Windows · Linux</b></li>
+      <li>One-button complete update (code + helpers + brain)</li>
+      <li><samp>grin doctor</samp> preflight</li>
+      <li><samp>grin --version</samp> + CHANGELOG</li>
+      <li>Full CLI: engage / ci / report / loot / arsenal / brain …</li>
+      <li>Built-in graded lab + benchmark</li>
+    </ul></div>
+  </div>
+</section>
+
+<hr class="rule">
+
 <!-- ░░ INSTALL ░░ -->
 <section id="install" class="band">
   <div class="band-head reveal">
-    <span class="eyebrow">[ 03 / INSTALL ]</span>
+    <span class="eyebrow">[ 04 / INSTALL ]</span>
     <h2>One line. Then your key.</h2>
   </div>
 
@@ -190,7 +326,7 @@
 <!-- ░░ RULES / POLICY ░░ -->
 <section id="rules" class="band band-rules">
   <div class="band-head reveal">
-    <span class="eyebrow eyebrow-warn">[ 04 / RULES &amp; TERMS — READ THIS ]</span>
+    <span class="eyebrow eyebrow-warn">[ 05 / RULES &amp; TERMS — READ THIS ]</span>
     <h2>What you do with this is on you.</h2>
     <p class="lead">GRIN is real offensive tooling. The guardrails keep it inside the scope
     <em>you</em> authorize &mdash; they don't make unauthorized use lawful. By installing or running
@@ -239,6 +375,34 @@
   </ol>
 </section>
 
+<hr class="rule">
+
+<!-- ░░ CLOSING CTA ░░ -->
+<section class="ctaband">
+  <div class="ctaband-in reveal">
+    <span class="eyebrow">[ 06 / SHIP IT ]</span>
+    <h2>Point it. Authorize it.<br>Walk away.</h2>
+    <p class="lead">One command installs the whole thing. If grin is your kind of tool, the star
+    button's right here &mdash; it's how this gets found.</p>
+    <div class="ctaband-cmd">
+      <div class="cmd-row">
+        <code id="cmd3">curl -fsSL https://raw.githubusercontent.com/parsazolfaghar/grin/main/scripts/install.sh | bash</code>
+        <button class="cmd-copy" data-copy="#cmd3" aria-label="copy install command">COPY</button>
+      </div>
+    </div>
+    <div class="ctaband-row">
+      <a class="btn btn-primary" href="https://github.com/parsazolfaghar/grin" target="_blank" rel="noopener">
+        STAR ON GITHUB <span class="btn-ico">★</span>
+      </a>
+      <span class="gh-star">
+        <a class="github-button" href="https://github.com/parsazolfaghar/grin"
+           data-color-scheme="dark" data-size="large" data-show-count="true"
+           aria-label="Star parsazolfaghar/grin on GitHub">Star</a>
+      </span>
+    </div>
+  </div>
+</section>
+
 </main>
 
 <footer class="foot">
@@ -257,6 +421,7 @@
   </div>
 </footer>
 
+<script async defer src="https://buttons.github.io/buttons.js"></script>
 <script src="app.js" defer></script>
 </body>
 </html>
