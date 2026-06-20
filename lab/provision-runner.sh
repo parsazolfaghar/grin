@@ -23,12 +23,12 @@ docker exec "$C" sh -c "grep -q 'StrictHostKeyChecking no' /etc/ssh/ssh_config 2
   printf 'Host *\n    StrictHostKeyChecking no\n    UserKnownHostsFile /dev/null\n    LogLevel ERROR\n' >> /etc/ssh/ssh_config"
 
 echo "[*] deterministic exploit helpers"
-for h in webexec:web-rce sshloot:ssh-loot suidhijack:suid-hijack webscan:web-scan idrive:grin-shell; do
+for h in webexec:web-rce sshloot:ssh-loot suidhijack:suid-hijack webscan:web-scan idrive:grin-shell sudoesc:sudo-gtfo; do
   src="${h%%:*}"; dst="${h##*:}"
   docker cp "$ROOT/grin/tools/$src.py" "$C:/usr/local/bin/$dst" >/dev/null
   docker exec "$C" sh -c "sed -i '1s|.*|#!/usr/bin/env python3|' /usr/local/bin/$dst && chmod +x /usr/local/bin/$dst"
 done
 
 echo "[*] verify"
-docker exec "$C" sh -c "command -v nmap hydra john ssh-loot web-rce suid-hijack web-scan grin-shell >/dev/null && echo '    OK: tools + helpers present' || echo '    WARN: something missing'"
+docker exec "$C" sh -c "command -v nmap hydra john ssh-loot web-rce suid-hijack web-scan grin-shell sudo-gtfo >/dev/null && echo '    OK: tools + helpers present' || echo '    WARN: something missing'"
 echo "[done] runner '$C' provisioned"
