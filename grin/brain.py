@@ -33,15 +33,20 @@ DEFAULT_SEEDS = [
      "`web-rce --url <foothold-url> --param <param> --method POST --mode cmdi --cmd '<cmd>'`. "
      "Read the flag; if it's permission-denied/root-owned, ESCALATE (see root-owned-flag)."),
     ("root-owned-flag", "playbook",
-     "Permission denied on a target/sensitive file means ESCALATE, not re-scan. Escalate "
-     "deterministically with sudo-gtfo through your web foothold: "
-     "`sudo-gtfo --url <foothold-url> --param <param> --method POST --mode cmdi --flag <target-file>` "
-     "(target-file e.g. /root/flag.txt in a CTF, or any protected file/secret in real work) — it runs "
-     "`sudo -l` and abuses the NOPASSWD GTFOBins gadget for you. Do NOT re-enumerate the app instead."),
+     "Permission denied on a target/sensitive file means ESCALATE, not re-scan. Enumerate BOTH privesc "
+     "classes, then use the matching deterministic helper (try both — they don't conflict): "
+     "(1) sudo-NOPASSWD: `sudo-gtfo --url <foothold-url> --param <param> --method POST --mode <cmdi|ssti> "
+     "--flag <target-file>` (runs `sudo -l` + GTFOBins). "
+     "(2) SUID PATH-hijack: if a SUID-root binary calls another program by bare name, "
+     "`suid-hijack --url <foothold-url> --param <param> --mode <cmdi|ssti> --flag <target-file>`. "
+     "target-file e.g. /root/flag.txt (CTF) or any protected file (real work). Do NOT re-enumerate the "
+     "web app or declare done — run BOTH helpers before giving up on privesc."),
     ("ssti-foothold", "playbook",
-     "SSTI confirmed. For an SSTI->SUID privesc use suid-hijack: "
-     "`suid-hijack --url <url> --param <param> --mode ssti --flag /root/flag.txt`. For arbitrary "
-     "commands use `web-rce --mode ssti`."),
+     "SSTI/template-injection foothold (param renders e.g. {{7*7}} -> 49). Get RCE with "
+     "`web-rce --url <url> --param <param> --mode ssti --cmd '<cmd>'`. If the flag is root-owned and a "
+     "SUID-root binary calls a program by bare name, escalate with "
+     "`suid-hijack --url <url> --param <param> --mode ssti --flag /root/flag.txt`. Do NOT declare done "
+     "before running suid-hijack."),
     ("stolen-ssh-key", "playbook",
      "You have an SSH key (auto-saved to /tmp/loot/id_rsa). The MOMENT you also know another in-scope "
      "host (from `nmap -sn <range>`), pivot with ssh-loot: "
@@ -192,8 +197,9 @@ def detect_situations(history: str, *, target: str = "") -> list[str]:
         add("root-owned-flag")           # generic: hit a permission wall -> escalate
     if "begin openssh private key" in low or "begin rsa private key" in low:
         add("stolen-ssh-key")
-    # SSTI confirmed: a {{7*7}} (or similar) probe reflected as 49
-    if "{{7*7}}" in h or "{{ 7*7 }}" in h or ("49" in h and "ssti" in low):
+    # SSTI confirmed: a {{7*7}}-style probe reflected as 49, an ssti mention, or web-rce --mode ssti
+    if ("{{7*7}}" in h or "{{ 7*7 }}" in h or "ssti" in low or "--mode ssti" in low
+            or "jinja" in low or "{{" in h):
         add("ssti-foothold")
     if "uid=" in low and ("web-rce" in low or "ping" in low or "?host=" in low or "cmd" in low):
         add("cmdi-foothold")
