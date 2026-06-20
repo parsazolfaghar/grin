@@ -32,9 +32,8 @@ DEFAULT_PROFILES = {
     "split": {
         "label": "SPLIT (RIG)",
         "model_backend": "ollama",
-        # default points directly at the rig; for security prefer an SSH tunnel
-        # (`ssh -L 11434:localhost:11434 root@rig`) and set this to http://127.0.0.1:11434.
-        "ollama_url": "http://your-rig:11434",
+        # point at YOUR rig; prefer an SSH tunnel (`ssh -L 11434:localhost:11434 <you>@<rig>`).
+        "ollama_url": "http://127.0.0.1:11434",
         "env": {"kind": "ssh", "ssh_host": "root@your-rig"},
     },
 }

@@ -18,10 +18,10 @@ def test_explicit_target_wins_over_command_parsing():
 def test_ping_sweep_surfaces_live_hosts_with_no_open_ports():
     # a -sn sweep finds live hosts but no ports; they must still appear in Discoveries
     out = ("Nmap scan report for 192.168.1.1\nHost is up (0.005s latency).\n"
-           "Nmap scan report for your-rig\nHost is up (0.001s latency).\n")
+           "Nmap scan report for 192.168.1.50\nHost is up (0.001s latency).\n")
     d = discover([_rec("nmap -sn 192.168.1.0/24", out)])
     targets = {h.target for h in d.hosts}
-    assert "192.168.1.1" in targets and "your-rig" in targets
+    assert "192.168.1.1" in targets and "192.168.1.50" in targets
     assert all(h.services == [] for h in d.hosts)  # live, no open ports
 
 

@@ -17,3 +17,9 @@ grin/app/assets/grin.icns
 
 # brainstorm visual-companion scratch
 .superpowers/
+
+# internal/personal — local only, never public
+docs/superpowers/
+docs/SESSION_HANDOFF.md
+docs/MORNING-REPORT-*.md
+docs/SUPREMACY.md

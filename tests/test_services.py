@@ -6,13 +6,13 @@ Nmap scan report for 192.168.1.1
 Host is up (0.0053s latency).
 Nmap scan report for 192.168.1.127
 Host is up (0.00044s latency).
-Nmap scan report for your-rig
+Nmap scan report for 192.168.1.50
 Host is up (0.0011s latency).
 Nmap done: 256 IP addresses (3 hosts up) scanned in 2.10 seconds"""
 
 
 def test_extract_live_hosts_from_ping_sweep():
-    assert extract_live_hosts(PING_SWEEP) == ["192.168.1.1", "192.168.1.127", "your-rig"]
+    assert extract_live_hosts(PING_SWEEP) == ["192.168.1.1", "192.168.1.127", "192.168.1.50"]
 
 
 def test_extract_live_hosts_resolves_name_to_ip_in_parens():

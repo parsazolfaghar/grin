@@ -5,7 +5,7 @@ user can reach, and an offensive **runner** container (`grin-kali`) provisioned 
 wordlists. The target containers themselves are fully defined in `lab/` and built by
 `grin lab up`; this doc covers the manual rig state the lab depends on.
 
-Validated on the user rig (NixOS, RTX 3060 12 GB, Ollama local). Phase-1 gate is GREEN:
+Validated on the operator rig (NixOS, RTX 3060 12 GB, Ollama local). Phase-1 gate is GREEN:
 an autonomous `grin engage` against T1 captured the flag end-to-end with the default local
 model (`qwen3:14b`) once the deterministic extractor landed.
 
@@ -35,7 +35,7 @@ back to local Ollama. An explicit `GRIN_MODEL_BACKEND` always wins.
 ## 1. Docker access for the operator user (NixOS, declarative)
 
 The lab control and the docker runner shell out to Docker, so the operator user needs the
-`docker` group. On the user rig this is declarative in `/etc/nixos/configuration.nix`:
+`docker` group. On the operator rig this is declarative in `/etc/nixos/configuration.nix`:
 
 ```nix
 users.users.operator.extraGroups = [ "wheel" "networkmanager" "video" "libvirtd" "docker" ];

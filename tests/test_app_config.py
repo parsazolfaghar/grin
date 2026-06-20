@@ -63,4 +63,4 @@ def test_apply_active_uses_persisted_choice(tmp_path, monkeypatch):
     config.set_active("split", p)
     env = config.apply_active(p)
     assert env["kind"] == "ssh"
-    assert "your-rig" in os.environ["GRIN_OLLAMA_URL"]
+    assert "127.0.0.1" in os.environ["GRIN_OLLAMA_URL"]

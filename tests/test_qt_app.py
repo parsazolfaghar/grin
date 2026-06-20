@@ -124,7 +124,7 @@ def test_mode_toggle_switches_persists_and_rewires(tmp_path, monkeypatch):
     w._toggle_mode()
     assert "SPLIT" in w.chrome.mode_btn.text()          # local -> split
     assert config.get_active()[0] == "split"            # persisted
-    assert "your-rig" in os.environ["GRIN_OLLAMA_URL"]   # inference rewired to rig
+    assert "127.0.0.1" in os.environ["GRIN_OLLAMA_URL"]   # inference rewired to rig
     assert api.tool_env["kind"] == "ssh"                # tools rewired to rig
     w.deleteLater()
 

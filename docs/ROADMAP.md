@@ -75,7 +75,7 @@ authorization or accountability or to act out of scope. The spine still authoriz
 _Captured as a stub; the operator has additional requirements to add before this is specced._
 
 **Initial sketch (to be refined):**
-- Loot/secrets at rest: `0600` perms + opt-in encryption (age/agenix, already used on user); never
+- Loot/secrets at rest: `0600` perms + opt-in encryption (age/agenix, already used on operator); never
   log/echo secret values.
 - Command-safety guard: **self-protection ONLY** — deny/confirm commands that would destroy the
   OPERATOR's own box / runner host (`rm -rf /`, `mkfs`, `dd` on the host disk, fork bombs). It MUST NOT
