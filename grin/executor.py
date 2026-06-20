@@ -13,7 +13,7 @@ from grin.journal import Journal, Step, journal_path
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
 from grin.results import ResultStore
-from grin.brain import Brain, detect_situations
+from grin.brain import Brain
 
 DEFAULT_MODEL = "qwen3:14b"   # config default; the real pin is set on the rig, not in code
 
