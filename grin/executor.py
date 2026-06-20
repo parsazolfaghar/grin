@@ -33,6 +33,49 @@ def _canonical_cmd(command: str) -> str:
     return " ".join(toks)
 
 
+def _has_flag(journal) -> bool:
+    return any(getattr(s, "label", "") == "flag" for s in journal.secrets)
+
+
+def _closer_pass(eng, *, target, journal, runner, now, executed_commands, brain) -> bool:
+    """Deterministic backstop: grin has a foothold but no flag. Run the matching deterministic helper
+    (suid-hijack / sudo-gtfo / ssh-loot / web-rce) THROUGH THE SPINE — no model in the loop — and
+    capture the flag if one comes back. Returns True iff a flag was captured. This is what makes 6/6
+    consistent despite a stochastic model."""
+    from grin.closer import closer_commands
+    if _has_flag(journal):
+        return False
+    for cmd in closer_commands(journal.render_history(), target):
+        norm = _canonical_cmd(cmd)
+        if norm in executed_commands:
+            continue
+        tool = cmd.split()[0]
+        out = submit_action(eng, target=target, tool=tool, command=cmd,
+                            declared_class="post-exploit", runner=runner, now=now)
+        executed_commands.add(norm)
+        if out.status != "executed":
+            continue
+        raw = out.result.output or ""
+        found = extract(tool, cmd, raw, target)
+        journal.add_step(Step(action={"tool": tool, "command": cmd, "target": target,
+                                      "declared_class": "post-exploit",
+                                      "why": "deterministic closer (model bypass)"},
+                              decision="executed", output=raw, exit_code=out.result.exit_code,
+                              extracted=[{"label": s.label, "value": s.value} for s in found]))
+        existing_keys = {(s.label, s.value) for s in journal.secrets}
+        for sec in found:
+            if (sec.label, sec.value) not in existing_keys:
+                journal.secrets.append(sec)
+                existing_keys.add((sec.label, sec.value))
+                persist_artifact(sec, runner, target=target)
+        if _has_flag(journal):
+            if brain is not None:
+                from grin.brain import reinforce_success
+                reinforce_success(brain, journal.render_history(), target)
+            return True
+    return False
+
+
 @dataclass
 class TaskResult:
     status: str                       # completed | awaiting_approval | budget_exhausted | model_unavailable
@@ -98,6 +141,11 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                     existing.append(sec)
                     existing_keys.add((sec.label, sec.value))
             journal.set_secrets(existing)
+            # The model thinks it's done. If it has NOT actually captured a flag but a foothold
+            # exists, run the deterministic closer before accepting 'done' (fixes premature-done).
+            if not _has_flag(journal):
+                _closer_pass(eng, target=target, journal=journal, runner=runner, now=now,
+                             executed_commands=executed_commands, brain=brain)
             journal.save()
             return TaskResult("completed", journal.findings, journal,
                               secrets=journal.secrets)
@@ -168,6 +216,11 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             return TaskResult("awaiting_approval", journal.findings, journal,
                               pending_id=out.pending_id, secrets=journal.secrets)
 
+    # Budget spent without a flag: last-resort deterministic closer through the spine.
+    if _closer_pass(eng, target=target, journal=journal, runner=runner, now=now,
+                    executed_commands=executed_commands, brain=brain):
+        journal.save()
+        return TaskResult("completed", journal.findings, journal, secrets=journal.secrets)
     journal.save()
     return TaskResult("budget_exhausted", journal.findings, journal,
                       secrets=journal.secrets)
