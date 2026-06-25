@@ -66,6 +66,8 @@ permanent "no impact/DoS/destructive techniques" line; scrcpy never wipes, brick
 - [x] `adb-takeover` tool + test (6 tests green)
 - [x] catalog entries (port:5555): T1021 ADB remote-services, T1113 screen-capture, T1219 scrcpy mirror
 - [x] prompt guidance (ADB=phone -> prefer adb-takeover; impact = screenshot+mirror+data, NOT a flag)
-- [ ] make `adb-takeover` invocable on the runner (deploy step, like web-rce/ssh-loot)
-- [ ] scrcpy + android-tools on the kult runner (Debian/Kali: `sudo apt install scrcpy android-tools-adb`)
-- [ ] live re-test against the J7
+- [x] make `adb-takeover` invocable on the runner — `~/.local/bin/adb-takeover` wrapper + arsenal HELPERS map
+- [x] scrcpy + android-tools on the kult runner (Debian/Kali: `sudo apt install scrcpy`)
+- [x] live re-test against the J7 — **VERIFIED 2026-06-24**: connect → fingerprint (SM-J700F, 6.0.1) → shell
+      (uid=2000) → enumerate → screenshot, and `--mirror` opens a live controllable scrcpy mirror on the
+      operator desktop. Feature complete.
