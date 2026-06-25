@@ -40,9 +40,13 @@ is **scrcpy** (live screen mirror + full mouse/keyboard control over ADB).
      (post-exploit)
 3. **Prompt guidance** in `grin/prompts.py`: when a target exposes ADB/5555, PREFER `adb-takeover`
    over generic web tools; the impact on a phone is screenshot + data + a scrcpy mirror, NOT a flag.
-4. **Deployment:** `adb` and `scrcpy` must be present on the runner. For `env.kind: local` on the
-   kult box (NixOS + Hyprland), add `pkgs.scrcpy` + `pkgs.android-tools` and the scrcpy window opens
-   on the operator's own desktop — which is exactly the requested "control from my desktop."
+4. **Deployment:** `adb` and `scrcpy` must be present on the runner. The kult rig is Debian/Kali
+   (apt): `sudo apt install scrcpy android-tools-adb`. The scrcpy window opens on the operator's own
+   desktop session — exactly the requested "control from my desktop."
+   - **Gotcha:** scrcpy is a GUI app — it needs a graphical session. If grin launches it from an SSH
+     context with no `DISPLAY`, the mirror can't draw. Run the engagement from a terminal *inside the
+     desktop session*, or export the display first (`export DISPLAY=:0` for X; for Wayland set
+     `WAYLAND_DISPLAY`/`XDG_RUNTIME_DIR`). `adb-takeover --mirror` inherits whatever env it's run under.
 
 ### Usage (operator)
 Run with `post-exploit` in the ROE so grin is allowed to take control:
@@ -63,5 +67,5 @@ permanent "no impact/DoS/destructive techniques" line; scrcpy never wipes, brick
 - [x] catalog entries (port:5555): T1021 ADB remote-services, T1113 screen-capture, T1219 scrcpy mirror
 - [x] prompt guidance (ADB=phone -> prefer adb-takeover; impact = screenshot+mirror+data, NOT a flag)
 - [ ] make `adb-takeover` invocable on the runner (deploy step, like web-rce/ssh-loot)
-- [ ] scrcpy + android-tools on the kult runner (NixOS)
+- [ ] scrcpy + android-tools on the kult runner (Debian/Kali: `sudo apt install scrcpy android-tools-adb`)
 - [ ] live re-test against the J7
