@@ -18,7 +18,6 @@ import argparse
 import os
 import shutil
 import subprocess
-import sys
 
 # props that fingerprint the device (cheap, one getprop each)
 _PROPS = [
