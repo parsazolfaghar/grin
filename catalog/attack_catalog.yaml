@@ -33,3 +33,13 @@ techniques:
      tools: [ssh, sshpass, cat], command_templates: [], applies_when: always}
   - {id: T1041, tactic: exfiltration, name: Exfiltration Over C2 Channel (sim), action_class: post-exploit,
      tools: [ssh, sshpass], command_templates: [], applies_when: always}
+  # --- Android / ADB (exposed Android Debug Bridge on 5555) ---
+  - {id: T1021, tactic: lateral-movement, name: "Remote Services - ADB (Android Debug Bridge)",
+     action_class: exploit, tools: [adb-takeover, adb],
+     command_templates: ["adb-takeover --target {target}"], applies_when: "port:5555"}
+  - {id: T1113, tactic: collection, name: "Screen Capture (Android)", action_class: post-exploit,
+     tools: [adb-takeover, adb],
+     command_templates: ["adb-takeover --target {target}"], applies_when: "port:5555"}
+  - {id: T1219, tactic: command-and-control, name: "Remote Access Software - scrcpy screen mirror/control",
+     action_class: post-exploit, tools: [adb-takeover, scrcpy],
+     command_templates: ["adb-takeover --target {target} --mirror"], applies_when: "port:5555"}
