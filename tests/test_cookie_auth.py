@@ -198,3 +198,28 @@ def test_error_sqli_probes_through_the_attacker_session():
     t = Transport(request=lambda *a, **k: (404, ""), by_role={"attacker": attacker})
     c = Candidate(vuln_class="sqli-error", location="/x", url="http://t/x", inject_field="id")
     assert verify(c, t).status == CONFIRMED and seen["used_attacker"]
+
+
+# --- _identity_proven token-boundary tightening (audit) ---------------------------------------
+class _StubSession:
+    def __init__(self, status, body):
+        self._r = (status, body)
+
+    def request(self, method, url, **kw):
+        return self._r
+
+
+def test_identity_proven_rejects_substring_only_username_echo():
+    from grin.cookie_auth import _identity_proven
+    # role 200 with a body that contains the username only as a SUBSTRING ("admin" inside
+    # "adminixtration"), no logout marker -> not a standalone identity token -> not proven
+    role = _StubSession(200, "<h1>adminixtration console</h1> generic page")
+    anon = _StubSession(401, "please log in")
+    assert _identity_proven(role, anon, "http://t/protected", "admin") is False
+
+
+def test_identity_proven_accepts_standalone_username_token():
+    from grin.cookie_auth import _identity_proven
+    role = _StubSession(200, "<p>Signed in as admin</p> account settings")
+    anon = _StubSession(401, "please log in")
+    assert _identity_proven(role, anon, "http://t/protected", "admin") is True

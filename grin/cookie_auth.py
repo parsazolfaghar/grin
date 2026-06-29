@@ -7,11 +7,13 @@ attacker's session can never leak into anon. The critical correctness points:
   - redirects are NOT followed (urllib would swallow the Set-Cookie on a login 302) — we read each
     hop's headers directly;
   - a role is only bound once login is PROVEN (status asymmetry vs anon + body diff + no login-form
-    markers), failing closed otherwise;
+    markers + a POSITIVE auth signal — a logout control or the username as a standalone token),
+    failing closed otherwise;
   - extra cookies (e.g. DVWA's security=low) are seeded into every jar, including anon.
 
-Scope (slice 1): the login URL, credential field names, and CSRF field are CONFIGURED (the harness
-is pointed at them). Auto-discovering cookie/form/CSRF logins is a deferred follow-up."""
+Two paths: build_cookie_transport (login URL / cred fields / CSRF CONFIGURED) and
+build_cookie_transport_auto (login form AUTO-DISCOVERED via discover_form_login + form_login_auto,
+so the harness only needs credentials + a protected URL)."""
 from __future__ import annotations
 import html as _html
 import json as _json
@@ -146,7 +148,15 @@ def _identity_proven(role_session, anon_session, protected_url, username=None):
             and not any(m in a_b for m in _LOGIN_MARKERS)):
         return False
     al = a_b.lower()
-    return any(m in al for m in _LOGOUT_MARKERS) or bool(username and username.lower() in al)
+    if any(m in al for m in _LOGOUT_MARKERS):
+        return True
+    # The username must appear as a STANDALONE token, not a substring glued to other word/email
+    # chars: "adm" must not match inside "administrator", and a generic "admin settings" link that
+    # every visitor sees must not pass. Boundary excludes \w plus @/./- so emails match cleanly.
+    if username:
+        u = re.escape(username.lower())
+        return re.search(r"(?<![\w@.\-])" + u + r"(?![\w@.\-])", al) is not None
+    return False
 
 
 # --- login-form auto-discovery (slice 2) -------------------------------------------------------
@@ -248,10 +258,10 @@ def discover_form_login(base_url, get):
     paths = ["/login", "/login.php", "/signin", "/users/sign_in", "/account/login", "/auth/login"]
     for url in dict.fromkeys(links + [base + p for p in paths]):
         try:
-            _s, body = get(url)
+            s, body = get(url)
         except Exception:
             continue
-        spec = parse_login_form(body, url) if body else None
+        spec = parse_login_form(body, url) if (body and s == 200) else None
         if spec:
             return spec
     return None
@@ -281,7 +291,9 @@ def build_cookie_transport_auto(base_url, credentials, protected_url, *, extra_c
     rf = request_full or _make_request_full()
     seed = dict(extra_cookies or {})
     anon = CookieSession(rf, seed=seed)
-    spec = discover_form_login(base_url, lambda u: anon.request("GET", u))
+    # Discover with a THROWAWAY session so login-page Set-Cookies never pollute the anon jar — anon
+    # is both the _identity_proven baseline and the exported anonymous role, so it must stay pristine.
+    spec = discover_form_login(base_url, lambda u: CookieSession(rf, seed=seed).request("GET", u))
     by_role = {"anon": lambda u, method="GET", json=None, data=None, headers=None: anon.request(method, u, json=json, data=data, headers=headers)}
     if spec is None:
         return Transport(request=anon.request, by_role=by_role), 0, None

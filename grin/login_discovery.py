@@ -78,16 +78,33 @@ def _find_token(data):
     return None
 
 
+def _identity_match(container, lid):
+    """True if the login id appears as an EXACT scalar value anywhere in a parsed JSON structure —
+    not as a substring. Substring matching would accept an echoed id inside a longer error string
+    ("invalid password for alice@x") or a coincidental claim ("id" inside "bid"); exact value
+    equality pins it to a real identity field."""
+    for _path, val in _walk(container):
+        if isinstance(val, str) and val.strip().lower() == lid:
+            return True
+    return False
+
+
 def _identity_proven(token, login_id, login_body):
-    """Prove the token authenticates as OUR user: the login id appears in the JWT claims
-    (primary) or in the login response body (secondary). The crux near-zero-FP gate."""
+    """Prove the token authenticates as OUR user: the login id is an EXACT value in the JWT claims
+    (primary) or in the parsed JSON login body (secondary). Exact-value matching (not substring)
+    rejects guest / wrong-identity tokens and failed-login bodies that merely echo the id inside an
+    error message. The crux near-zero-FP gate; fails closed when neither proof holds."""
     lid = (login_id or "").strip().lower()
     if not lid:
         return False
     claims = _decode_jwt_claims(token)
-    if claims is not None and lid in json.dumps(claims).lower():
+    if claims is not None and _identity_match(claims, lid):
         return True
-    return lid in (login_body or "").lower()
+    try:
+        body = json.loads(login_body) if isinstance(login_body, str) else login_body
+    except Exception:
+        return False
+    return _identity_match(body, lid)
 
 
 def _find_owned_id(data):
@@ -138,8 +155,10 @@ def discover_login(base_url, login_id, password, post, *,
 
 
 def shape_login(base_url, login_id, password, post, shape):
-    """Log in using a discovered shape. Returns (token, owned_id); (None, None) on failure.
-    owned_id is best-effort and does not gate the token (unlike the Juice-Shop login_session)."""
+    """Log in using a discovered shape. Returns (token, owned_id); (None, None) on failure or when
+    the login is not identity-proven. owned_id is best-effort and does not gate the token (unlike the
+    Juice-Shop login_session). The identity proof is re-run here so EVERY bound role (attacker AND
+    victim) is a confirmed real login — not just the one credential discover_login proved."""
     base = base_url.rstrip("/")
     try:
         status, body = post(base + shape.path,
@@ -159,4 +178,6 @@ def shape_login(base_url, login_id, password, post, shape):
     except Exception:
         return None, None
     token = str(tok).strip() or None
+    if token is None or not _identity_proven(token, login_id, body):
+        return None, None       # never bind a role on an unproven (guest / wrong-creds) session
     return token, _find_owned_id(data)

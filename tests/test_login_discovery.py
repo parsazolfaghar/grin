@@ -2,7 +2,7 @@ import base64
 import json
 
 from grin.login_discovery import (
-    discover_login, LoginShape, _decode_jwt_claims, _find_token,
+    discover_login, shape_login, LoginShape, _decode_jwt_claims, _find_token,
 )
 
 
@@ -51,6 +51,35 @@ def test_identity_proof_rejects_wrong_identity_token():
             return 200, json.dumps({"token": _mkjwt({"sub": "someoneelse@y.io"})})
         return 404, ""
     assert discover_login("http://t", "me@x.io", "pw", post) is None
+
+
+def test_identity_proof_rejects_substring_only_match():
+    # login id "adm" is a SUBSTRING of the JWT principal "admin" but is not our real identity; the
+    # old substring proof would FALSE-accept it, exact-value matching rejects it
+    def post(url, body):
+        if url.endswith("/login"):
+            return 200, json.dumps({"token": _mkjwt({"sub": "admin"})})
+        return 404, ""
+    assert discover_login("http://t", "adm", "pw", post) is None
+
+
+def test_shape_login_rejects_unproven_session():
+    # shape_login (used for BOTH attacker and victim) must re-prove identity: a 200 with a token for
+    # a DIFFERENT principal (a failed/guest victim login) binds no role
+    shape = LoginShape(path="/login", login_field="username", token_path=("token",))
+
+    def post(url, body):
+        return 200, json.dumps({"token": _mkjwt({"sub": "someoneelse"})})
+    assert shape_login("http://t", "victim", "pw", post, shape) == (None, None)
+
+
+def test_shape_login_returns_token_when_identity_proven():
+    shape = LoginShape(path="/login", login_field="username", token_path=("token",))
+
+    def post(url, body):
+        return 200, json.dumps({"token": _mkjwt({"sub": body["username"]}), "bid": 7})
+    tok, owned = shape_login("http://t", "victim", "pw", post, shape)
+    assert tok is not None and owned == 7
 
 
 def test_identity_proven_via_response_body_for_opaque_token():
