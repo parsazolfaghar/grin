@@ -332,6 +332,20 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
         queue = [Objective("enumerate services and identify the vulnerability to exploit", t,
                            "active-scan") for t in eng.scope.include]
     findings: list = []
+    # Deterministic assessment sweep: in assessment mode, fire the known-class probes directly
+    # (through the authorized spine) so their detection does not depend on the LLM choosing to run
+    # them — the loop kept varying on whether/how it ran each probe. The LLM loop then reasons on top.
+    if getattr(eng, "assess", False) and getattr(eng, "base_url", ""):
+        from grin.assessment import assessment_sweep
+        from grin.spine import submit_action
+        _scope_t = eng.scope.include[0] if eng.scope.include else eng.base_url
+
+        def _run_probe(tool, command):
+            oc = submit_action(eng, target=_scope_t, tool=tool, command=command,
+                               declared_class=None, runner=runner, now=now)
+            return (oc.result.output if (oc.status == "executed" and oc.result) else "") or ""
+        _merge_findings(findings, assessment_sweep(eng.base_url, eng.credentials, _run_probe,
+                                                   eng.base_url))
     objectives_run: list = []
     paused: list = []
     plan_log: list = [{"kind": "initial_plan", "objectives": list(queue)}]
