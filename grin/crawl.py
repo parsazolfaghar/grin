@@ -119,6 +119,7 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
             if any(f["type"] == "password" for f in form["fields"]):
                 continue
             action = urllib.parse.urljoin(url, form["action"]) if form["action"] else url.split("?", 1)[0]
+            action = urllib.parse.urldefrag(action)[0]      # action="#" -> the page itself, no fragment
             if not _classify_readonly(action, start):
                 continue
             inputs = [(f["name"], f["value"]) for f in form["fields"] if f.get("name")]
