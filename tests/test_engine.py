@@ -119,7 +119,7 @@ def test_build_transport_role_supports_authenticated_writes():
         seen["method"], seen["json"], seen["auth"] = method, json, (headers or {}).get("Authorization")
         return (200, "ok")
     creds = [{"email": "a@x", "password": "p"}, {"email": "b@x", "password": "p"}]
-    transport, _, _ = build_transport(request, "http://t", creds)
+    transport, _, _, _ = build_transport(request, "http://t", creds)
     transport.by_role["attacker"]("http://t/w", method="POST", json={"k": "v"})
     assert seen["method"] == "POST" and seen["json"] == {"k": "v"}
     assert seen["auth"] == "Bearer TA"
@@ -157,6 +157,45 @@ def test_run_general_discovers_and_confirms_idor_via_openapi():
     findings = run_general("http://t", creds, request=request)
     idor = [f for f in findings if f.location == "/books/v1/{book_title}"]
     assert idor and idor[0].vuln_class == "idor"
+
+
+def test_run_general_discovers_and_confirms_jwt_weak_secret_via_openapi():
+    import base64
+    import hashlib
+    import hmac
+    import json as _J
+    SECRET = "secret"
+    spec = {"paths": {"/users/v1/login": {"post": {}}, "/me": {"get": {}}}}
+
+    def b(d):
+        return base64.urlsafe_b64encode(_J.dumps(d, separators=(",", ":")).encode()).rstrip(b"=").decode()
+
+    def sign(claims):
+        h, p = b({"alg": "HS256", "typ": "JWT"}), b(claims)
+        s = base64.urlsafe_b64encode(hmac.new(SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+        return f"{h}.{p}.{s}"
+
+    def valid(tok):
+        try:
+            h, p, sig = tok.split(".")
+            want = base64.urlsafe_b64encode(hmac.new(SECRET.encode(), f"{h}.{p}".encode(), hashlib.sha256).digest()).rstrip(b"=").decode()
+            return sig == want
+        except Exception:
+            return False
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/openapi.json"):
+            return (200, _J.dumps(spec))
+        if method == "POST" and url.endswith("/users/v1/login"):
+            return (200, _J.dumps({"auth_token": sign({"sub": (json or {}).get("username"), "exp": 9999999999})}))
+        if url.endswith("/me"):
+            tok = (headers or {}).get("Authorization", "").replace("Bearer ", "")
+            return (200, "ok") if valid(tok) else (401, "")
+        return (404, "")
+    creds = [{"username": "atk", "password": "p"}, {"username": "vic", "password": "p"}]
+    findings = run_general("http://t", creds, request=request)
+    jwt = [f for f in findings if f.vuln_class == "broken-authentication"]
+    assert jwt and "secret" in jwt[0].evidence
 
 
 def test_run_general_discovers_and_confirms_mass_assignment_via_openapi():
@@ -259,7 +298,7 @@ def test_build_transport_discovers_non_juice_login_shape():
             return (404, "")
         return (200, "not-json")                  # every other probe is inert
     creds = [{"username": "atk", "password": "p"}, {"username": "vic", "password": "p"}]
-    transport, _vid, _aid = build_transport(request, "http://t", creds)
+    transport, _vid, _aid, _tok = build_transport(request, "http://t", creds)
     assert "attacker" in transport.by_role and "victim" in transport.by_role
 
 

@@ -213,6 +213,53 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_jwt_weak_secret (broken auth: forgeable token from a weak HS256 secret) ---
+import hashlib as _hl
+import hmac as _hm
+
+
+def _sign_jwt(secret, claims):
+    b = lambda d: _b64.urlsafe_b64encode(_J.dumps(d, separators=(",", ":")).encode()).rstrip(b"=").decode()  # noqa: E731
+    h, p = b({"alg": "HS256", "typ": "JWT"}), b(claims)
+    sig = _b64.urlsafe_b64encode(_hm.new(secret.encode(), f"{h}.{p}".encode(), _hl.sha256).digest()).rstrip(b"=").decode()
+    return f"{h}.{p}.{sig}"
+
+
+def _jwt_app(secret):
+    # accepts any token correctly signed with `secret` at /me; 401 otherwise
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/me"):
+            tok = (headers or {}).get("Authorization", "").replace("Bearer ", "")
+            try:
+                h, p, sig = tok.split(".")
+                want = _b64.urlsafe_b64encode(_hm.new(secret.encode(), f"{h}.{p}".encode(), _hl.sha256).digest()).rstrip(b"=").decode()
+                return (200, "ok") if sig == want else (401, "")
+            except Exception:
+                return (401, "")
+        return (404, "")
+    return Transport(request=request)
+
+
+def test_verify_jwt_weak_secret_confirmed_when_secret_is_weak():
+    tok = _sign_jwt("secret", {"sub": "user", "exp": 9999999999})
+    c = Candidate(vuln_class="jwt-weak-secret", location="JWT", url="http://t",
+                  oracle={"token": tok, "verify_url": "http://t/me"})
+    assert verify(c, _jwt_app("secret")).status == CONFIRMED
+
+
+def test_verify_jwt_weak_secret_rejected_when_secret_strong():
+    strong = "Zx9q-7Kp2-Wm4v-Rt8n-Lb3c-Yh6d-unguessable"
+    tok = _sign_jwt(strong, {"sub": "user", "exp": 9999999999})
+    c = Candidate(vuln_class="jwt-weak-secret", location="JWT", url="http://t",
+                  oracle={"token": tok, "verify_url": "http://t/me"})
+    assert verify(c, _jwt_app(strong)).status == REJECTED
+
+
+def test_verify_jwt_weak_secret_inconclusive_without_token():
+    c = Candidate(vuln_class="jwt-weak-secret", location="JWT", url="http://t", oracle={})
+    assert verify(c, _jwt_app("secret")).status == INCONCLUSIVE
+
+
 # --- verify_mass_assignment (privilege field persists at registration) ---
 import base64 as _b64
 

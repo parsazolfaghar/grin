@@ -260,6 +260,32 @@ def _is_safe_get_path(path):
     return True
 
 
+def discover_protected_endpoint(base_url, by_role):
+    """A GET endpoint that returns 200 to the attacker but 401/403 to anon — i.e. token-gated.
+    Used to test whether a forged JWT is accepted. Returns the URL or None."""
+    anon, attacker = by_role.get("anon"), by_role.get("attacker")
+    if not (anon and attacker):
+        return None
+    spec = fetch_openapi(base_url, anon)
+    if not spec:
+        return None
+    base, prefix = base_url.rstrip("/"), _spec_prefix(spec)
+    for p, ops in spec.get("paths", {}).items():
+        if not isinstance(ops, dict) or "get" not in {k.lower() for k in ops}:
+            continue
+        if not _is_safe_get_path(p):
+            continue
+        url = base + prefix + p
+        try:
+            sa, _a = anon(url)
+            st, _t = attacker(url)
+        except Exception:
+            continue
+        if st == 200 and sa in (401, 403):
+            return url
+    return None
+
+
 def discover_mass_assignment_target(base_url, by_role):
     """Find a registration endpoint + a self-profile endpoint from OpenAPI, so the mass-assignment
     verifier can self-register and read back persisted privilege. Returns the oracle dict or None."""

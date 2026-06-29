@@ -56,6 +56,7 @@ _SEVERITY = {
     "path-traversal": "high",
     "excessive-data-exposure": "high",
     "mass-assignment": "high",
+    "broken-authentication": "critical",
 }
 
 
@@ -89,7 +90,7 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     # Role callables default to GET (read-side verifiers call role(url)) but carry their auth into
     # writes too: role(url, method="POST", json=body) — needed by the write-side verifier.
     by_role = {"anon": lambda u, method="GET", json=None: request(method, u, json=json)}
-    victim_id = attacker_id = None
+    victim_id = attacker_id = ta = None
     creds = list(credentials or [])
     if len(creds) >= 2:
         from grin.login_discovery import discover_login, shape_login
@@ -114,7 +115,7 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
         if tb:
             by_role["victim"] = lambda u, method="GET", json=None, t=tb: request(
                 method, u, json=json, headers={"Authorization": "Bearer " + t})
-    return Transport(request=request, by_role=by_role), victim_id, attacker_id
+    return Transport(request=request, by_role=by_role), victim_id, attacker_id, ta
 
 
 def run_general(base_url, credentials=None, *, request=None,
@@ -127,7 +128,8 @@ def run_general(base_url, credentials=None, *, request=None,
     base = base_url.rstrip("/")
     creds = list(credentials or [])
     cid = lambda c: c.get("login") or c.get("email") or c.get("username")   # noqa: E731
-    transport, victim_id, attacker_id = build_transport(request, base_url, credentials, login_path)
+    transport, victim_id, attacker_id, attacker_token = build_transport(
+        request, base_url, credentials, login_path)
     candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
     have_two = "attacker" in transport.by_role and "victim" in transport.by_role
     if victim_id is not None and have_two:
@@ -138,7 +140,14 @@ def run_general(base_url, credentials=None, *, request=None,
             oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
         candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
     from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
-                                          discover_exposure_candidates, discover_mass_assignment_target)
+                                          discover_exposure_candidates, discover_mass_assignment_target,
+                                          discover_protected_endpoint)
+    # broken auth: is the JWT signing secret weak enough to forge tokens? (needs a real token)
+    if attacker_token:
+        vurl = discover_protected_endpoint(base_url, transport.by_role)
+        if vurl:
+            candidates.append(Candidate("jwt-weak-secret", "JWT signing secret", base_url,
+                                        oracle={"token": attacker_token, "verify_url": vurl}))
     # mass assignment: self-registers control/treatment accounts (DESTRUCTIVE; only when the target
     # exposes a register + profile endpoint, so apps like Juice Shop are never touched by it)
     ma = discover_mass_assignment_target(base_url, transport.by_role)
