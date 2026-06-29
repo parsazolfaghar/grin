@@ -1,7 +1,24 @@
 import pytest
 from grin.assessbench.manifest import (
-    load_manifest, BenchTarget, GroundTruth, VULN_CLASSES, ManifestError,
+    load_manifest, load_bench_target, BenchTarget, GroundTruth, VULN_CLASSES, ManifestError,
 )
+
+
+def test_juice_shop_bench_target_loads():
+    t = load_bench_target("juice-shop")
+    assert isinstance(t, BenchTarget)
+    assert t.id == "juice-shop"
+    assert t.port == 3000
+    assert len(t.ground_truth) >= 3
+    # the vertical-slice classes are present and the canonical basket IDOR is in the key
+    classes = {g.vuln_class for g in t.ground_truth}
+    assert classes & {"idor", "broken-access-control"}
+    assert any(g.location == "/rest/basket/{id}" for g in t.ground_truth)
+
+
+def test_load_bench_target_unknown_raises():
+    with pytest.raises(ManifestError):
+        load_bench_target("does-not-exist")
 
 VALID = """
 id: demo

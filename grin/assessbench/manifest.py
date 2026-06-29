@@ -5,6 +5,7 @@ declares a pinned, intentionally-vulnerable real app and the known vulnerabiliti
 grades grin's assessment against. Fail-loud: a malformed manifest raises rather than scoring
 against a silently-wrong answer key (a wrong key would corrupt every precision/recall number)."""
 from __future__ import annotations
+import os
 from dataclasses import dataclass
 
 import yaml
@@ -56,6 +57,18 @@ class BenchTarget:
     def resolved_url(self, host: str) -> str:
         """Fill the manifest url template with a concrete host (port comes from the manifest)."""
         return self.url.format(host=host, port=self.port)
+
+
+def targets_dir() -> str:
+    return os.path.join(os.path.dirname(__file__), "targets")
+
+
+def load_bench_target(target_id: str) -> BenchTarget:
+    """Load a bundled ground-truth manifest by id from grin/assessbench/targets/."""
+    path = os.path.join(targets_dir(), f"{target_id}.yaml")
+    if not os.path.isfile(path):
+        raise ManifestError(f"unknown bench target: {target_id} (no {path})")
+    return load_manifest(path)
 
 
 def load_manifest(path: str) -> BenchTarget:

@@ -1,0 +1,36 @@
+# OWASP Juice Shop — assessbench ground truth (the "answer key").
+#
+# Juice Shop is an intentionally-vulnerable but realistic web app with publicly documented
+# vulnerabilities, which makes it honest ground truth: we KNOW these bugs exist.
+#
+# IMPORTANT: every entry below must be re-verified against the pinned image at provision time
+# (the bench validation step). A wrong answer key silently corrupts every precision/recall
+# number, so ground truth is only trusted once confirmed live. SP1 ships the canonical
+# broken-access-control / IDOR set (the vertical-slice class); more classes are added in SP2+.
+id: juice-shop
+name: OWASP Juice Shop (intentionally vulnerable, documented)
+image: bkimminich/juice-shop:v17.1.1
+port: 3000
+url: "http://{host}:{port}"
+ground_truth:
+  - id: basket-idor
+    vuln_class: idor
+    location: "/rest/basket/{id}"
+    severity: high
+    description: >-
+      View another user's shopping basket by changing the basket id — the canonical
+      Juice Shop IDOR (ownership of the basket is not enforced server-side).
+  - id: forged-review
+    vuln_class: broken-access-control
+    location: "/rest/products/reviews"
+    severity: medium
+    description: >-
+      Edit another user's product review: the review author is taken from the request body
+      rather than the authenticated session, so any user can forge/modify reviews.
+  - id: confidential-ftp
+    vuln_class: broken-access-control
+    location: "/ftp/{file}"
+    severity: medium
+    description: >-
+      Confidential files (e.g. acquisitions.md, backups) are served from the browsable /ftp
+      directory without authorization.
