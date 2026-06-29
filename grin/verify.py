@@ -392,6 +392,60 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- reflected XSS (unencoded HTML reflection) ------------------------------------------------
+def _looks_html_body(body):
+    s = (body or "").lstrip()
+    return bool(s) and s[:1] not in "{[" and "<" in s[:2048]
+
+
+def _in_noninjectable_context(body_lower, idx):
+    """True if the reflection at `idx` sits where a raw '<' does NOT open a tag: inside an HTML
+    comment, a raw-text element (script/style/textarea/title/noscript), or a quoted attribute."""
+    pre = body_lower[:idx]
+    if pre.rfind("<!--") > pre.rfind("-->"):
+        return True
+    for tag in ("script", "style", "textarea", "title", "noscript"):
+        if pre.rfind("<" + tag) > pre.rfind("</" + tag):
+            return True
+    seg = pre[pre.rfind("<"):] if "<" in pre else pre   # the tag currently being written, if any
+    return seg.count('"') % 2 == 1 or seg.count("'") % 2 == 1
+
+
+def verify_reflected_xss(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the input is reflected with a RAW '<' (not HTML-encoded) in an injectable HTML
+    context. CONFIRMED = unencoded HTML reflection (HTML injection); script execution is NOT proven
+    without a browser, and the evidence says so. Attribute-breakout and stored XSS are out of scope.
+    Probes through the attacker session when present."""
+    import uuid
+    loc, o = candidate.location, candidate.oracle
+    marker = "grinx" + uuid.uuid4().hex[:8]
+    payload = "<" + marker          # a prefix, not a closed tag — also catches strip-'>' filters
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
+    field = candidate.inject_field or "q"
+    try:
+        if candidate.method.upper() == "POST":
+            status, body = agent(candidate.url, method="POST", json={field: payload})
+        else:
+            status, body = agent(_with_param(candidate.url, field, payload))
+    except Exception:
+        return Verdict(INCONCLUSIVE, "xss", loc, "request raised an exception")
+    body = body or ""
+    if not status or status >= 400:
+        return Verdict(INCONCLUSIVE, "xss", loc, f"could not test cleanly (status {status})")
+    if not _looks_html_body(body):
+        return Verdict(REJECTED, "xss", loc, "response is not an HTML document")
+    bl = body.lower()
+    idx = bl.find(payload.lower())
+    if idx == -1:
+        return Verdict(REJECTED, "xss", loc, "input not reflected with a raw '<' (encoded or absent)")
+    if _in_noninjectable_context(bl, idx):
+        return Verdict(REJECTED, "xss", loc,
+                       "reflected inside a non-injectable context (comment / raw-text element / quoted attribute)")
+    return Verdict(CONFIRMED, "xss", loc,
+                   "input reflected with a raw '<' in an HTML context (HTML injection; script execution not verified without a browser)")
+
+
 # --- broken authentication (OWASP API2): a weak HS256 JWT signing secret --------------------
 # A small common-secret list (a real engagement would load a wordlist; this is the cheap check).
 _JWT_WORDLIST = (
@@ -669,6 +723,7 @@ _REGISTRY: dict = {
     "excessive-data-exposure": verify_exposure,
     "mass-assignment": verify_mass_assignment,
     "jwt-weak-secret": verify_jwt_weak_secret,
+    "reflected-xss": verify_reflected_xss,
 }
 
 

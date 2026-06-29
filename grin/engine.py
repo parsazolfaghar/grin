@@ -43,6 +43,7 @@ def recon(base_url, fetch, login_path="/rest/user/login"):
         body = ""
     for param in _extract_params(body):
         candidates.append(Candidate("ssti", f"/ (param {param})", base + "/", inject_field=param))
+        candidates.append(Candidate("reflected-xss", f"/ (param {param})", base + "/", inject_field=param))
     return candidates
 
 # Per-class severity for the emitted finding. Conservative, overridable later by a CVSS pass.
@@ -57,6 +58,7 @@ _SEVERITY = {
     "excessive-data-exposure": "high",
     "mass-assignment": "high",
     "broken-authentication": "critical",
+    "xss": "high",
 }
 
 
@@ -132,7 +134,10 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
     if attacker is None:
         return []
     points, _status = crawl_injection_points(base_url.rstrip("/") + start_path, lambda u: attacker(u))
-    candidates = [Candidate("sqli-error", loc, url, inject_field=field) for loc, url, field in points]
+    candidates = []
+    for loc, url, field in points:
+        candidates.append(Candidate("sqli-error", loc, url, inject_field=field))
+        candidates.append(Candidate("reflected-xss", loc, url, inject_field=field))
     return assess(candidates, transport, target=target or base_url)
 
 

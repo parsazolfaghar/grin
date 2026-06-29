@@ -1,3 +1,5 @@
+import urllib.parse
+
 from grin.verify import (
     verify, verify_ssti, Verdict, Candidate, Transport,
     CONFIRMED, REJECTED, INCONCLUSIVE,
@@ -218,6 +220,55 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     def handler(method, url, json):
         return (500, "stacktrace 7006652") if "1234" in url else (200, "control")
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
+
+
+# --- verify_reflected_xss (unencoded HTML reflection) ---
+
+def _xss_candidate():
+    return Candidate(vuln_class="reflected-xss", location="/s (name)", url="http://t/s",
+                     inject_field="name")
+
+
+def _xss_transport(render):
+    # render(injected_value) -> html body; the request reflects the value per render()
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("name=", 1)[1]) if "name=" in url else ""
+        return (200, render(val))
+    return Transport(request=request)
+
+
+def test_verify_reflected_xss_confirmed_when_unencoded():
+    v = verify(_xss_candidate(), _xss_transport(lambda x: f"<html><body>Hello {x} world</body></html>"))
+    assert v.status == CONFIRMED
+
+
+def test_verify_reflected_xss_rejected_when_html_encoded():
+    def render(x):
+        enc = x.replace("<", "&lt;").replace(">", "&gt;")
+        return f"<html><body>Hello {enc}</body></html>"
+    assert verify(_xss_candidate(), _xss_transport(render)).status == REJECTED
+
+
+def test_verify_reflected_xss_rejected_inside_textarea():
+    v = verify(_xss_candidate(), _xss_transport(lambda x: f"<html><textarea>{x}</textarea></html>"))
+    assert v.status == REJECTED
+
+
+def test_verify_reflected_xss_rejected_inside_html_comment():
+    v = verify(_xss_candidate(), _xss_transport(lambda x: f"<html><!-- note: {x} --></html>"))
+    assert v.status == REJECTED
+
+
+def test_verify_reflected_xss_rejected_inside_quoted_attribute():
+    v = verify(_xss_candidate(), _xss_transport(lambda x: f'<html><input value="{x}"></html>'))
+    assert v.status == REJECTED
+
+
+def test_verify_reflected_xss_rejected_in_json_response():
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("name=", 1)[1]) if "name=" in url else ""
+        return (200, '{"echo": "%s"}' % val)         # raw < but not an HTML document
+    assert verify(_xss_candidate(), Transport(request=request)).status == REJECTED
 
 
 # --- verify_jwt_weak_secret (broken auth: forgeable token from a weak HS256 secret) ---
