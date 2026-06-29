@@ -3,10 +3,11 @@ from grin.tools.bac_probe import probe, main
 
 def _fetch_map(responses):
     def fetch(url):
+        best = None
         for path, resp in responses.items():
-            if url.endswith(path):
-                return resp
-        return (404, "")
+            if url.endswith(path) and (best is None or len(path) > len(best[0])):
+                best = (path, resp)
+        return best[1] if best else (404, "")
     return fetch
 
 
@@ -49,3 +50,21 @@ def test_main_prints_parseable_HIT_lines(capsys):
     out = capsys.readouterr().out
     assert rc == 0
     assert "HIT" in out and "/ftp/legal.md" in out and "200" in out
+
+
+def test_directory_hit_dropped_when_files_under_it_found():
+    # /ftp/ (dir) + files under it are the SAME exposure; report the concrete files, drop the dir
+    fetch = _fetch_map({
+        "/": (200, "SHELL"),
+        "/ftp/": (200, "<index of /ftp>"),
+        "/ftp/legal.md": (200, "secret"),
+    })
+    paths = {h["path"] for h in probe("http://t", fetch, paths=["/ftp/", "/ftp/legal.md"])}
+    assert "/ftp/legal.md" in paths
+    assert "/ftp/" not in paths
+
+
+def test_lone_directory_hit_kept_when_no_files_found():
+    fetch = _fetch_map({"/": (200, "SHELL"), "/ftp/": (200, "<index of /ftp>")})
+    paths = {h["path"] for h in probe("http://t", fetch, paths=["/ftp/"])}
+    assert "/ftp/" in paths

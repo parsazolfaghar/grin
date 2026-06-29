@@ -121,18 +121,23 @@ def score(findings, target: BenchTarget) -> Score:
     gt_to_finding = _max_matching(adjacency, len(findings))
 
     matched, missed = [], []
-    used = set()
     for g, gt in enumerate(target.ground_truth):
         f = gt_to_finding[g]
         if f != -1:
             matched.append((gt.id, findings[f].title))
-            used.add(f)
         else:
             missed.append(gt.id)
-    spurious = [findings[i].title for i in range(len(findings)) if i not in used]
+    # A finding is a FALSE POSITIVE only if it matches NO ground-truth entry at all. A finding
+    # that matches a real bug is never an FP — even if the max-matching assigned that bug to a
+    # different finding (e.g. several confidential files under one exposed /ftp dir all match the
+    # same ground-truth entry). Recall stays GT-centric (the max-matching above), so a single
+    # vague finding still cannot inflate it.
+    matches_some_gt = {i for adj in adjacency for i in adj}
+    spurious = [findings[i].title for i in range(len(findings)) if i not in matches_some_gt]
 
     tp, fp, fn = len(matched), len(spurious), len(missed)
-    precision = tp / (tp + fp) if (tp + fp) else 1.0   # nothing reported -> nothing false
+    n_findings = len(findings)
+    precision = (n_findings - fp) / n_findings if n_findings else 1.0   # findings that hit a real bug
     recall = tp / (tp + fn) if (tp + fn) else 0.0
     return Score(
         target_id=target.id, matched=tuple(matched), missed=tuple(missed),

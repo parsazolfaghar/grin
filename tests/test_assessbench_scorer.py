@@ -145,3 +145,16 @@ def test_evidence_not_mined_when_location_is_set():
                          evidence="crawled: /rest/basket/1, /ftp/acquisitions.md")]
     s = score(findings, tgt)
     assert s.tp == 0 and s.fp == 1 and s.fn == 1
+
+
+def test_multiple_findings_of_same_bug_are_not_false_positives():
+    # SP2 live-gate refinement: two findings BOTH matching the same ground-truth entry are both
+    # real (e.g. two confidential files under one exposed /ftp dir) — not false positives. The one
+    # ground-truth bug is found once (no recall inflation), and precision is not penalized.
+    tgt = _target(_gt("g1", "broken-access-control", "/ftp/{file}"))
+    findings = [_finding("a", "broken-access-control", "/ftp/legal.md"),
+                _finding("b", "broken-access-control", "/ftp/acquisitions.md")]
+    s = score(findings, tgt)
+    assert s.fp == 0            # both are real /ftp exposures
+    assert s.precision == 1.0
+    assert s.tp == 1 and s.recall == 1.0    # the one ground-truth bug, found once

@@ -65,7 +65,12 @@ def probe(base_url: str, fetch, paths=None):
         ok, reason = _is_hit(p, status, body, baseline)
         if ok:
             hits.append({"path": p, "status": status, "reason": reason})
-    return hits
+    # Dedup: a bare directory (path ending '/') and the files under it are the SAME exposure.
+    # When concrete files are found, drop the directory hit so we report the specific resources
+    # once rather than the same finding twice.
+    paths = {h["path"] for h in hits}
+    return [h for h in hits if not (h["path"].endswith("/")
+            and any(o != h["path"] and o.startswith(h["path"]) for o in paths))]
 
 
 def _urllib_fetch(url):
