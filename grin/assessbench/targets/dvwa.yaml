@@ -1,0 +1,26 @@
+# DVWA — assessbench ground truth (the "answer key").
+#
+# DVWA (Damn Vulnerable Web Application) is a documented intentionally-vulnerable app that
+# authenticates via a Set-Cookie session + CSRF form login (no OpenAPI). This bench measures grin's
+# COOKIE-AUTH + authenticated-crawl path at security=low. Locations match grin's emitted finding
+# locations. Run with run_cookie_general (auto-login -> crawl -> verify).
+id: dvwa
+name: DVWA (Damn Vulnerable Web Application, cookie-auth, security=low)
+image: vulnerables/web-dvwa
+port: 8080
+url: "http://{host}:{port}"
+ground_truth:
+  - id: sqli-id
+    vuln_class: sql-injection
+    location: "/vulnerabilities/sqli/ (id)"
+    severity: critical
+    description: >-
+      Error-based SQL injection in the `id` GET parameter of /vulnerabilities/sqli/ at security=low
+      (a single quote surfaces a MySQL/MariaDB syntax error echoing the input).
+  - id: xss-reflected
+    vuln_class: xss
+    location: "/vulnerabilities/xss_r/ (name)"
+    severity: high
+    description: >-
+      Reflected XSS in the `name` GET parameter of /vulnerabilities/xss_r/ at security=low: the
+      value is reflected into the HTML page without encoding.

@@ -106,8 +106,15 @@ def test_location_must_be_a_path(tmp_path):
         load_manifest(_write(tmp_path, bad))
 
 
-def test_location_with_whitespace_rejected(tmp_path):
-    bad = VALID.replace('location: "/rest/basket/{id}"', 'location: "/rest/order history/{id}"')
+def test_label_location_with_spaces_allowed(tmp_path):
+    # single-line labels / annotated paths (with spaces) are valid now — e.g. grin emits
+    # "JWT signing secret" and "/vulnerabilities/sqli/ (id)" as finding locations.
+    ok = VALID.replace('location: "/rest/basket/{id}"', 'location: "JWT signing secret"')
+    load_manifest(_write(tmp_path, ok))            # must not raise
+
+
+def test_blank_location_rejected(tmp_path):
+    bad = VALID.replace('location: "/rest/basket/{id}"', 'location: "   "')
     with pytest.raises(ManifestError):
         load_manifest(_write(tmp_path, bad))
 

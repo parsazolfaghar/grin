@@ -6,6 +6,7 @@ grades grin's assessment against. Fail-loud: a malformed manifest raises rather 
 against a silently-wrong answer key (a wrong key would corrupt every precision/recall number)."""
 from __future__ import annotations
 import os
+import re
 from dataclasses import dataclass
 
 import yaml
@@ -41,9 +42,13 @@ class GroundTruth:
         # smuggle a degenerate location past the scorer (e.g. "" or "{endpoint}" matched
         # everything before this guard). Location must be a concrete, whitespace-free path.
         loc = self.location
-        if not isinstance(loc, str) or not loc.startswith("/") or any(c.isspace() for c in loc):
+        # A concrete path ("/a/b", "/a/{id}", "/a/b (param)") OR a single-line label
+        # ("JWT signing secret"). Reject only the degenerate cases the scorer can't grade: blank,
+        # multi-line, or a bare "{token}" (which would match every single-segment path).
+        if (not isinstance(loc, str) or not loc.strip() or "\n" in loc or "\t" in loc
+                or re.fullmatch(r"\s*\{[^}]*\}\s*", loc)):
             raise ManifestError(
-                f"ground_truth location must be a whitespace-free path starting with '/': {loc!r}")
+                f"ground_truth location must be a non-blank single-line path or label, not a bare token: {loc!r}")
 
 
 @dataclass(frozen=True)

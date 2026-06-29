@@ -13,6 +13,11 @@ from grin.finding import Finding
 # HTML never reveals). Combined with form-input names discovered in the body.
 _COMMON_PARAMS = ("q", "search", "name", "id", "query", "s", "keyword", "page", "title", "message")
 _INPUT_NAME_RE = re.compile(r'name=["\']([A-Za-z0-9_\-]+)["\']')
+# Param names worth an SSRF probe — clearly URL-bearing. Excludes open-redirect/LFI-prone names
+# (redirect/next/page/file) to keep the SSRF candidate set focused.
+_URL_PARAM_RE = re.compile(
+    r"^(url|uri|link|src|source|dest|destination|target|callback|webhook|proxy|feed|fetch|load|"
+    r"remote|site|image_url|avatar_url|return_url|redirect_uri|u|endpoint)$", re.I)
 
 
 def _extract_params(body: str):
@@ -21,7 +26,7 @@ def _extract_params(body: str):
     return sorted(found)
 
 
-def recon(base_url, fetch, login_path="/rest/user/login"):
+def recon(base_url, fetch, login_path="/rest/user/login", oob=None):
     """Minimal surface graph -> candidate queue. Deterministic; never depends on the LLM.
 
     fetch(url) -> (status, body). Produces:
@@ -44,6 +49,9 @@ def recon(base_url, fetch, login_path="/rest/user/login"):
     for param in _extract_params(body):
         candidates.append(Candidate("ssti", f"/ (param {param})", base + "/", inject_field=param))
         candidates.append(Candidate("reflected-xss", f"/ (param {param})", base + "/", inject_field=param))
+        if oob is not None and _URL_PARAM_RE.match(param):
+            candidates.append(Candidate("ssrf", f"/ (param {param})", base + "/",
+                                        inject_field=param, oracle={"oob": oob}))
     return candidates
 
 # Per-class severity for the emitted finding. Conservative, overridable later by a CVSS pass.
@@ -122,7 +130,7 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
 
 
 def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
-                       extra_cookies=None, request_full=None, target=""):
+                       extra_cookies=None, request_full=None, target="", oob=None):
     """Fully autonomous assessment of a cookie-session app (no OpenAPI): auto-discover + drive the
     login form, crawl the authenticated surface for injection points, and verify them. Returns the
     confirmed findings ([] if login could not be established)."""
@@ -138,6 +146,8 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
     for loc, url, field in points:
         candidates.append(Candidate("sqli-error", loc, url, inject_field=field))
         candidates.append(Candidate("reflected-xss", loc, url, inject_field=field))
+        if oob is not None and _URL_PARAM_RE.match(field):
+            candidates.append(Candidate("ssrf", loc, url, inject_field=field, oracle={"oob": oob}))
     return assess(candidates, transport, target=target or base_url)
 
 
@@ -154,7 +164,7 @@ def _endpoint_exists(transport, url):
 def run_general(base_url, credentials=None, *, request=None,
                 resource_template="/rest/basket/{id}", login_path="/rest/user/login",
                 review_template="/rest/products/{pid}/reviews", review_pid=1, target="",
-                allow_destructive=True):
+                allow_destructive=True, oob=None):
     """End-to-end: build the transport (sessions), recon the surface, resolve the session-coupled
     IDOR + write-side-BAC candidates, and assess everything. Deterministic; the LLM is not in this
     path."""
@@ -164,7 +174,7 @@ def run_general(base_url, credentials=None, *, request=None,
     cid = lambda c: c.get("login") or c.get("email") or c.get("username")   # noqa: E731
     transport, victim_id, attacker_id, attacker_token = build_transport(
         request, base_url, credentials, login_path)
-    candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
+    candidates = recon(base_url, transport.by_role["anon"], login_path=login_path, oob=oob)
     have_two = "attacker" in transport.by_role and "victim" in transport.by_role
     if victim_id is not None and attacker_id is not None and have_two:
         # Require BOTH ids so the negative control is always present — without the attacker's own

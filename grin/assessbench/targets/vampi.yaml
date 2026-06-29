@@ -1,0 +1,46 @@
+# VAmPI — assessbench ground truth (the "answer key").
+#
+# VAmPI (erev0s/vampi) is an intentionally-vulnerable REST API with documented flaws. Unlike Juice
+# Shop, grin was never tuned for it — this bench measures the engine's GENERALITY. Locations match
+# grin's emitted finding locations so the precision/recall scorer lines up.
+id: vampi
+name: VAmPI (vulnerable REST API, documented)
+image: erev0s/vampi:latest
+port: 5000
+url: "http://{host}:{port}"
+ground_truth:
+  - id: username-sqli
+    vuln_class: sql-injection
+    location: "/users/v1/{username}"
+    severity: critical
+    description: >-
+      Error-based SQL injection in GET /users/v1/{username}: the path value is concatenated into
+      a SQL string (a single quote surfaces a sqlalchemy/sqlite error echoing the input).
+  - id: debug-exposure
+    vuln_class: excessive-data-exposure
+    location: "/users/v1/_debug"
+    severity: high
+    description: >-
+      GET /users/v1/_debug returns every user record — including cleartext passwords — to an
+      anonymous request (OWASP API3 excessive data exposure).
+  - id: register-mass-assignment
+    vuln_class: mass-assignment
+    location: "/users/v1/register"
+    severity: high
+    description: >-
+      POST /users/v1/register accepts a client-supplied "admin" flag and persists it, so any user
+      can self-register as an administrator (OWASP API6 mass assignment).
+  - id: weak-jwt-secret
+    vuln_class: broken-authentication
+    location: "JWT signing secret"
+    severity: critical
+    description: >-
+      The HS256 JWT signing secret is weak ("random"); it is recoverable from a common-secret
+      wordlist, allowing an attacker to forge arbitrary valid tokens (OWASP API2 broken auth).
+  - id: books-bola
+    vuln_class: idor
+    location: "/books/v1/{book_title}"
+    severity: high
+    description: >-
+      Broken object level authorization: any authenticated user can read another user's book
+      (and its secret) by title — no ownership check (OWASP API1 BOLA). Requires seeded books.

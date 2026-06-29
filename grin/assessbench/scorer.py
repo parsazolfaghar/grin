@@ -82,6 +82,11 @@ def _location_matches(finding: Finding, pat: re.Pattern) -> bool:
     # crawl log that incidentally mentions the ground-truth path would wrongly credit a finding
     # that is actually about a different endpoint — a false true-positive (inflated precision).
     candidates = _candidate_paths(finding.location) or _candidate_paths(finding.evidence)
+    # Also match the finding's raw location LABEL (not evidence) — for annotated paths like
+    # "/a/b (param)" and non-path labels like "JWT signing secret" that path-mining can't capture.
+    # This is the finding's own claimed location, so it carries no evidence-mining FP risk.
+    if finding.location:
+        candidates = list(candidates) + [finding.location.strip().lower()]
     for cand in candidates:
         if pat.fullmatch(cand):
             return True

@@ -55,6 +55,16 @@ def test_recon_generates_bac_sqli_ssti_candidates():
     assert sqli.method == "POST" and sqli.inject_field == "email" and "login" in sqli.url
 
 
+def test_recon_emits_ssrf_candidate_for_url_param_when_oob_present():
+    def fetch(url):
+        return (200, '<form><input name="url"><input name="q"></form>')
+    cands = recon("http://t", fetch, oob=object())     # any non-None oob enables SSRF candidates
+    ssrf = [c for c in cands if c.vuln_class == "ssrf"]
+    assert len(ssrf) == 1 and ssrf[0].inject_field == "url" and ssrf[0].oracle.get("oob") is not None
+    # no oob -> no ssrf candidates (so existing runs are unaffected)
+    assert not any(c.vuln_class == "ssrf" for c in recon("http://t", fetch))
+
+
 def test_recon_survives_unreachable_page():
     def fetch(url):
         raise RuntimeError("down")
