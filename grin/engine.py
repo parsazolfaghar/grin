@@ -49,6 +49,7 @@ def recon(base_url, fetch, login_path="/rest/user/login", oob=None):
     for param in _extract_params(body):
         candidates.append(Candidate("ssti", f"/ (param {param})", base + "/", inject_field=param))
         candidates.append(Candidate("reflected-xss", f"/ (param {param})", base + "/", inject_field=param))
+        candidates.append(Candidate("command-injection", f"/ (param {param})", base + "/", inject_field=param))
         if oob is not None and _URL_PARAM_RE.match(param):
             candidates.append(Candidate("ssrf", f"/ (param {param})", base + "/",
                                         inject_field=param, oracle={"oob": oob}))
@@ -67,6 +68,7 @@ _SEVERITY = {
     "mass-assignment": "high",
     "broken-authentication": "critical",
     "xss": "high",
+    "command-injection": "critical",
 }
 
 
@@ -146,6 +148,7 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
     for loc, url, field in points:
         candidates.append(Candidate("sqli-error", loc, url, inject_field=field))
         candidates.append(Candidate("reflected-xss", loc, url, inject_field=field))
+        candidates.append(Candidate("command-injection", loc, url, inject_field=field))
         if oob is not None and _URL_PARAM_RE.match(field):
             candidates.append(Candidate("ssrf", loc, url, inject_field=field, oracle={"oob": oob}))
     return assess(candidates, transport, target=target or base_url)

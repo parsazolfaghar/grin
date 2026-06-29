@@ -222,6 +222,41 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_cmd_injection (execution-proven via shell arithmetic) ---
+import re as _re_cmdi
+
+
+def _cmdi_candidate():
+    return Candidate(vuln_class="command-injection", location="/run (cmd)", url="http://t/run",
+                     inject_field="cmd")
+
+
+def test_verify_cmd_injection_confirmed_when_shell_executes():
+    # a transport that actually evaluates echo grin$((A*B))z -> grin<product>z
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("cmd=", 1)[1]) if "cmd=" in url else ""
+        m = _re_cmdi.search(r"grin\$\(\((\d+)\*(\d+)\)\)z", val)
+        return (200, f"pinging\ngrin{int(m.group(1)) * int(m.group(2))}z\n") if m else (200, "pinging " + val)
+    assert verify(_cmdi_candidate(), Transport(request=request)).status == CONFIRMED
+
+
+def test_verify_cmd_injection_rejected_on_reflection():
+    # the app echoes the RAW input (no shell) -> shows the literal $((..)) expression, never the product
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("cmd=", 1)[1]) if "cmd=" in url else ""
+        return (200, "you entered: " + val)
+    assert verify(_cmdi_candidate(), Transport(request=request)).status == REJECTED
+
+
+def test_verify_cmd_injection_confirmed_even_on_500():
+    # the chained command 500s the original, but the echo still ran and the sentinel is in the body
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("cmd=", 1)[1]) if "cmd=" in url else ""
+        m = _re_cmdi.search(r"grin\$\(\((\d+)\*(\d+)\)\)z", val)
+        return (500, f"error\ngrin{int(m.group(1)) * int(m.group(2))}z\n") if m else (200, "ok")
+    assert verify(_cmdi_candidate(), Transport(request=request)).status == CONFIRMED
+
+
 # --- verify_reflected_xss (unencoded HTML reflection) ---
 
 def _xss_candidate():

