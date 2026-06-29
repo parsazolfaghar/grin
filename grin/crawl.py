@@ -75,21 +75,15 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
     the attacker session. Returns (candidates, status) where status is 'ok' or 'deauth'; candidates
     are (location, url, inject_field) for the error-SQLi verifier. Emits ZERO on deauth."""
     start = start_url
-    try:
-        _s0, b0 = fetch(start)
-    except Exception:
-        return [], "ok"
-    had_logout = any(m in (b0 or "").lower() for m in _LOGOUT_MARKERS)
 
     def session_ok(body):
-        # When the authed baseline has a logout control, its PRESENCE is the authority — a real
-        # deauth removes the menu. A password input alone is NOT deauth: legit pages (brute-force,
-        # change-password) contain one. Only when there's no logout baseline do we fall back to the
-        # weaker "a login form appeared" signal.
+        # Deauth = the response IS the login page: a password input AND no logout control. A password
+        # input alone is NOT deauth (brute-force / change-password pages have one); a minimal authed
+        # page that simply lacks the menu (a source/help popup) is NOT deauth either.
         bl = (body or "").lower()
-        if had_logout:
-            return any(m in bl for m in _LOGOUT_MARKERS)
-        return not any(m.lower() in bl for m in _LOGIN_MARKERS)
+        looks_like_login = any(m.lower() in bl for m in _LOGIN_MARKERS)
+        has_logout = any(m in bl for m in _LOGOUT_MARKERS)
+        return not (looks_like_login and not has_logout)
 
     seen, seen_cands, prefix_count, out = set(), set(), {}, []
     queue = [(start, 0)]
