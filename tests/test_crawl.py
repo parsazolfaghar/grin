@@ -122,3 +122,24 @@ def test_crawl_drops_junk_params():
     cands, _status = crawl_injection_points("http://t/index.php", _site(pages))
     fields = {c[2] for c in cands}
     assert fields == {"q"}     # page + csrf_token dropped, only the real param emitted
+
+
+def test_post_content_classes_allowlist():
+    from grin.crawl import _post_content_classes
+    assert _post_content_classes("/vulnerabilities/xss_s/", "mtxMessage") == ["stored-xss"]
+    assert _post_content_classes("/guestbook", "name") == ["stored-xss"]
+    assert _post_content_classes("/account/update", "amount") == []     # not a content field
+    assert _post_content_classes("/exec", "ip") == []                    # compute, not content
+
+
+def test_crawl_content_form_needs_allow_destructive_not_allow_post():
+    pages = {"/index.php": '<form method="post" action="/guestbook"><textarea name="message"></textarea>'
+                          '<input type="submit" name="Sign"></form> Logout'}
+    # allow_post alone must NOT emit a content sink (it is a WRITE, gated by allow_destructive)
+    po = []
+    crawl_injection_points("http://t/index.php", _site(pages), allow_post=True, post_out=po)
+    assert po == []
+    # allow_destructive emits the stored-xss candidate
+    po2 = []
+    crawl_injection_points("http://t/index.php", _site(pages), allow_destructive=True, post_out=po2)
+    assert len(po2) == 1 and po2[0]["classes"] == ["stored-xss"] and po2[0]["field"] == "message"

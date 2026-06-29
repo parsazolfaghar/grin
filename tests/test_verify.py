@@ -718,3 +718,118 @@ def test_verify_write_authz_rejected_when_forged_write_blocked():
     t = Transport(request=lambda *a, **k: (200, ""),
                   by_role={"attacker": _reviews_role(block_forged_value="victim@x")})
     assert verify(_write_authz_candidate(), t).status == REJECTED
+
+
+# --- stored XSS ------------------------------------------------------------------------------
+def _stored_app(*, encode=False, ctx="text", stores=True, anon_sees=True,
+                has_anon=True, has_victim=False):
+    """A fake guestbook: a GET ?comment=X writes; a GET to the view renders the store.
+    encode -> output is HTML-escaped; ctx picks the render context; anon_sees gates the anon view."""
+    store = {"v": None}
+
+    def render():
+        s = store["v"]
+        if s is None:
+            inner = ""
+        elif encode:
+            inner = s.replace("<", "&lt;")
+        elif ctx == "attr":
+            inner = f'<a href="{s}">x</a>'
+        elif ctx == "script":
+            inner = f'<script>var x="{s}";</script>'
+        else:
+            inner = f"<p>{s}</p>"
+        return f"<html><body>guestbook {inner}</body></html>"
+
+    def writer(u, method="GET", json=None, data=None):
+        params = dict(urllib.parse.parse_qsl(urllib.parse.urlparse(u).query))
+        if "comment" in params:
+            if stores:
+                store["v"] = params["comment"]
+            return (200, "<html>saved</html>")
+        return (200, render())
+
+    def anon(u):
+        return (200, render()) if anon_sees else (200, "<html><input type='password'></html>")
+
+    def victim(u):
+        return (200, render())
+
+    roles = {"attacker": writer}
+    if has_anon:
+        roles["anon"] = anon
+    if has_victim:
+        roles["victim"] = victim
+    return Transport(request=lambda *a, **k: (200, ""), by_role=roles)
+
+
+def _stored_candidate():
+    return Candidate(vuln_class="stored-xss", location="/gb (comment)", url="http://t/gb",
+                     method="GET", inject_field="comment", oracle={"view_url": "http://t/gb"})
+
+
+def test_stored_xss_confirmed_via_distinct_anon_reader():
+    assert verify(_stored_candidate(), _stored_app(anon_sees=True)).status == CONFIRMED
+
+
+def test_stored_xss_encoded_output_rejected():
+    assert verify(_stored_candidate(), _stored_app(encode=True)).status == REJECTED
+
+
+def test_stored_xss_not_stored_rejected():
+    assert verify(_stored_candidate(), _stored_app(stores=False)).status == REJECTED
+
+
+def test_stored_xss_quoted_attribute_context_rejected():
+    assert verify(_stored_candidate(), _stored_app(ctx="attr")).status == REJECTED
+
+
+def test_stored_xss_script_context_rejected():
+    assert verify(_stored_candidate(), _stored_app(ctx="script")).status == REJECTED
+
+
+def test_stored_xss_self_only_no_distinct_reader_inconclusive():
+    # writer sees the unencoded marker but no anon/victim reader -> cross-user unproven
+    v = verify(_stored_candidate(), _stored_app(has_anon=False, has_victim=False))
+    assert v.status == INCONCLUSIVE
+
+
+def test_stored_xss_anon_blind_falls_through_to_victim():
+    # anon cannot see the login-gated view; a victim account can -> CONFIRMED via victim
+    v = verify(_stored_candidate(), _stored_app(anon_sees=False, has_anon=True, has_victim=True))
+    assert v.status == CONFIRMED and "victim" in v.evidence
+
+
+def test_stored_xss_anon_blind_only_inconclusive():
+    # anon is the only distinct reader and it cannot see the view -> cross-user not proven
+    v = verify(_stored_candidate(), _stored_app(anon_sees=False, has_anon=True, has_victim=False))
+    assert v.status == INCONCLUSIVE
+
+
+def test_stored_xss_missing_view_url_inconclusive():
+    c = Candidate(vuln_class="stored-xss", location="/gb", url="http://t/gb",
+                  method="GET", inject_field="comment", oracle={})
+    assert verify(c, _stored_app()).status == INCONCLUSIVE
+
+
+def test_stored_xss_form_post_path_confirmed():
+    store = {"v": None}
+
+    def writer(u, method="GET", json=None, data=None):
+        if method == "POST":
+            store["v"] = dict(urllib.parse.parse_qsl(data or "")).get("comment")
+            return (200, "<html>saved</html>")
+        # GET of the form / view page
+        if store["v"] is None:
+            form = '<form method="post"><input name="comment"><input name="csrf" value="t"></form>'
+            return (200, f"<html><body>{form}</body></html>")
+        return (200, f'<html><body><p>{store["v"]}</p></body></html>')
+
+    def anon(u):
+        return (200, f'<html><body><p>{store["v"]}</p></body></html>') if store["v"] else (200, "<html>empty</html>")
+
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"attacker": writer, "anon": anon})
+    c = Candidate(vuln_class="stored-xss", location="/gb (comment)", url="http://t/gb",
+                  method="POST", inject_field="comment",
+                  oracle={"view_url": "http://t/gb", "form": True, "form_url": "http://t/gb"})
+    assert verify(c, t).status == CONFIRMED

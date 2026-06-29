@@ -79,6 +79,7 @@ _SEVERITY = {
     "mass-assignment": "high",
     "broken-authentication": "critical",
     "xss": "high",
+    "stored-xss": "high",
     "command-injection": "critical",
     "open-redirect": "medium",
 }
@@ -144,11 +145,15 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
 
 
 def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
-                       extra_cookies=None, request_full=None, target="", oob=None, allow_post=False):
+                       extra_cookies=None, request_full=None, target="", oob=None, allow_post=False,
+                       allow_destructive=False):
     """Fully autonomous assessment of a cookie-session app (no OpenAPI): auto-discover + drive the
     login form, crawl the authenticated surface for injection points, and verify them. Returns the
     confirmed findings ([] if login could not be established). allow_post (operator opt-in) lets the
-    crawler probe allowlisted compute/lookup POST forms (e.g. exec/ping) — off by default."""
+    crawler probe allowlisted compute/lookup POST forms (e.g. exec/ping); allow_destructive lets it
+    write to persistent content sinks (stored-XSS) — both off by default. A CONFIRMED stored-XSS needs
+    a distinct reader: 'anon' (built always) proves a public render; pass a 2nd credential for a
+    cross-account 'victim' reader when the render page is login-gated."""
     from grin.cookie_auth import build_cookie_transport_auto
     from grin.crawl import crawl_injection_points
     transport, _n, _spec = build_cookie_transport_auto(
@@ -156,12 +161,19 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
     attacker = transport.by_role.get("attacker")
     if attacker is None:
         return []
-    post_out = [] if allow_post else None
+    post_out = [] if (allow_post or allow_destructive) else None
     points, _status = crawl_injection_points(base_url.rstrip("/") + start_path, lambda u: attacker(u),
-                                             allow_post=allow_post, post_out=post_out)
+                                             allow_post=allow_post, allow_destructive=allow_destructive,
+                                             post_out=post_out)
     candidates = []
     for pf in (post_out or []):                 # opt-in POST-form candidates (archetype-allowlisted)
         for cls in pf["classes"]:
+            if cls == "stored-xss":             # content sink: write then read the render page back
+                candidates.append(Candidate("stored-xss", pf["location"], pf["action"], method="POST",
+                                            inject_field=pf["field"],
+                                            oracle={"form": True, "form_url": pf["form_url"],
+                                                    "view_url": pf["form_url"]}))
+                continue
             candidates.append(Candidate(cls, pf["location"], pf["action"], method="POST",
                                         inject_field=pf["field"],
                                         oracle={"form": True, "form_url": pf["form_url"]}))

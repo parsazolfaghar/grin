@@ -76,6 +76,23 @@ def _post_archetype_classes(action, field):
     return []
 
 
+# CONTENT-sink forms persist attacker text that later renders (guestbook/comment/message/profile).
+# These are the stored-XSS archetype the compute/lookup allowlist deliberately excludes -> they are
+# gated behind allow_destructive (a WRITE), separate from the allow_post compute/lookup probes.
+_CONTENT_RE = re.compile(
+    r"(comment|message|guestbook|sign|^name$|txtname|fullname|^bio$|^body$|^text$|review|"
+    r"feedback|^content$|description|^subject$|^post$|^note$|^msg$)", re.I)
+
+
+def _post_content_classes(action, field):
+    """Allowlist for persistent content sinks (stored-XSS). DESTRUCTIVE (writes content) -> the
+    caller must opt in via allow_destructive. Returns ['stored-xss'] for a content field, else []."""
+    a, f = action.lower(), field.lower()
+    if _CONTENT_RE.search(a) or _CONTENT_RE.search(f):
+        return ["stored-xss"]
+    return []
+
+
 def _looks_html(body):
     s = (body or "").lstrip()
     return bool(s) and s[:1] not in "{[" and "<" in s[:1024]
@@ -91,7 +108,7 @@ def _forms(body):
 
 
 def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50, max_depth=3,
-                           per_prefix=3, allow_post=False, post_out=None):
+                           per_prefix=3, allow_post=False, allow_destructive=False, post_out=None):
     """BFS the authenticated session for GET injection points. fetch(url)->(status, body) must use
     the attacker session. Returns (candidates, status) where status is 'ok' or 'deauth'; candidates
     are (location, url, inject_field) for the error-SQLi verifier. Emits ZERO on deauth."""
@@ -143,7 +160,8 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
             action = urllib.parse.urljoin(url, form["action"]) if form["action"] else url.split("?", 1)[0]
             action = urllib.parse.urldefrag(action)[0]      # action="#" -> the page itself, no fragment
             inject = [f["name"] for f in form["fields"]
-                      if f["tag"] == "input" and f["type"] in _FILLABLE_TYPES and not _SKIP_PARAM_RE.match(f["name"])]
+                      if f.get("name") and not _SKIP_PARAM_RE.match(f["name"])
+                      and ((f["tag"] == "input" and f["type"] in _FILLABLE_TYPES) or f["tag"] == "textarea")]
             if method == "get":
                 if not _classify_readonly(action, start):
                     continue
@@ -151,14 +169,17 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
                 for tf in inject:
                     fixed = [(k, v) for k, v in inputs if k != tf]
                     _emit(out, seen_cands, action, fixed, tf, urllib.parse.urlparse(action).path)
-            elif method == "post" and allow_post and post_out is not None:
+            elif method == "post" and post_out is not None and (allow_post or allow_destructive):
                 # OPT-IN only. Positive archetype allowlist + per-archetype class gating; the verifier
-                # re-fetches `url` for a fresh CSRF and POSTs form-encoded.
+                # re-fetches `url` for a fresh CSRF and POSTs form-encoded. allow_post -> compute/lookup
+                # probes; allow_destructive -> persistent content sinks (stored-XSS, a WRITE).
                 if not _classify_readonly(action, start):
                     continue
                 apath = urllib.parse.urlparse(action).path
                 for tf in inject:
-                    classes = _post_archetype_classes(action, tf)
+                    classes = _post_archetype_classes(action, tf) if allow_post else []
+                    if allow_destructive:
+                        classes = classes + [c for c in _post_content_classes(action, tf) if c not in classes]
                     key = ("POST", action, tf)
                     if classes and key not in seen_cands:
                         seen_cands.add(key)

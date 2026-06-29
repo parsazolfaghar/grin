@@ -700,6 +700,91 @@ def verify_reflected_xss(candidate: Candidate, transport: Transport) -> Verdict:
                    "input reflected with a raw '<' in an HTML context (HTML injection; script execution not verified without a browser)")
 
 
+# --- stored XSS (write-then-read cross-session persistence oracle) -----------------------------
+def verify_stored_xss(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: write a unique benign unknown-tag marker ("<grins<rand>") to a content sink, then read
+    the render page back. The WRITER's own read-back is authoritative for "stored & unencoded"
+    (REJECTED lives here, so a login-gated view never false-rejects). A FINDING additionally requires a
+    session DISTINCT from the writer (anon or victim) to see the raw marker in an injectable HTML
+    context -- that rules out session-flash, cookie echo and self-only injection, proving cross-session
+    persistence. Reuses the reflected-xss context check; like it, proves stored HTML injection, NOT
+    script execution (no browser). WRITES persistent content -> gated upstream by allow_destructive."""
+    import uuid
+    loc, o = candidate.location, candidate.oracle
+    view_url = o.get("view_url")
+    if not view_url:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, "no view_url to read stored content from")
+    marker = "<grins" + uuid.uuid4().hex[:10]
+    writer = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None, data=None: transport.request(method, u, json=json))
+
+    def writer_view():
+        s, b = writer(view_url)
+        return s, (b or "")
+
+    # 1. negative baseline: the unique marker must be absent before we write it
+    try:
+        _bs, bbody = writer_view()
+    except Exception:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, "could not read the view page")
+    if marker in bbody:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, "view already contains the unique marker -- cannot test cleanly")
+
+    # 2. write the marker to the sink
+    field = candidate.inject_field or "comment"
+    try:
+        if o.get("form"):
+            ws, _wb = _form_post_send(writer, o["form_url"], candidate.url, field, marker)
+        elif candidate.method.upper() == "POST":
+            ws, _wb = writer(candidate.url, method="POST", json={field: marker})
+        else:
+            ws, _wb = writer(_with_param(candidate.url, field, marker))
+    except Exception:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, "write request raised an exception")
+    if not ws or ws >= 400:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, f"write did not succeed (status {ws})")
+
+    # 3. writer reads back -- authoritative for "stored & unencoded in an injectable context"
+    try:
+        rs, rbody = writer_view()
+    except Exception:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, "read-back request raised an exception")
+    if not rs or rs >= 400:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc, f"could not read back cleanly (status {rs})")
+    if not _looks_html_body(rbody):
+        return Verdict(REJECTED, "stored-xss", loc, "view response is not an HTML document")
+    bl = rbody.lower()
+    idx = bl.find(marker.lower())
+    if idx == -1:
+        return Verdict(REJECTED, "stored-xss", loc, "marker not stored, or HTML-encoded on output")
+    if _in_noninjectable_context(bl, idx):
+        return Verdict(REJECTED, "stored-xss", loc,
+                       "stored but rendered in a non-injectable context (comment / raw-text element / quoted attribute)")
+
+    # 4. upgrade to CONFIRMED only when a DISTINCT session also sees the raw marker (cross-user proof)
+    readers = [(lbl, transport.by_role[lbl]) for lbl in ("anon", "victim") if lbl in transport.by_role]
+    for lbl, r in readers:
+        try:
+            _s, b = r(view_url)
+        except Exception:
+            continue
+        b = b or ""
+        if not _looks_html_body(b):
+            continue
+        i = b.lower().find(marker.lower())
+        if i != -1 and not _in_noninjectable_context(b.lower(), i):
+            return Verdict(CONFIRMED, "stored-xss", loc,
+                           f"stored HTML injection: an attacker-written marker renders unencoded in the {lbl} session's "
+                           "view (cross-session persistence; script execution not demonstrated without a browser)")
+    if not readers:
+        return Verdict(INCONCLUSIVE, "stored-xss", loc,
+                       "marker stored & unencoded in the writer's own session, but no distinct (anon/victim) reader "
+                       "was supplied to prove cross-user persistence")
+    return Verdict(INCONCLUSIVE, "stored-xss", loc,
+                   "marker stored & unencoded for the writer, but no distinct session saw it -- may be self/role-scoped; "
+                   "cross-user persistence not proven")
+
+
 # --- broken authentication (OWASP API2): a weak HS256 JWT signing secret --------------------
 # A small common-secret list (a real engagement would load a wordlist; this is the cheap check).
 _JWT_WORDLIST = (
@@ -978,6 +1063,7 @@ _REGISTRY: dict = {
     "mass-assignment": verify_mass_assignment,
     "jwt-weak-secret": verify_jwt_weak_secret,
     "reflected-xss": verify_reflected_xss,
+    "stored-xss": verify_stored_xss,
     "ssrf": verify_ssrf,
     "command-injection": verify_cmd_injection,
     "blind-command-injection": verify_blind_cmd_injection,
