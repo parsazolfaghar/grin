@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from grin.finding import Finding, normalize_severity
 from grin.jsonextract import extract_json
+from grin.mode import ASSESSMENT, CTF
 from grin.secret import Secret
 
 SYSTEM = (
@@ -15,6 +16,37 @@ SYSTEM = (
     "adapt. Be EFFICIENT: a strong operator reaches the goal in the FEWEST actions by reading "
     "each result and following the lead it reveals — not by guessing many things. Propose the "
     "SINGLE next action, or finish with findings. Reply with ONE JSON object and nothing else."
+)
+
+# Assessment-mode mission (mode == ASSESSMENT). A real app has no flag; success is concrete,
+# reproducible vulnerability findings reported to the owner. This block REPLACES the CTF
+# flag-hunting methodology; the CTF mission is unchanged and still used in every other mode.
+ASSESSMENT_MISSION = (
+    "## Mission: security ASSESSMENT (not a CTF — there is NO flag)\n"
+    "You are assessing a REAL application for REAL vulnerabilities to report to its owner. Success "
+    "is a set of CONCRETE, REPRODUCIBLE findings — NOT capturing a flag. Do NOT hunt for flag files "
+    "or capture-the-flag artifacts, and do NOT blindly spray injection payloads at random parameters. "
+    "A real app has none of those; doing so burns the budget and produces nothing.\n\n"
+    "## What to do\n"
+    "1. ENUMERATE the reachable surface: fetch the app, read the body for links, comments, and "
+    "referenced paths; note API endpoints, static paths, and any directory that serves content.\n"
+    "2. For THIS engagement, hunt BROKEN ACCESS CONTROL: request endpoints and resources as an "
+    "UNAUTHENTICATED client (no login, no token) and read what comes back. A resource that returns "
+    "sensitive data or privileged functionality WITHOUT credentials is a broken-access-control "
+    "finding.\n"
+    "   - PREFER the `bac-probe` helper: it requests a list of candidate paths unauthenticated and "
+    "reports the ones exposing sensitive content (e.g. `/ftp/...`, admin areas, backups, `.git`, data "
+    "APIs): `bac-probe --url http://<target>/`.\n"
+    "   - CONFIRM by reading the response: a 200 returning confidential content (a file listing, a "
+    "backup, another entity's data) is the finding; a login page or a 401/403 is NOT.\n"
+    "3. REPORT each confirmed issue in the `findings` list of your reply, each with: a clear title, "
+    "`vuln_class: broken-access-control`, the exact `location` (the path/endpoint), a severity, and "
+    "the EVIDENCE (the request you sent and the sensitive response).\n\n"
+    "## Done\n"
+    "You are done when you have enumerated the reachable surface and reported the access-control "
+    "findings you can evidence — NOT when you 'capture' something. Reporting ZERO findings after "
+    "thorough enumeration is a valid result: never invent one, because a false report to a real owner "
+    "is worse than none.\n"
 )
 
 
@@ -60,7 +92,7 @@ def _self_correct_banner(journal) -> str:
 
 
 def build_step_prompt(objective: str, target: str, journal, allowed_classes,
-                      brain=None) -> tuple[str, str]:
+                      brain=None, mode: str = CTF) -> tuple[str, str]:
     history = journal.render_history()
     # Grin Brain: inject the proven plays for the situations detected in this run's history, so the
     # right deterministic helper is applied EVERY time instead of rediscovered by luck.
@@ -71,6 +103,19 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes,
             learned = brain.render(detect_situations(history, target=target))
         except Exception:  # noqa: BLE001 - the brain must never break a run
             learned = ""
+    if mode == ASSESSMENT:
+        # Assessment mode: a different mission entirely (find + report real vulns, no flag-hunting).
+        # The CTF construction below is left untouched so its behavior is byte-for-byte unchanged.
+        user = (
+            f"Objective: {objective}\n"
+            f"Authorized target: {target}\n"
+            f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
+            + learned
+            + f"History so far:\n{history}\n\n"
+            + _self_correct_banner(journal)
+            + ASSESSMENT_MISSION
+        )
+        return SYSTEM, user
     user = (
         f"Objective: {objective}\n"
         f"Authorized target: {target}\n"
