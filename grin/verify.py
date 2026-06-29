@@ -349,15 +349,19 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
     import uuid
     loc, o = candidate.location, candidate.oracle
     marker = "grin" + uuid.uuid4().hex[:8]
+    # Probe as the attacker session when one exists (so cookie/auth-gated endpoints are reachable),
+    # else anonymously. A role callable and transport.request share the (method, url, json) shape.
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
 
     def send(value):
         if o.get("inject") == "path":
             url = o["url_template"].replace("{inject}", urllib.parse.quote(value, safe=""))
-            return transport.request("GET", url)
+            return agent(url)
         field = candidate.inject_field or "q"
         if candidate.method.upper() == "POST":
-            return transport.request("POST", candidate.url, json={field: value})
-        return transport.request("GET", _with_param(candidate.url, field, value))
+            return agent(candidate.url, method="POST", json={field: value})
+        return agent(_with_param(candidate.url, field, value))
 
     try:
         sa, a = send(marker)
