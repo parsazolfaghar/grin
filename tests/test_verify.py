@@ -222,6 +222,49 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_path_traversal (/etc/passwd disclosure) ---
+
+_PASSWD = "root:x:0:0:root:/root:/bin/bash\ndaemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n"
+
+
+def _pt_candidate():
+    return Candidate(vuln_class="path-traversal", location="/read (file)", url="http://t/read",
+                     inject_field="file")
+
+
+def _pt_transport(render):
+    def request(method, url, json=None, headers=None):
+        val = urllib.parse.unquote(url.split("file=", 1)[1]) if "file=" in url else ""
+        return (200, render(val))
+    return Transport(request=request)
+
+
+def test_verify_path_traversal_confirmed_on_passwd_read():
+    def render(v):
+        return f"<pre>{_PASSWD}</pre>" if "etc/passwd" in v.replace("%00", "") else "<html>file</html>"
+    assert verify(_pt_candidate(), _pt_transport(render)).status == CONFIRMED
+
+
+def test_verify_path_traversal_rejected_on_reflection():
+    # the app echoes the payload string (contains 'etc/passwd') but NOT the file content
+    assert verify(_pt_candidate(), _pt_transport(lambda v: f"not found: {v}")).status == REJECTED
+
+
+def test_verify_path_traversal_rejected_on_single_passwd_line():
+    # a tutorial/WAF page with only the canonical root line is not a real file read (needs >=2 lines)
+    assert verify(_pt_candidate(),
+                  _pt_transport(lambda v: "example: root:x:0:0:root:/root:/bin/bash")).status == REJECTED
+
+
+def test_verify_path_traversal_inconclusive_on_unstable_baseline():
+    state = {"n": 0}
+
+    def render(v):
+        state["n"] += 1
+        return f"nonce-{state['n']}"
+    assert verify(_pt_candidate(), _pt_transport(render)).status == INCONCLUSIVE
+
+
 # --- verify_cmd_injection (execution-proven via shell arithmetic) ---
 import re as _re_cmdi
 
