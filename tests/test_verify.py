@@ -148,3 +148,38 @@ def test_verify_bac_rejected_when_spa_shell():
         return (200, "SPA-SHELL")     # identical to baseline -> the catch-all shell, not real content
     t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
     assert verify(_bac_candidate("/admin"), t).status == REJECTED
+
+
+# --- regression locks for the Grok oracle review ---
+
+def test_verify_sqli_rejected_on_token_shaped_value_in_401():
+    # a 401 whose body happens to contain authentication.token must NOT confirm (status gate)
+    def request(method, url, json=None, headers=None):
+        return (401, '{"authentication":{"token":"err-token"}}')
+    assert verify(_sqli_candidate(), Transport(request=request)).status == REJECTED
+
+
+def test_verify_sqli_inconclusive_on_all_5xx():
+    assert verify(_sqli_candidate(),
+                  Transport(request=lambda *a, **k: (500, "err"))).status == INCONCLUSIVE
+
+
+def test_verify_sqli_rejects_sentinel_token_value():
+    def request(method, url, json=None, headers=None):
+        return (200, '{"authentication":{"token":"false"}}')   # 200 but not a real session
+    assert verify(_sqli_candidate(), Transport(request=request)).status == REJECTED
+
+
+def test_verify_ssti_inconclusive_when_product_in_error_response():
+    def handler(method, url, json):
+        return (500, "stacktrace 7006652") if "1234" in url else (200, "control")
+    assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
+
+
+def test_verify_bac_uses_url_path_not_decorated_location():
+    def anon(u):
+        return (200, "CONFIDENTIAL legal text") if "ftp" in u else (200, "SHELL")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    c = Candidate(vuln_class="broken-access-control", location="(anon) /ftp/legal.md",
+                  url="http://t/ftp/legal.md", oracle={"baseline_url": "http://t/"})
+    assert verify(c, t).status == CONFIRMED

@@ -76,8 +76,10 @@ def verify_ssti(candidate: Candidate, transport: Transport) -> Verdict:
         return Verdict(INCONCLUSIVE, "ssti", loc, "request raised an exception")
 
     bbody, pbody = bbody or "", pbody or ""
-    # Evaluated only when the product appears with the payload but NOT in the benign baseline.
-    if _SSTI_PRODUCT in pbody and _SSTI_PRODUCT not in bbody:
+    # Evaluated only when the product appears with the payload, NOT in the benign baseline, AND the
+    # response was a clean (non-error) status — the product inside a 5xx stack trace / WAF page is
+    # ambiguous, not a confirmed evaluation.
+    if _SSTI_PRODUCT in pbody and _SSTI_PRODUCT not in bbody and pstatus and pstatus < 400:
         return Verdict(CONFIRMED, "ssti", loc,
                        f"{_SSTI_PAYLOAD} evaluated to {_SSTI_PRODUCT} (absent from the baseline)")
     if not pstatus or pstatus >= 400:
@@ -116,28 +118,31 @@ def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
     field_name = candidate.inject_field or "email"
     password = candidate.oracle.get("password", "wrong-pw-xyz")
     token_path = candidate.oracle.get("token_path", ("authentication", "token"))
-    reached = False
+    _SENTINELS = {"", "0", "false", "null", "none", "undefined"}
+    reached = False   # got at least one clean (non-5xx) response
     for payload in SQLI_PAYLOADS:
         try:
             status, body = transport.request("POST", candidate.url,
                                              json={field_name: payload, "password": password})
         except Exception:
             continue
-        if not status:
-            continue
+        if not status or status >= 500:
+            continue        # transport / server error — not a clean negative
         reached = True
+        if status != 200:
+            continue        # a 401 is a clean rejection of this payload, not a bypass
         try:
             data = _json.loads(body)
             tok = data
             for key in token_path:
                 tok = tok[key]
-            if str(tok).strip():
+            if str(tok).strip().lower() not in _SENTINELS:   # a real session token
                 return Verdict(CONFIRMED, "sql-injection", loc,
                                f"login bypassed with payload {payload!r}")
         except Exception:
             continue
     if not reached:
-        return Verdict(INCONCLUSIVE, "sql-injection", loc, "login endpoint unreachable")
+        return Verdict(INCONCLUSIVE, "sql-injection", loc, "login endpoint unreachable / erroring")
     return Verdict(REJECTED, "sql-injection", loc, "no injection payload bypassed the login")
 
 
@@ -157,7 +162,9 @@ def verify_bac(candidate: Candidate, transport: Transport) -> Verdict:
     except Exception:
         return Verdict(INCONCLUSIVE, "broken-access-control", loc, "request raised an exception")
     body, bbody = body or "", bbody or ""
-    if status == 200 and body.strip() and _is_sensitive(candidate.location) and body != bbody:
+    # Sensitivity is judged on the URL path, NOT the (possibly decorated) report key in `location`.
+    sensitive_path = urllib.parse.urlparse(candidate.url).path or candidate.location
+    if status == 200 and body.strip() and _is_sensitive(sensitive_path) and body != bbody:
         return Verdict(CONFIRMED, "broken-access-control", loc,
                        "sensitive content served without authentication")
     if status in (401, 403):
