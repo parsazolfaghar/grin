@@ -168,6 +168,19 @@ def test_verify_sqli_rejected_when_login_always_returns_token():
     assert verify(_sqli_candidate(), Transport(request=request)).status == REJECTED
 
 
+def test_verify_sqli_inconclusive_when_benign_control_unestablished():
+    # the benign control request errors (so we can't prove the endpoint isn't a give-tokens-to-anyone
+    # one); a later payload token must NOT be CONFIRMED -> INCONCLUSIVE (audit: benign except-pass FP)
+    def request(method, url, json=None, headers=None):
+        email = (json or {}).get("email", "")
+        if email == "grin-benign@example.test":
+            raise RuntimeError("benign control transport error")
+        if "OR 1=1" in email or "'--" in email:
+            return (200, '{"authentication":{"token":"T"}}')
+        return (401, "Invalid email or password.")
+    assert verify(_sqli_candidate(), Transport(request=request)).status == INCONCLUSIVE
+
+
 # --- verify_bac (unauth sensitive access, baseline-diff) ---
 
 def _bac_candidate(path):
@@ -194,6 +207,14 @@ def test_verify_bac_rejected_when_spa_shell():
         return (200, "SPA-SHELL")     # identical to baseline -> the catch-all shell, not real content
     t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
     assert verify(_bac_candidate("/admin"), t).status == REJECTED
+
+
+def test_verify_bac_inconclusive_without_baseline_url():
+    # no baseline_url -> the SPA-shell diff (the precision) can't run -> fail closed (audit fix)
+    c = Candidate(vuln_class="broken-access-control", location="/admin", url="http://t/admin", oracle={})
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"anon": lambda u: (200, "any non-empty body")})
+    assert verify(c, t).status == INCONCLUSIVE
 
 
 # --- regression locks for the Grok oracle review ---
@@ -496,6 +517,12 @@ def _expo_cand():
                      url="http://t/users/v1/_debug")
 
 
+def test_verify_exposure_inconclusive_without_anon_session():
+    # no anon role -> we can't prove "served to an ANONYMOUS request" -> fail closed (audit fix)
+    t = Transport(request=lambda *a, **k: (200, '[{"username":"a","password":"p"}]'))
+    assert verify(_expo_cand(), t).status == INCONCLUSIVE
+
+
 def test_verify_exposure_confirmed_on_identity_plus_password_records():
     body = '{"users":[{"username":"admin","password":"pass1"},{"username":"bob","password":"pass2"}]}'
     assert verify(_expo_cand(), _exposure_transport(200, body)).status == CONFIRMED
@@ -570,10 +597,21 @@ def test_verify_error_sqli_rejected_on_generic_500_without_db_signature():
     assert verify(_esqli_candidate(), _esqli_transport(handler)).status == REJECTED
 
 
-def test_verify_error_sqli_rejected_when_signature_always_present():
-    # the page always shows a SQL banner (ORM debug) -> in baseline too -> not a differential
+def test_verify_error_sqli_inconclusive_when_signature_in_baseline():
+    # the page always shows a SQL banner (ORM debug) -> in baseline too -> we cannot isolate the
+    # broken quote, so it's "couldn't test cleanly" (INCONCLUSIVE), not a clean negative
     def handler(value):
         return (200, "powered by sqlalchemy; result ok")
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == INCONCLUSIVE
+
+
+def test_verify_error_sqli_rejected_when_balanced_control_also_errors():
+    # the DB error appears with the broken quote AND the balanced (escaped) control, but NOT the
+    # clean baseline -> not specific to the quote context -> REJECTED
+    def handler(value):
+        if value.endswith("'"):                              # both marker' and marker'' end with a quote
+            return (200, f'near "{value}": you have an error in your sql')
+        return (200, f"ok {value}")                          # clean baseline (no DB signature)
     assert verify(_esqli_candidate(), _esqli_transport(handler)).status == REJECTED
 
 
@@ -685,6 +723,15 @@ def test_verify_write_authz_rejected_when_record_exposes_true_owner():
     t = Transport(request=lambda *a, **k: (200, ""),
                   by_role={"attacker": _reviews_role(cosmetic_owner=True)})
     assert verify(_write_authz_candidate(), t).status == REJECTED
+
+
+def test_verify_write_authz_inconclusive_without_attacker_identity():
+    # no attacker_identity -> the cosmetic-field guard can't run -> fail closed (audit fix), even
+    # though the forged write would otherwise CONFIRM
+    c = _write_authz_candidate()
+    c.oracle.pop("attacker_identity")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"attacker": _reviews_role()})
+    assert verify(c, t).status == INCONCLUSIVE
 
 
 def test_verify_write_authz_inconclusive_when_control_write_not_surfaced():

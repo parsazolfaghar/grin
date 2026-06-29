@@ -218,8 +218,10 @@ def test_xxe_benign_errors_asymmetry_not_confirmed():
     assert verify(_xxe_candidate(), _xxe_app(benign_errors=True)).status == REJECTED
 
 
-def test_xxe_baseline_already_passwd_not_confirmed():
-    assert verify(_xxe_candidate(), _xxe_app(baseline_passwd=True)).status == REJECTED
+def test_xxe_baseline_already_passwd_inconclusive():
+    # the benign-entity baseline already looks like /etc/passwd -> cannot test cleanly (not a clean
+    # negative), mirroring the path-traversal oracle's baseline guard
+    assert verify(_xxe_candidate(), _xxe_app(baseline_passwd=True)).status == INCONCLUSIVE
 
 
 def test_xxe_not_vulnerable_rejected():
@@ -238,9 +240,17 @@ def test_xxe_blind_parameter_entity_confirmed_when_general_blocked():
     assert v.status == CONFIRMED and "external DTD" in v.evidence
 
 
-def test_xxe_blind_unhealthy_oob_rejected():
+def test_xxe_blind_unhealthy_oob_inconclusive():
+    # in-band negative AND an OOB collaborator is configured but unhealthy -> the blind arm could not
+    # run -> INCONCLUSIVE (coverage gap), not a clean REJECTED
     oob = _FakeOOB(healthy=False)
-    assert verify(_xxe_candidate(oob), _xxe_app(vulnerable=False, oob=oob)).status == REJECTED
+    assert verify(_xxe_candidate(oob), _xxe_app(vulnerable=False, oob=oob)).status == INCONCLUSIVE
+
+
+def test_xxe_in_band_negative_no_oob_rejected():
+    # in-band negative and NO collaborator configured -> the verifier only claims the in-band scope,
+    # so a clean REJECTED is honest here
+    assert verify(_xxe_candidate(), _xxe_app(vulnerable=False)).status == REJECTED
 
 
 def test_xxe_inconclusive_when_post_raises():
