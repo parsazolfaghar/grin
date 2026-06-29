@@ -392,6 +392,40 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- SSRF (out-of-band callback) --------------------------------------------------------------
+def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the target makes a server-side request to grin's OOB collaborator when a callback URL
+    is injected into the candidate param. CONFIRMED needs a callback from a source IP that is NOT
+    grin's own (the target made it, not grin's client following an open-redirect). An unhealthy /
+    unreachable collaborator -> INCONCLUSIVE, never REJECTED (a dead collaborator is a coverage gap).
+    Reported as 'outbound HTTP to the collaborator observed' — not full SSRF impact."""
+    import time
+    loc, o = candidate.location, candidate.oracle
+    oob = o.get("oob")
+    if oob is None or not oob.healthy():
+        return Verdict(INCONCLUSIVE, "ssrf", loc, "OOB collaborator unavailable / unreachable")
+    token = oob.mint_token()
+    cb = oob.callback_url(token)
+    field = candidate.inject_field or "url"
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
+    try:
+        if candidate.method.upper() == "POST":
+            agent(candidate.url, method="POST", json={field: cb})
+        else:
+            agent(_with_param(candidate.url, field, cb))
+    except Exception:
+        return Verdict(INCONCLUSIVE, "ssrf", loc, "probe request raised an exception")
+    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    while time.time() < deadline:
+        external = oob.hit_sources(token) - oob.grin_ips()
+        if external:
+            return Verdict(CONFIRMED, "ssrf", loc,
+                           f"the target made a server-side request to the OOB collaborator (source {sorted(external)})")
+        time.sleep(0.25)
+    return Verdict(REJECTED, "ssrf", loc, "no server-side request to the collaborator within the window")
+
+
 # --- reflected XSS (unencoded HTML reflection) ------------------------------------------------
 def _looks_html_body(body):
     s = (body or "").lstrip()
@@ -724,6 +758,7 @@ _REGISTRY: dict = {
     "mass-assignment": verify_mass_assignment,
     "jwt-weak-secret": verify_jwt_weak_secret,
     "reflected-xss": verify_reflected_xss,
+    "ssrf": verify_ssrf,
 }
 
 
