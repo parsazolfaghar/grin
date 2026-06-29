@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """bac-probe — deterministic broken-access-control detector for assessment mode.
 
 Requests a list of sensitive candidate paths as an UNAUTHENTICATED client and reports the ones
