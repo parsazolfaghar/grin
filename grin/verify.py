@@ -417,37 +417,46 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
 # --- open redirect (out-of-band, via grin's own client following the redirect) ----------------
 # --- shared OOB resolution (inline poll, or run-level deferral) --------------------------------
 def _oob_hits(oob, tokens, pred):
-    """Source IPs that hit the collaborator for any of `tokens`, filtered by predicate: 'external'
-    = the TARGET fetched it (not grin's own IP); 'grin_own' = grin's client followed a redirect."""
+    """Source IPs that hit the collaborator for any of `tokens`, filtered by predicate. HTTP arm:
+    'external' = the TARGET fetched it (not grin's own IP); 'grin_own' = grin's client followed a
+    redirect. DNS arm: 'dns' = any query for the unique token (uniqueness is the guard, no source-IP
+    filter — the source is the target's recursive resolver)."""
     s = set()
+    if pred == "dns":
+        for t in tokens:
+            s |= oob.dns_hit_sources(t)
+        return s
     for t in tokens:
         s |= oob.hit_sources(t)
     return (s & oob.grin_ips()) if pred == "grin_own" else (s - oob.grin_ips())
 
 
-def _oob_poll(oob, tokens, pred, timeout):
+def _oob_resolve(oob, probes, timeout):
+    """Poll a list of probes [{tokens, pred, evidence_fn}] in ONE window; return the evidence of the
+    FIRST probe that fires (None if none do)."""
     deadline = time.time() + float(timeout)
     while time.time() < deadline:
-        hit = _oob_hits(oob, tokens, pred)
-        if hit:
-            return hit
+        for pr in probes:
+            hit = _oob_hits(oob, pr["tokens"], pr["pred"])
+            if hit:
+                return pr["evidence_fn"](hit)
         time.sleep(0.25)
-    return set()
+    return None
 
 
-def _oob_defer_or_poll(oracle, oob, vuln_class, loc, tokens, pred, evidence_fn, rejected_evidence):
-    """Called AFTER an OOB probe is fired. If the harness installed a run-level deferral collector
-    (oracle['oob_defer']), register the pending tokens and return a placeholder INCONCLUSIVE -- assess
-    resolves every deferred probe in ONE poll window at the end of the run (N sequential waits -> 1).
-    Otherwise poll inline (timeout from oracle['ssrf_timeout'])."""
+def _oob_defer_or_poll(oracle, oob, vuln_class, loc, probes, rejected_evidence):
+    """Called AFTER an OOB probe is fired. probes is a list of {tokens, pred, evidence_fn} (e.g. SSRF
+    carries an HTTP probe AND a DNS probe). If the harness installed a run-level deferral collector
+    (oracle['oob_defer']), register the probes and return a placeholder INCONCLUSIVE -- assess resolves
+    every deferred probe in ONE poll window at the end of the run (N sequential waits -> 1). Otherwise
+    poll inline (timeout from oracle['ssrf_timeout'])."""
     defer = oracle.get("oob_defer")
     if defer is not None:
-        defer.append({"vuln_class": vuln_class, "location": loc, "tokens": list(tokens),
-                      "pred": pred, "evidence_fn": evidence_fn})
+        defer.append({"vuln_class": vuln_class, "location": loc, "probes": probes})
         return Verdict(INCONCLUSIVE, vuln_class, loc, "OOB probe fired; awaiting deferred run-level poll")
-    hit = _oob_poll(oob, tokens, pred, oracle.get("ssrf_timeout", 3))
-    if hit:
-        return Verdict(CONFIRMED, vuln_class, loc, evidence_fn(hit))
+    ev = _oob_resolve(oob, probes, oracle.get("ssrf_timeout", 3))
+    if ev is not None:
+        return Verdict(CONFIRMED, vuln_class, loc, ev)
     return Verdict(REJECTED, vuln_class, loc, rejected_evidence)
 
 
@@ -468,8 +477,10 @@ def verify_open_redirect(candidate: Candidate, transport: Transport) -> Verdict:
     except Exception:
         return Verdict(INCONCLUSIVE, "open-redirect", loc, "probe request raised an exception")
     return _oob_defer_or_poll(
-        o, oob, "open-redirect", loc, [token], "grin_own",
-        lambda hit: "the response redirected to an attacker-controlled URL (grin's client followed it to the collaborator)",
+        o, oob, "open-redirect", loc,
+        [{"tokens": [token], "pred": "grin_own",
+          "evidence_fn": lambda hit: "the response redirected to an attacker-controlled URL "
+                                     "(grin's client followed it to the collaborator)"}],
         "no redirect to the injected URL")
 
 
@@ -504,8 +515,10 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
         except Exception:
             continue
     return _oob_defer_or_poll(
-        o, oob, "command-injection", loc, [token], "external",
-        lambda hit: f"blind command injection: the target's shell fetched the OOB collaborator (source {sorted(hit)})",
+        o, oob, "command-injection", loc,
+        [{"tokens": [token], "pred": "external",
+          "evidence_fn": lambda hit: "blind command injection: the target's shell fetched the OOB "
+                                     f"collaborator (source {sorted(hit)})"}],
         "no out-of-band callback from an injected shell command")
 
 
@@ -637,27 +650,39 @@ def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
     is injected into the candidate param. CONFIRMED needs a callback from a source IP that is NOT
     grin's own (the target made it, not grin's client following an open-redirect). An unhealthy /
     unreachable collaborator -> INCONCLUSIVE, never REJECTED (a dead collaborator is a coverage gap).
-    Reported as 'outbound HTTP to the collaborator observed' — not full SSRF impact."""
+    Reported as 'outbound HTTP to the collaborator observed' — not full SSRF impact. Slice 2: when the
+    collaborator has a delegated DNS domain, ALSO injects a hostname URL — a DNS query for that unique
+    hostname confirms blind SSRF / hostname-allowlist bypass even when HTTP egress is filtered."""
     loc, o = candidate.location, candidate.oracle
     oob = o.get("oob")
     if oob is None or not oob.healthy():
         return Verdict(INCONCLUSIVE, "ssrf", loc, "OOB collaborator unavailable / unreachable")
-    token = oob.mint_token()
-    cb = oob.callback_url(token)
     field = candidate.inject_field or "url"
     agent = transport.by_role.get("attacker") or (
         lambda u, method="GET", json=None: transport.request(method, u, json=json))
-    try:
+
+    def send(value):
         if candidate.method.upper() == "POST":
-            agent(candidate.url, method="POST", json={field: cb})
-        else:
-            agent(_with_param(candidate.url, field, cb))
+            return agent(candidate.url, method="POST", json={field: value})
+        return agent(_with_param(candidate.url, field, value))
+
+    token = oob.mint_token()
+    probes = [{"tokens": [token], "pred": "external",
+               "evidence_fn": lambda hit: "the target made a server-side request to the OOB "
+                                          f"collaborator (source {sorted(hit)})"}]
+    try:
+        send(oob.callback_url(token))                       # HTTP arm (works when egress reaches grin)
+        if oob.dns_enabled():                               # DNS arm (catches egress-filtered / blind)
+            dtok = oob.mint_dns_token()
+            probes.append({"tokens": [dtok], "pred": "dns",
+                           "evidence_fn": lambda hit: "the target resolved an attacker-controlled "
+                                                      "hostname (blind SSRF / hostname-allowlist bypass; "
+                                                      "DNS interaction observed)"})
+            send(f"http://{oob.dns_callback_host(dtok)}/{token}")
     except Exception:
         return Verdict(INCONCLUSIVE, "ssrf", loc, "probe request raised an exception")
-    return _oob_defer_or_poll(
-        o, oob, "ssrf", loc, [token], "external",
-        lambda hit: f"the target made a server-side request to the OOB collaborator (source {sorted(hit)})",
-        "no server-side request to the collaborator within the window")
+    return _oob_defer_or_poll(o, oob, "ssrf", loc, probes,
+                              "no server-side request to the collaborator within the window")
 
 
 # --- reflected XSS (unencoded HTML reflection) ------------------------------------------------

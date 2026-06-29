@@ -342,10 +342,14 @@ def assess(candidates, transport, target: str = ""):
         while unresolved and time.time() < deadline:
             still = []
             for i in unresolved:
-                rec = pending[i]
-                hit = _oob_hits(oob, rec["tokens"], rec["pred"])
-                if hit:
-                    done[i] = rec["evidence_fn"](hit)
+                ev = None
+                for pr in pending[i]["probes"]:
+                    hit = _oob_hits(oob, pr["tokens"], pr["pred"])
+                    if hit:
+                        ev = pr["evidence_fn"](hit)
+                        break
+                if ev is not None:
+                    done[i] = ev
                 else:
                     still.append(i)
             if not still:

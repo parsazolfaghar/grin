@@ -36,10 +36,12 @@ def test_oob_server_records_hits_and_self_test_health():
 # --- verifier oracle with a fake OOB (no real network) ---
 
 class _FakeOOB:
-    def __init__(self, healthy=True):
+    def __init__(self, healthy=True, dns_domain=None):
         self._healthy = healthy
         self._hits = {}
-        self._n = 0
+        self._dns_hits = {}
+        self._dns_domain = dns_domain
+        self._n = self._dn = 0
 
     def healthy(self):
         return self._healthy
@@ -48,8 +50,18 @@ class _FakeOOB:
         self._n += 1
         return f"tok{self._n}"
 
+    def mint_dns_token(self):
+        self._dn += 1
+        return f"dtok{self._dn}"
+
     def callback_url(self, token):
         return f"http://oob.test/{token}"
+
+    def dns_enabled(self):
+        return bool(self._dns_domain)
+
+    def dns_callback_host(self, token):
+        return f"{token}.{self._dns_domain}"
 
     def grin_ips(self):
         return {"10.0.0.1"}
@@ -57,8 +69,14 @@ class _FakeOOB:
     def hit_sources(self, token):
         return self._hits.get(token, set())
 
+    def dns_hit_sources(self, token):
+        return self._dns_hits.get(token, set())
+
     def fire(self, token, ip):
         self._hits.setdefault(token, set()).add(ip)
+
+    def fire_dns(self, token, ip):
+        self._dns_hits.setdefault(token, set()).add(ip)
 
 
 def _ssrf_candidate(oob):
@@ -278,3 +296,70 @@ def test_assess_oob_single_poll_window_not_per_candidate():
     findings = assess(cands, Transport(request=lambda *a, **k: (200, "ok")))
     elapsed = _t.monotonic() - start
     assert findings == [] and elapsed < 2.0             # ONE ~1s window, not 3x sequential (~3s)
+
+
+# --- SSRF slice 2: DNS-token arm --------------------------------------------------------------
+def test_verify_ssrf_confirmed_via_dns_only_when_http_egress_filtered():
+    import re as _re
+    oob = _FakeOOB(dns_domain="oob.grin.test")
+
+    def request(method, url, json=None, headers=None, data=None):
+        m = _re.search(r"dtok\d+", url + str(json))
+        if m:
+            oob.fire_dns(m.group(0), "8.8.8.8")             # the resolver queried it; no HTTP egress
+        return (200, "ok")
+    v = verify(_ssrf_candidate(oob), Transport(request=request))
+    assert v.status == CONFIRMED and "resolved an attacker-controlled hostname" in v.evidence
+
+
+def test_verify_ssrf_http_arm_still_wins_when_dns_enabled():
+    import re as _re
+    oob = _FakeOOB(dns_domain="oob.grin.test")
+
+    def request(method, url, json=None, headers=None, data=None):
+        m = _re.search(r"tok\d+", url)                      # the HTTP path token (not dtok)
+        if m and not m.group(0).startswith("dtok"):
+            oob.fire(m.group(0), "172.20.0.9")
+        return (200, "ok")
+    v = verify(_ssrf_candidate(oob), Transport(request=request))
+    assert v.status == CONFIRMED and "server-side request" in v.evidence
+
+
+def _free_udp_port():
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    s.bind(("127.0.0.1", 0))
+    p = s.getsockname()[1]
+    s.close()
+    return p
+
+
+def _dns_query(host):
+    q = b"\x12\x34" + b"\x01\x00" + b"\x00\x01\x00\x00\x00\x00\x00\x00"
+    for label in host.split("."):
+        q += bytes([len(label)]) + label.encode()
+    return q + b"\x00" + b"\x00\x01" + b"\x00\x01"          # QTYPE A, QCLASS IN
+
+
+def test_oob_dns_capture_records_real_query():
+    import socket
+    import time as _t
+    dport = _free_udp_port()
+    oob = OOBServer(_free_port(), "http://127.0.0.1:1", bind_host="127.0.0.1",
+                    dns_domain="oob.grin.test", dns_port=dport)
+    oob.start()
+    try:
+        tok = oob.mint_dns_token()
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.settimeout(2)
+        s.sendto(_dns_query(oob.dns_callback_host(tok)), ("127.0.0.1", dport))
+        try:
+            s.recvfrom(512)                                 # the server answers an A record
+        except socket.timeout:
+            pass
+        deadline = _t.monotonic() + 2
+        while _t.monotonic() < deadline and not oob.dns_hit_sources(tok):
+            _t.sleep(0.05)
+        assert oob.dns_hit_sources(tok) == {"127.0.0.1"}
+    finally:
+        oob.stop()

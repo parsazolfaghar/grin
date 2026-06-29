@@ -932,7 +932,8 @@ def cmd_assessbench(*, target_id: str, findings: str = None, json_out: bool = Fa
 def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = None,
                start_path: str = "/", extra_cookie=None, oob_base: str = None,
                bench: str = None, json_out: bool = False, allow_post: bool = False,
-               allow_destructive: bool = False) -> int:
+               allow_destructive: bool = False, oob_dns_domain: str = None,
+               oob_dns_port: int = 53) -> int:
     """Run the autonomous assessment engine (the real-target overhaul) against a live URL."""
     from grin.engine import run_general, run_cookie_general
     credentials = []
@@ -945,8 +946,12 @@ def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = N
     if oob_base:
         from grin.oob import OOBServer
         _host, _, port = oob_base.partition(":")
-        oob = OOBServer(int(port or 9100), f"http://{oob_base}")
+        oob = OOBServer(int(port or 9100), f"http://{oob_base}",
+                        dns_domain=oob_dns_domain, dns_port=oob_dns_port)
         oob.start()
+        if oob_dns_domain:
+            print(f"OOB DNS arm active for *.{oob_dns_domain.strip('.')} (delegate this domain's NS "
+                  f"to {oob.bind_host}:{oob_dns_port} for live targets)")
         if not oob.self_test(timeout=5):
             print("warning: OOB collaborator self-test failed — SSRF / open-redirect / blind-cmdi "
                   "will be INCONCLUSIVE (is the bind host reachable from the target?)")
@@ -1139,6 +1144,11 @@ def build_parser() -> argparse.ArgumentParser:
     asx.add_argument("--allow-destructive", action="store_true",
                      help="opt-in: WRITE to persistent content sinks (guestbook/comment) to test "
                           "stored-XSS — leaves a benign marker behind; authorized targets only")
+    asx.add_argument("--oob-dns-domain", default=None,
+                     help="enable the DNS-token SSRF arm: a domain delegated to grin's collaborator "
+                          "(catches blind SSRF / hostname-allowlist bypass when HTTP egress is filtered)")
+    asx.add_argument("--oob-dns-port", type=int, default=53,
+                     help="UDP port for grin's authoritative DNS capture (default 53; needs privilege)")
     asx.add_argument("--json", dest="json_out", action="store_true", help="emit findings/score as JSON")
 
     p_ab = sub.add_parser("assessbench",
@@ -1237,7 +1247,8 @@ def main(argv=None) -> int:
         return cmd_assess(url=args.url, creds=args.creds, cookie=args.cookie, protected=args.protected,
                           start_path=args.start_path, extra_cookie=args.extra_cookie,
                           oob_base=args.oob_base, bench=args.bench, json_out=args.json_out,
-                          allow_post=args.allow_post, allow_destructive=args.allow_destructive)
+                          allow_post=args.allow_post, allow_destructive=args.allow_destructive,
+                          oob_dns_domain=args.oob_dns_domain, oob_dns_port=args.oob_dns_port)
     if args.group == "assessbench":
         return cmd_assessbench(target_id=args.target_id, findings=args.findings,
                                json_out=args.json_out)
