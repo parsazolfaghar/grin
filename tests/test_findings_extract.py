@@ -58,3 +58,11 @@ def test_extract_idor_findings():
     fs = extract_findings("idor-probe", "idor-probe --url http://t/", out, "http://t")
     assert len(fs) == 1
     assert fs[0].vuln_class == "idor" and fs[0].location == "/rest/basket/2"
+
+
+def test_extract_sqli_findings():
+    out = ("sqli-probe http://t/rest/user/login — 1 finding(s)\n"
+           "SQLI http://t/rest/user/login ' OR 1=1-- authentication bypass\n")
+    fs = extract_findings("sqli-probe", "sqli-probe --url http://t/", out, "http://t")
+    assert len(fs) == 1
+    assert fs[0].vuln_class == "sql-injection" and fs[0].location == "/rest/user/login"

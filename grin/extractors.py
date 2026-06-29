@@ -288,9 +288,34 @@ def _extract_idor(command: str, output: str, target: str) -> List[Finding]:
     return out
 
 
+_SQLI_RE = re.compile(r"^\s*SQLI\s+(\S+)\s+(.*)$")
+
+
+def _extract_sqli(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _SQLI_RE.match(line)
+        if not m:
+            continue
+        url, rest = m.group(1), m.group(2).strip()
+        path = re.sub(r"^https?://[^/]+", "", url) or url
+        out.append(Finding(
+            title=f"SQL injection authentication bypass at {path}",
+            target=target,
+            severity="critical",
+            evidence=f"login at {url} bypassed with payload: {rest}",
+            tool="sqli-probe",
+            command=command,
+            recommendation="Use parameterized queries / an ORM; never build SQL from user input.",
+            vuln_class="sql-injection",
+            location=path,
+        ))
+    return out
+
+
 def extract_findings(tool: str, command: str, output: str, target: str) -> List[Finding]:
     """Deterministic vulnerability findings parsed from a known tool's output. Never raises; [] when
-    nothing matches. Currently: nuclei, bac-probe, idor-probe."""
+    nothing matches. Currently: nuclei, bac-probe, idor-probe, sqli-probe."""
     try:
         tl = (tool or "").lower()
         cl = (command or "").lower()
@@ -300,6 +325,8 @@ def extract_findings(tool: str, command: str, output: str, target: str) -> List[
             return _extract_bac_probe(command or "", output or "", target or "")
         if "idor-probe" in tl or "idor-probe" in cl:
             return _extract_idor(command or "", output or "", target or "")
+        if "sqli-probe" in tl or "sqli-probe" in cl:
+            return _extract_sqli(command or "", output or "", target or "")
         return []
     except Exception:
         return []

@@ -65,7 +65,9 @@ def initial_plan(client, model: str, goal: str, scope_targets, seeds, mode: str 
             '{"objective": "test for broken access control with bac-probe (resources served '
             'without authentication)", "target": "<in-scope-target>", "action_class": "active-scan"}, '
             '{"objective": "if credentials are provided, test for IDOR with idor-probe (one user '
-            'reading another user\'s objects)", "target": "<in-scope-target>", "action_class": "exploit"}'
+            'reading another user\'s objects)", "target": "<in-scope-target>", "action_class": "exploit"}, '
+            '{"objective": "test the login for SQL injection auth bypass with sqli-probe", '
+            '"target": "<in-scope-target>", "action_class": "exploit"}'
             ']} '
             "(action_class is one of passive|active-scan|exploit|post-exploit).\n"
             "Return ONLY the JSON."

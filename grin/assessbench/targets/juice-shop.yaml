@@ -34,3 +34,10 @@ ground_truth:
     description: >-
       Confidential files (e.g. acquisitions.md, backups) are served from the browsable /ftp
       directory without authorization.
+  - id: login-sqli
+    vuln_class: sql-injection
+    location: "/rest/user/login"
+    severity: critical
+    description: >-
+      SQL injection in the login email field allows authentication bypass
+      (email `' OR 1=1--` logs in as the first user without a valid password).
