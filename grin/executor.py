@@ -139,7 +139,9 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             journal.save()
             return TaskResult("completed", journal.findings, journal, secrets=journal.secrets)
         system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions,
-                                         brain=brain, mode=step_mode)
+                                         brain=brain, mode=step_mode,
+                                         base_url=getattr(eng, "base_url", ""),
+                                         credentials=getattr(eng, "credentials", None))
         raw = client.generate(model=model, system=system, prompt=user, temperature=0.3)
         decision = parse_step(raw, target)
 

@@ -225,3 +225,36 @@ def test_parse_step_assessment_findings_carry_vuln_class_and_location():
     assert d.kind == "done"
     f = d.findings[0]
     assert f.vuln_class == "broken-access-control" and f.location == "/ftp/x"
+
+
+from grin.prompts import assessment_commands
+
+
+def test_assessment_commands_basic_no_creds():
+    cmds = assessment_commands("http://t:3000/")
+    assert "bac-probe --url http://t:3000/" in cmds
+    assert "sqli-probe --url http://t:3000" in cmds
+    assert not any("idor-probe" in c for c in cmds)   # needs two credentials
+
+
+def test_assessment_commands_with_credentials_builds_exact_idor():
+    creds = [{"email": "a@x", "password": "p1"}, {"email": "b@x", "password": "p2"}]
+    cmds = assessment_commands("http://t:3000", creds)
+    idor = [c for c in cmds if "idor-probe" in c][0]
+    assert "--url http://t:3000" in idor
+    assert "--user-a a@x:p1" in idor and "--user-b b@x:p2" in idor
+    assert "--resource /rest/basket/{id}" in idor
+
+
+def test_assessment_commands_empty_base_url_is_empty():
+    assert assessment_commands("") == []
+
+
+def test_assessment_prompt_injects_exact_verbatim_commands():
+    creds = [{"email": "a@x", "password": "p1"}, {"email": "b@x", "password": "p2"}]
+    _s, u = build_step_prompt("o", "http://t:3000", _journal(), ["active-scan"],
+                              mode="assessment", base_url="http://t:3000", credentials=creds)
+    assert "VERBATIM" in u
+    assert "bac-probe --url http://t:3000/" in u
+    assert "sqli-probe --url http://t:3000" in u
+    assert "idor-probe --url http://t:3000 --user-a a@x:p1 --user-b b@x:p2" in u

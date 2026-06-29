@@ -70,6 +70,25 @@ ASSESSMENT_MISSION = (
 )
 
 
+def assessment_commands(base_url, credentials=None, resource_template="/rest/basket/{id}"):
+    """Exact, ready-to-run probe commands for THIS target, so the agent copies them verbatim
+    instead of paraphrasing the URL/creds (the reliability bug: a dropped port and invented creds
+    made a proven IDOR get missed). Returns [] for an empty base_url. idor-probe is only emitted
+    when two credentials are supplied."""
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return []
+    cmds = [f"bac-probe --url {base}/", f"sqli-probe --url {base}"]
+    creds = list(credentials or [])
+    if len(creds) >= 2:
+        a, b = creds[0], creds[1]
+        cmds.append(f"idor-probe --url {base} "
+                    f"--user-a {a['email']}:{a['password']} "
+                    f"--user-b {b['email']}:{b['password']} "
+                    f"--resource {resource_template}")
+    return cmds
+
+
 def _recent_failure(journal):
     """Look at the most recent EXECUTED step: return (command, empty?, exit_code) if it produced no
     output or a non-zero exit — the signal that the command was malformed and needs correcting, not
@@ -112,7 +131,8 @@ def _self_correct_banner(journal) -> str:
 
 
 def build_step_prompt(objective: str, target: str, journal, allowed_classes,
-                      brain=None, mode: str = CTF) -> tuple[str, str]:
+                      brain=None, mode: str = CTF, base_url: str = "",
+                      credentials=None) -> tuple[str, str]:
     history = journal.render_history()
     # Grin Brain: inject the proven plays for the situations detected in this run's history, so the
     # right deterministic helper is applied EVERY time instead of rediscovered by luck.
@@ -128,12 +148,23 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes,
         # The CTF construction below is left untouched so its behavior is byte-for-byte unchanged.
         # Note: the Brain's `learned` plays are intentionally OMITTED here — they are CTF-shaped
         # (ssh-loot / flag-grab) and would contradict the assessment mission.
+        # Pre-built exact commands for this target — the reliability fix. The agent should COPY one
+        # verbatim rather than paraphrase the URL/creds (paraphrasing dropped a port + invented creds
+        # and made a proven IDOR get missed).
+        cmds = assessment_commands(base_url, credentials)
+        cmd_block = ""
+        if cmds:
+            cmd_block = ("## Ready-to-run commands for THIS target — copy ONE of these VERBATIM as "
+                         "your action `command` (the URL and credentials are already correct; do NOT "
+                         "edit them, do NOT invent placeholder creds):\n"
+                         + "".join(f"  {c}\n" for c in cmds) + "\n")
         user = (
             f"Objective: {objective}\n"
             f"Authorized target: {target}\n"
             f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
             + f"History so far:\n{history}\n\n"
             + _self_correct_banner(journal)
+            + cmd_block
             + ASSESSMENT_MISSION
         )
         return SYSTEM, user
