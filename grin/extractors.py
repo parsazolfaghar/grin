@@ -238,13 +238,40 @@ def _extract_nuclei(command: str, output: str, target: str) -> List[Finding]:
     return out
 
 
+_BAC_HIT_RE = re.compile(r"^\s*HIT\s+(\S+)\s+(\d+)\s*(.*)$")
+
+
+def _extract_bac_probe(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _BAC_HIT_RE.match(line)
+        if not m:
+            continue
+        path, status, reason = m.group(1), m.group(2), m.group(3).strip()
+        out.append(Finding(
+            title=f"Broken access control: {path} exposed without authentication",
+            target=target,
+            severity="medium",
+            evidence=f"GET {path} -> {status} unauthenticated; {reason}".strip(),
+            tool="bac-probe",
+            command=command,
+            recommendation="Require authentication/authorization for this resource.",
+            vuln_class="broken-access-control",
+            location=path,
+        ))
+    return out
+
+
 def extract_findings(tool: str, command: str, output: str, target: str) -> List[Finding]:
     """Deterministic vulnerability findings parsed from a known tool's output. Never raises; [] when
-    nothing matches. Currently: nuclei."""
+    nothing matches. Currently: nuclei, bac-probe."""
     try:
         tl = (tool or "").lower()
-        if "nuclei" in tl or "nuclei" in (command or "").lower():
+        cl = (command or "").lower()
+        if "nuclei" in tl or "nuclei" in cl:
             return _extract_nuclei(command or "", output or "", target or "")
+        if "bac-probe" in tl or "bac-probe" in cl:
+            return _extract_bac_probe(command or "", output or "", target or "")
         return []
     except Exception:
         return []
