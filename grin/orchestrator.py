@@ -335,6 +335,7 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
     # Deterministic assessment sweep: in assessment mode, fire the known-class probes directly
     # (through the authorized spine) so their detection does not depend on the LLM choosing to run
     # them — the loop kept varying on whether/how it ran each probe. The LLM loop then reasons on top.
+    refused_probes: list = []
     if getattr(eng, "assess", False) and getattr(eng, "base_url", ""):
         from grin.assessment import assessment_sweep
         from grin.spine import submit_action
@@ -343,12 +344,18 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
         def _run_probe(tool, command):
             oc = submit_action(eng, target=_scope_t, tool=tool, command=command,
                                declared_class=None, runner=runner, now=now)
+            if oc.status != "executed":
+                # a refused/pending probe found nothing because it never RAN — record it so a
+                # misconfigured scope/ROE shows up as "probes refused", not a clean "0 findings"
+                refused_probes.append({"tool": tool, "status": oc.status})
             return (oc.result.output if (oc.status == "executed" and oc.result) else "") or ""
         _merge_findings(findings, assessment_sweep(eng.base_url, eng.credentials, _run_probe,
                                                    eng.base_url))
     objectives_run: list = []
     paused: list = []
     plan_log: list = [{"kind": "initial_plan", "objectives": list(queue)}]
+    if refused_probes:
+        plan_log.append({"kind": "assessment_probes_refused", "probes": refused_probes})
     secrets: list = []
     loot = LootStore(loot_dir(eng))
 

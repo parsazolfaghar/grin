@@ -263,8 +263,8 @@ def run_general(base_url, credentials=None, *, request=None,
     for loc, url in discover_exposure_candidates(base_url, transport.by_role):
         candidates.append(Candidate("excessive-data-exposure", loc, url))
     # XXE at endpoints whose OpenAPI requestBody accepts XML (benign probe; no recursive entities)
-    for loc, url in discover_xxe_candidates(base_url, transport.by_role):
-        candidates.append(Candidate("xxe", loc, url, method="POST", oracle={"oob": oob} if oob else {}))
+    for loc, url, method in discover_xxe_candidates(base_url, transport.by_role):
+        candidates.append(Candidate("xxe", loc, url, method=method, oracle={"oob": oob} if oob else {}))
     # NoSQL operator-injection auth bypass at OpenAPI login endpoints (differential, no-auth probe)
     for loc, url, uf, pf in discover_login_candidates(base_url, transport.by_role):
         candidates.append(Candidate("nosql-injection", loc, url, method="POST",

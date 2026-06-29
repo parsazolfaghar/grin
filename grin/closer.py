@@ -78,7 +78,10 @@ def extract_web_foothold(history: str, target: str) -> dict | None:
 
 
 def _discovered_pivot_host(history: str, target: str) -> str | None:
-    """An in-scope host OTHER than the entry target, discovered via nmap in the history."""
+    """A CANDIDATE pivot host (an IP other than the entry target) seen in the history. Not itself
+    scope-filtered: every closer command is re-submitted through the spine, which authorizes the
+    target and rejects anything out of scope — so an out-of-scope IP surfaced here is dropped there,
+    never executed."""
     for ip in re.findall(r"\b(\d{1,3}(?:\.\d{1,3}){3})\b", history or ""):
         if ip != target and not ip.startswith("127."):
             return ip

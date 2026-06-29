@@ -338,11 +338,30 @@ def discover_exposure_candidates(base_url, by_role, *, max_paths=30):
 _LOGIN_PATH_RE = re.compile(r"(login|sign[_-]?in|authenticate|auth/token|sessions?$|session/new)", re.I)
 
 
-def _login_fields(op):
-    """Best-effort username/password field names from a login op's JSON requestBody schema; falls
-    back to ('username','password')."""
+def _resolve_ref(spec, node):
+    """Resolve a one-level local $ref ('#/components/schemas/X') against the spec. Returns the node
+    unchanged when it carries no $ref, and {} when the ref can't be resolved (fail soft)."""
+    if not isinstance(node, dict):
+        return {}
+    ref = node.get("$ref")
+    if not ref:
+        return node
+    if not (isinstance(ref, str) and ref.startswith("#/")):
+        return {}
+    cur = spec
+    for part in ref[2:].split("/"):
+        if not isinstance(cur, dict):
+            return {}
+        cur = cur.get(part, {})
+    return cur if isinstance(cur, dict) else {}
+
+
+def _login_fields(op, spec=None):
+    """Best-effort username/password field names from a login op's JSON requestBody schema; resolves
+    a one-level $ref schema; falls back to ('username','password')."""
     uf, pf = "username", "password"
     schema = (((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {}).get("schema") or {}
+    schema = _resolve_ref(spec or {}, schema)
     props = schema.get("properties") if isinstance(schema, dict) else None
     for name in (props or {}):
         nl = str(name).lower()
@@ -370,7 +389,7 @@ def discover_login_candidates(base_url, by_role, *, max_paths=8):
         if not _LOGIN_PATH_RE.search(p):
             continue
         op = next((ops[k] for k in ops if k.lower() == "post"), {})
-        uf, pf = _login_fields(op if isinstance(op, dict) else {})
+        uf, pf = _login_fields(op if isinstance(op, dict) else {}, spec)
         out.append((prefix + p, base + prefix + p, uf, pf))
         if len(out) >= max_paths:
             break
@@ -379,7 +398,8 @@ def discover_login_candidates(base_url, by_role, *, max_paths=8):
 
 def discover_xxe_candidates(base_url, by_role, *, max_paths=20):
     """Endpoints (from OpenAPI) whose requestBody accepts an XML media type — the autonomous signal
-    that an operation parses XML (the XXE surface). Returns [(location, url), ...] for POST/PUT ops.
+    that an operation parses XML (the XXE surface). Returns [(location, url, method), ...] for
+    POST/PUT/PATCH ops (the verb is carried so a PUT-only XML sink is probed with PUT, not POST).
     Needs no auth (anon fetch). The benign probe carries no recursive entities."""
     getter = by_role.get("anon") or by_role.get("victim")
     if not getter:
@@ -398,7 +418,7 @@ def discover_xxe_candidates(base_url, by_role, *, max_paths=20):
             content = (op.get("requestBody") or {}).get("content") or {}
             if any("xml" in str(mt).lower() for mt in content):
                 loc = f"{prefix + p} [{verb.upper()}]"
-                out.append((loc, base + prefix + p))
+                out.append((loc, base + prefix + p, verb.upper()))
                 break
         if len(out) >= max_paths:
             break

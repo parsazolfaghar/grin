@@ -256,3 +256,29 @@ def test_apply_device_stealth_noop_when_incapable(tmp_path, monkeypatch):
     r = CapRunner()
     assert apply_device_stealth(eng, runner=r, iface="eth0") == []
     assert r.cmds == []
+
+
+def test_apply_device_stealth_blocks_self_destructive_command(tmp_path, monkeypatch):
+    # defense in depth: even this second execution path honors the R3 self-destructive guard
+    import json
+    from grin.spine import apply_device_stealth
+    from grin.engagement import Engagement, Scope, ROE
+    monkeypatch.setattr("grin.platform_info.host_has_arsenal", lambda *a, **k: True)
+    monkeypatch.setattr("grin.stealth.device_setup", lambda *a, **k: ["rm -rf /"])
+
+    class CapRunner:
+        def __init__(self): self.cmds = []
+        def run(self, target, command, timeout=60):
+            self.cmds.append(command)
+            class R: exit_code = 0; output = ""; duration_s = 0.0
+            return R()
+
+    eng = Engagement(id="e", name="e", mode="adhoc", scope=Scope(["t"]), roe=ROE([]),
+                     autonomy="autonomous", env={"kind": "local"},
+                     audit_log=str(tmp_path / "a.jsonl"), state="active", stealth="paranoid")
+    r = CapRunner()
+    recs = apply_device_stealth(eng, runner=r, iface="eth0")
+    assert r.cmds == []                                   # never ran the destructive command
+    assert recs and recs[0]["decision"] == "block" and recs[0]["reason"] == "self-destructive-blocked"
+    rec = json.loads(open(eng.audit_log).read().splitlines()[0])
+    assert rec["decision"] == "block"

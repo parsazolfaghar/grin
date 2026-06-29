@@ -198,7 +198,16 @@ def test_discover_xxe_candidates_from_xml_request_body():
     by_role = {"anon": lambda u, method="GET", json=None:
                (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
     cands = discover_xxe_candidates("http://t", by_role)
-    assert cands == [("/parse [POST]", "http://t/parse")]    # only the XML-accepting op
+    assert cands == [("/parse [POST]", "http://t/parse", "POST")]    # only the XML-accepting op
+
+
+def test_discover_xxe_candidates_carries_put_verb():
+    from grin.resource_discovery import discover_xxe_candidates
+    # a PUT-only XML sink must be probed with PUT, not POST (the verb is carried through)
+    spec = {"paths": {"/doc": {"put": {"requestBody": {"content": {"text/xml": {}}}}}}}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    assert discover_xxe_candidates("http://t", by_role) == [("/doc [PUT]", "http://t/doc", "PUT")]
 
 
 def test_discover_login_candidates_matches_login_paths_and_fields():
@@ -216,3 +225,15 @@ def test_discover_login_candidates_matches_login_paths_and_fields():
     assert "/login" in locs and "/signin" in locs and "/users" not in locs
     login = next(c for c in cands if c[0] == "/login")
     assert login[2] == "email" and login[3] == "passwd"      # fields read from the schema
+
+
+def test_discover_login_candidates_resolves_ref_schema():
+    from grin.resource_discovery import discover_login_candidates
+    # the login body schema is a $ref into components — the fields must still be read (not defaulted)
+    spec = {"paths": {"/login": {"post": {"requestBody": {"content": {"application/json":
+            {"schema": {"$ref": "#/components/schemas/Creds"}}}}}}},
+            "components": {"schemas": {"Creds": {"properties": {"userEmail": {}, "userPass": {}}}}}}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    login = discover_login_candidates("http://t", by_role)[0]
+    assert login[2] == "userEmail" and login[3] == "userPass"

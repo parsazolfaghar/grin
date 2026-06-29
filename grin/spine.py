@@ -137,6 +137,14 @@ def apply_device_stealth(eng: Engagement, *, runner: Runner, iface: str = "eth0"
     cmds = device_setup(profile, iface=iface, can_spoof=caps)
     recs = []
     for c in cmds:
+        # Defense in depth: this is a second execution path outside submit_action's gate, so honor
+        # the same R3 self-destructive guard here — a device-setup command is never destructive in
+        # normal use, but we never run one that is unless destructive ops are explicitly allowed.
+        if is_self_destructive(c) and not destructive_allowed():
+            recs.append(audit(eng.audit_log, engagement=eng.id, target="localhost", tool=c.split()[0],
+                              command=c, action_class="passive", decision="block", gated=True,
+                              exit_code=None, reason="self-destructive-blocked", stealth=eng.stealth))
+            continue
         res = runner.run("localhost", c, int(eng.env.get("timeout", 60)))
         rec = audit(eng.audit_log, engagement=eng.id, target="localhost", tool=c.split()[0],
                     command=c, action_class="passive", decision="allow", gated=False,

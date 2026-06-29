@@ -1232,12 +1232,13 @@ def verify_xxe(candidate: Candidate, transport: Transport) -> Verdict:
     loc, o = candidate.location, candidate.oracle
     tmpl = o.get("xml_template", _XXE_TMPL)
     timeout = o.get("ssrf_timeout", 3)
+    method = candidate.method.upper() if candidate.method else "POST"   # PUT/PATCH XML sinks too
     agent = transport.by_role.get("attacker") or (
         lambda u, method="GET", json=None, data=None, headers=None: transport.request(
             method, u, data=data, headers=headers))
 
     def post_xml(xml, ctype):
-        return agent(candidate.url, method="POST", data=xml, headers={"Content-Type": ctype})
+        return agent(candidate.url, method=method, data=xml, headers={"Content-Type": ctype})
 
     sent_any = False
     # --- in-band file read (reflection-based), per content-type ---
