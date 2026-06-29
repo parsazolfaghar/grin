@@ -82,3 +82,54 @@ def test_main_auth_failure_returns_1(capsys):
     rc = main(["--url", "http://t/", "--attacker", "a@b.c:pw",
                "--resources", "http://t/x", "--marker", "m"], http_post=post)
     assert rc == 1
+
+
+from grin.tools.idor_probe import detect_crossuser_idor
+
+
+def test_crossuser_idor_when_attacker_sees_identical_victim_resource():
+    body = '{"id":7,"UserId":23,"Products":[]}'
+    assert detect_crossuser_idor("http://t/rest/basket/7",
+                                 lambda u: (200, body), lambda u: (200, body)) is True
+
+
+def test_no_crossuser_idor_when_attacker_forbidden():
+    assert detect_crossuser_idor("http://t/rest/basket/7",
+                                 lambda u: (401, ""), lambda u: (200, '{"id":7}')) is False
+
+
+def test_no_crossuser_idor_when_attacker_gets_different_resource():
+    # properly secured: attacker requesting B's id gets their own / an error, not B's bytes
+    assert detect_crossuser_idor("http://t/rest/basket/7",
+                                 lambda u: (200, '{"id":6}'), lambda u: (200, '{"id":7}')) is False
+
+
+def test_no_crossuser_idor_when_victim_body_empty():
+    assert detect_crossuser_idor("http://t/x",
+                                 lambda u: (200, ""), lambda u: (200, "")) is False
+
+
+from grin.tools.idor_probe import login_session
+
+
+def test_login_session_returns_token_and_owned_id():
+    def post(url, body):
+        return (200, '{"authentication":{"token":"T","bid":9}}')
+    assert login_session("http://t", "a@b.c", "pw", post) == ("T", 9)
+
+
+def test_main_two_user_mode_detects_idor(capsys):
+    body_b = '{"id":7,"UserId":23,"Products":[]}'
+
+    def post(url, body):
+        return (200, '{"authentication":{"token":"TA","bid":6}}') if "aaa" in str(body) \
+            else (200, '{"authentication":{"token":"TB","bid":7}}')
+
+    def fetch_factory(token):
+        return lambda url: (200, body_b)   # both A and B see B's resource identically -> IDOR
+
+    rc = main(["--url", "http://t", "--user-a", "aaa@x:pw", "--user-b", "bbb@x:pw",
+               "--resource", "/rest/basket/{id}"], http_post=post, fetch_factory=fetch_factory)
+    out = capsys.readouterr().out
+    assert rc == 0
+    assert "IDOR" in out and "/rest/basket/7" in out
