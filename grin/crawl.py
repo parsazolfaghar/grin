@@ -78,10 +78,14 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
     had_logout = any(m in (b0 or "").lower() for m in _LOGOUT_MARKERS)
 
     def session_ok(body):
+        # When the authed baseline has a logout control, its PRESENCE is the authority — a real
+        # deauth removes the menu. A password input alone is NOT deauth: legit pages (brute-force,
+        # change-password) contain one. Only when there's no logout baseline do we fall back to the
+        # weaker "a login form appeared" signal.
         bl = (body or "").lower()
-        if any(m.lower() in bl for m in _LOGIN_MARKERS):
-            return False
-        return not (had_logout and not any(m in bl for m in _LOGOUT_MARKERS))
+        if had_logout:
+            return any(m in bl for m in _LOGOUT_MARKERS)
+        return not any(m.lower() in bl for m in _LOGIN_MARKERS)
 
     seen, seen_cands, prefix_count, out = set(), set(), {}, []
     queue = [(start, 0)]

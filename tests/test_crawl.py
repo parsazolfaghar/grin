@@ -52,6 +52,16 @@ def test_crawl_halts_on_deauth():
     assert status == "deauth" and cands == []
 
 
+def test_crawl_password_form_with_logout_is_not_deauth():
+    # a legit authed page (e.g. brute-force) has a password input AND the logout menu -> NOT deauth
+    pages = {"/index.php": '<a href="/brute/">brute</a> Logout',
+             "/brute/": '<form method="get"><input name="username"><input type="password" name="password"></form>'
+                        '<form method="get"><input type="text" name="ip"></form> Logout'}
+    cands, status = crawl_injection_points("http://t/index.php", _site(pages))
+    assert status == "ok"                       # password input alone is not deauth
+    assert {c[2] for c in cands} == {"ip"}      # login form skipped, the other GET param emitted
+
+
 def test_crawl_drops_junk_params():
     pages = {"/index.php": '<form method="get"><input name="page"><input name="csrf_token">'
                           '<input type="text" name="q"></form> Logout'}
