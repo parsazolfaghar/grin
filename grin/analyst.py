@@ -55,14 +55,17 @@ def initial_plan(client, model: str, goal: str, scope_targets, seeds, mode: str 
             "application surface and find REAL vulnerabilities to REPORT — there is NO flag to "
             "capture. For THIS engagement, focus on BROKEN ACCESS CONTROL. Plan objectives to "
             "(1) enumerate the app, and (2) run the `bac-probe` helper to find resources served "
-            "WITHOUT authentication and report them as findings. Do NOT plan loot, flag, or "
-            "credential-theft objectives.\n"
+            "WITHOUT authentication. AND — if the goal supplies CREDENTIALS for two users — also "
+            "(3) test for IDOR (cross-user object access) with the `idor-probe` helper. Report "
+            "everything as findings. Do NOT plan loot, flag, or credential-theft objectives.\n"
             "Reply EXACTLY with a JSON array of objectives:\n"
             '{"objectives": ['
             '{"objective": "enumerate the web application surface and endpoints", '
             '"target": "<in-scope-target>", "action_class": "active-scan"}, '
             '{"objective": "test for broken access control with bac-probe (resources served '
-            'without authentication)", "target": "<in-scope-target>", "action_class": "active-scan"}'
+            'without authentication)", "target": "<in-scope-target>", "action_class": "active-scan"}, '
+            '{"objective": "if credentials are provided, test for IDOR with idor-probe (one user '
+            'reading another user\'s objects)", "target": "<in-scope-target>", "action_class": "exploit"}'
             ']} '
             "(action_class is one of passive|active-scan|exploit|post-exploit).\n"
             "Return ONLY the JSON."
