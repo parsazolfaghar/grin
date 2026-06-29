@@ -90,11 +90,21 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     victim_id = None
     creds = list(credentials or [])
     if len(creds) >= 2:
+        from grin.login_discovery import discover_login, shape_login
         from grin.tools.idor_probe import login_session
         post = lambda u, b: request("POST", u, json=b)   # noqa: E731
-        ta, _ = login_session(base_url, creds[0]["email"], creds[0]["password"], post, login_path)
-        tb, victim_id = login_session(base_url, creds[1]["email"], creds[1]["password"],
-                                      post, login_path)
+        cid = lambda c: c.get("login") or c.get("email") or c.get("username")   # noqa: E731
+        # Generalize recon: discover the login shape (path / cred field / token location) by an
+        # identity-proven login, instead of assuming Juice Shop's. Fall back to the legacy login
+        # only when nothing is proven, so a non-discoverable target behaves exactly as before.
+        shape = discover_login(base_url, cid(creds[0]), creds[0]["password"], post)
+        if shape is not None:
+            ta, _ = shape_login(base_url, cid(creds[0]), creds[0]["password"], post, shape)
+            tb, victim_id = shape_login(base_url, cid(creds[1]), creds[1]["password"], post, shape)
+        else:
+            ta, _ = login_session(base_url, creds[0]["email"], creds[0]["password"], post, login_path)
+            tb, victim_id = login_session(base_url, creds[1]["email"], creds[1]["password"],
+                                          post, login_path)
         if ta:
             by_role["attacker"] = lambda u, method="GET", json=None, t=ta: request(
                 method, u, json=json, headers={"Authorization": "Bearer " + t})

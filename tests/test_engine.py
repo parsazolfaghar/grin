@@ -122,6 +122,27 @@ def test_build_transport_role_supports_authenticated_writes():
     assert seen["auth"] == "Bearer TA"
 
 
+def test_build_transport_discovers_non_juice_login_shape():
+    # a VAmPI-shaped API (username field, token at auth_token) the Juice-Shop default would miss
+    from grin.engine import build_transport
+    import base64
+    import json as _J
+
+    def mkjwt(claims):
+        b = lambda d: base64.urlsafe_b64encode(_J.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+        return ".".join([b({"alg": "HS256"}), b(claims), "sig"])
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/users/v1/login") and method == "POST" and "username" in (json or {}):
+            return (200, _J.dumps({"auth_token": mkjwt({"sub": json["username"]})}))
+        if url.endswith("/rest/user/login"):     # the legacy default must NOT win here
+            return (404, "")
+        return (200, "not-json")                  # every other probe is inert
+    creds = [{"username": "atk", "password": "p"}, {"username": "vic", "password": "p"}]
+    transport, _vid = build_transport(request, "http://t", creds)
+    assert "attacker" in transport.by_role and "victim" in transport.by_role
+
+
 def test_run_general_detects_forged_review():
     store = []
 
