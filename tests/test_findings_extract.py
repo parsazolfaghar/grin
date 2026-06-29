@@ -50,3 +50,11 @@ def test_extract_bac_probe_findings_carry_class_and_location():
 def test_extract_bac_probe_no_hits_is_empty():
     out = "bac-probe http://t/ (unauthenticated) — 0 finding(s)\n"
     assert extract_findings("bac-probe", "bac-probe --url http://t/", out, "http://t") == []
+
+
+def test_extract_idor_findings():
+    out = ("idor-probe http://t/ (as a@b.c) — 1 finding(s)\n"
+           "IDOR http://t/rest/basket/2 200 victim data reachable across users\n")
+    fs = extract_findings("idor-probe", "idor-probe --url http://t/", out, "http://t")
+    assert len(fs) == 1
+    assert fs[0].vuln_class == "idor" and fs[0].location == "/rest/basket/2"

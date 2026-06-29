@@ -262,9 +262,35 @@ def _extract_bac_probe(command: str, output: str, target: str) -> List[Finding]:
     return out
 
 
+_IDOR_RE = re.compile(r"^\s*IDOR\s+(\S+)\s+(\d+)\s*(.*)$")
+
+
+def _extract_idor(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _IDOR_RE.match(line)
+        if not m:
+            continue
+        url, status, reason = m.group(1), m.group(2), m.group(3).strip()
+        path = re.sub(r"^https?://[^/]+", "", url) or url
+        out.append(Finding(
+            title=f"IDOR: cross-user access to {path}",
+            target=target,
+            severity="high",
+            evidence=f"GET {url} -> {status} returned another user's data; {reason}".strip(),
+            tool="idor-probe",
+            command=command,
+            recommendation="Enforce object-level authorization: verify the resource belongs to "
+                           "the authenticated caller.",
+            vuln_class="idor",
+            location=path,
+        ))
+    return out
+
+
 def extract_findings(tool: str, command: str, output: str, target: str) -> List[Finding]:
     """Deterministic vulnerability findings parsed from a known tool's output. Never raises; [] when
-    nothing matches. Currently: nuclei, bac-probe."""
+    nothing matches. Currently: nuclei, bac-probe, idor-probe."""
     try:
         tl = (tool or "").lower()
         cl = (command or "").lower()
@@ -272,6 +298,8 @@ def extract_findings(tool: str, command: str, output: str, target: str) -> List[
             return _extract_nuclei(command or "", output or "", target or "")
         if "bac-probe" in tl or "bac-probe" in cl:
             return _extract_bac_probe(command or "", output or "", target or "")
+        if "idor-probe" in tl or "idor-probe" in cl:
+            return _extract_idor(command or "", output or "", target or "")
         return []
     except Exception:
         return []
