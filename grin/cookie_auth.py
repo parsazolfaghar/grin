@@ -13,12 +13,19 @@ attacker's session can never leak into anon. The critical correctness points:
 Scope (slice 1): the login URL, credential field names, and CSRF field are CONFIGURED (the harness
 is pointed at them). Auto-discovering cookie/form/CSRF logins is a deferred follow-up."""
 from __future__ import annotations
+import html as _html
 import json as _json
 import re
 import urllib.parse
 import urllib.request
+from html.parser import HTMLParser
 
 _LOGIN_MARKERS = ('type="password"', "type='password'", 'name="password"', "name='password'")
+_LOGOUT_MARKERS = ("logout", "log out", "sign out", "signout", "log-out", "logoff")
+_USER_NAME_RE = re.compile(r"(user|email|login|account|userid|j_username)", re.I)
+_LOGIN_SUBMIT_RE = re.compile(r"(log\s*-?\s*in|sign\s*-?\s*in)", re.I)
+_LOGIN_LINK_RE = re.compile(r"(login|signin|sign-in|sign_in|/auth)", re.I)
+_FILLABLE_TYPES = {"text", "email", "tel", "search", "url"}
 
 
 def _make_request_full():
@@ -109,17 +116,170 @@ def form_login(session, login_url, fields, csrf_field=None):
     return True
 
 
-def _identity_proven(role_session, anon_session, protected_url):
-    """Login is trustworthy only if the role reaches a protected resource the anon session cannot,
-    with a different body and no login-form markers — not a bare 200 (which a public page or a
-    failed-login error page would also give)."""
+def _identity_proven(role_session, anon_session, protected_url, username=None):
+    """Login is trustworthy only with (a) the role reaching a protected resource anon cannot, with a
+    different body and no login-form markers, AND (b) a POSITIVE auth signal in the role's body — a
+    logout control or the username echoed. The positive signal is essential: a failed login can
+    still leave a session cookie, and a protected_url that 200s for any session would otherwise bind
+    an unauthenticated role and poison every downstream verdict."""
     try:
         a_s, a_b = role_session.request("GET", protected_url)
         n_s, n_b = anon_session.request("GET", protected_url)
     except Exception:
         return False
-    return (a_s == 200 and n_s in (401, 403, 302) and (a_b or "") != (n_b or "")
-            and not any(m in (a_b or "") for m in _LOGIN_MARKERS))
+    a_b, n_b = a_b or "", n_b or ""
+    if not (a_s == 200 and n_s in (401, 403, 302) and a_b != n_b
+            and not any(m in a_b for m in _LOGIN_MARKERS)):
+        return False
+    al = a_b.lower()
+    return any(m in al for m in _LOGOUT_MARKERS) or bool(username and username.lower() in al)
+
+
+# --- login-form auto-discovery (slice 2) -------------------------------------------------------
+class _FormParser(HTMLParser):
+    """Collect every <form> with its inputs (values HTML-unescaped) and any <base href>."""
+
+    def __init__(self):
+        super().__init__()
+        self.base = None
+        self.forms = []
+        self._cur = None
+        self._textarea = None
+
+    def handle_starttag(self, tag, attrs):
+        a = {k.lower(): (v if v is not None else "") for k, v in attrs}
+        if tag == "base" and a.get("href"):
+            self.base = a["href"]
+        elif tag == "form":
+            self._cur = {"action": a.get("action", ""), "method": (a.get("method") or "get").lower(),
+                         "fields": []}
+        elif self._cur is not None and tag == "input" and a.get("name") and "disabled" not in a:
+            self._cur["fields"].append({"tag": "input", "name": a["name"],
+                                        "type": (a.get("type") or "text").lower(),
+                                        "value": _html.unescape(a.get("value", ""))})
+        elif self._cur is not None and tag == "button" and a.get("name") and "disabled" not in a:
+            if (a.get("type") or "submit").lower() == "submit":
+                self._cur["fields"].append({"tag": "button", "name": a["name"], "type": "submit",
+                                            "value": _html.unescape(a.get("value", ""))})
+        elif self._cur is not None and tag == "textarea" and a.get("name"):
+            self._textarea = a["name"]
+            self._cur["fields"].append({"tag": "textarea", "name": a["name"], "type": "textarea",
+                                        "value": ""})
+
+    def handle_data(self, data):
+        if self._cur is not None and self._textarea:
+            for f in reversed(self._cur["fields"]):
+                if f["tag"] == "textarea" and f["name"] == self._textarea:
+                    f["value"] += data
+                    break
+
+    def handle_endtag(self, tag):
+        if tag == "textarea":
+            self._textarea = None
+        elif tag == "form" and self._cur is not None:
+            self.forms.append(self._cur)
+            self._cur = None
+
+
+def parse_login_form(html_text, page_url):
+    """Find the login form: exactly one password input, prefer a login-ish submit then fewest
+    inputs. Returns a spec {form_url, action_url, method, inputs, username_field, password_field}
+    or None. Username = a name-pattern match, else the last fillable text input before the password
+    (DOM order). Cross-origin actions are rejected."""
+    p = _FormParser()
+    try:
+        p.feed(html_text or "")
+    except Exception:
+        return None
+    cands = [(f, pw[0]) for f in p.forms
+             for pw in [[x for x in f["fields"] if x["type"] == "password"]] if len(pw) == 1]
+    if not cands:
+        return None
+
+    def score(item):
+        form, _pw = item
+        login_submit = any(x["type"] == "submit" and _LOGIN_SUBMIT_RE.search(f"{x['name']} {x['value']}")
+                           for x in form["fields"])
+        return (0 if login_submit else 1, len(form["fields"]))
+
+    form, pwf = min(cands, key=score)
+    fields = form["fields"]
+    pw_idx = fields.index(pwf)
+    fillable = [(i, f) for i, f in enumerate(fields)
+                if f["tag"] == "input" and f["type"] in _FILLABLE_TYPES and f["name"] != pwf["name"]]
+    user = next((f for _i, f in fillable if _USER_NAME_RE.search(f["name"])), None)
+    if user is None:
+        before = [f for i, f in fillable if i < pw_idx]
+        user = before[-1] if before else (fillable[0][1] if fillable else None)
+    if user is None:
+        return None
+    action = urllib.parse.urljoin(p.base or page_url, form["action"]) if form["action"] else page_url
+    if urllib.parse.urlparse(action).netloc != urllib.parse.urlparse(page_url).netloc:
+        return None
+    return {"form_url": page_url, "action_url": action, "method": form["method"],
+            "inputs": {f["name"]: f["value"] for f in fields},
+            "username_field": user["name"], "password_field": pwf["name"]}
+
+
+def discover_form_login(base_url, get):
+    """Locate a login form: crawl the landing page for login-ish links first, then a common-path
+    fallback. get(url) -> (status, body). Returns a login spec or None."""
+    base = base_url.rstrip("/")
+    try:
+        _s, landing = get(base + "/")
+    except Exception:
+        landing = ""
+    links = [urllib.parse.urljoin(base + "/", h)
+             for h in re.findall(r'href=["\']([^"\']+)', landing or "", re.I) if _LOGIN_LINK_RE.search(h)]
+    paths = ["/login", "/login.php", "/signin", "/users/sign_in", "/account/login", "/auth/login"]
+    for url in dict.fromkeys(links + [base + p for p in paths]):
+        try:
+            _s, body = get(url)
+        except Exception:
+            continue
+        spec = parse_login_form(body, url) if body else None
+        if spec:
+            return spec
+    return None
+
+
+def form_login_auto(session, username, password, spec):
+    """Log in by re-fetching the form (fresh CSRF/hidden values), overwriting only the username and
+    password inputs, and submitting every harvested field."""
+    _s, body = session.request("GET", spec["form_url"])
+    fresh = parse_login_form(body, spec["form_url"]) or spec
+    inputs = dict(fresh.get("inputs", {}))
+    inputs[fresh["username_field"]] = username
+    inputs[fresh["password_field"]] = password
+    if (fresh.get("method") or "post").lower() == "post":
+        session.request("POST", fresh["action_url"], data=urllib.parse.urlencode(inputs))
+    else:
+        sep = "&" if "?" in fresh["action_url"] else "?"
+        session.request("GET", fresh["action_url"] + sep + urllib.parse.urlencode(inputs))
+    return True
+
+
+def build_cookie_transport_auto(base_url, credentials, protected_url, *, extra_cookies=None,
+                                request_full=None):
+    """Auto-discover the login form, then build a cookie Transport. Roles bind only on proven login
+    (fail closed). Returns (transport, n_bound, spec_or_None)."""
+    from grin.verify import Transport
+    rf = request_full or _make_request_full()
+    seed = dict(extra_cookies or {})
+    anon = CookieSession(rf, seed=seed)
+    spec = discover_form_login(base_url, lambda u: anon.request("GET", u))
+    by_role = {"anon": lambda u, method="GET", json=None: anon.request(method, u, json=json)}
+    if spec is None:
+        return Transport(request=anon.request, by_role=by_role), 0, None
+    bound = 0
+    for role, cred in zip(("attacker", "victim"), list(credentials or [])):
+        sess = CookieSession(rf, seed=seed)
+        uname = cred.get("username") or cred.get("login") or cred.get("email")
+        form_login_auto(sess, uname, cred.get("password"), spec)
+        if _identity_proven(sess, anon, protected_url, uname):
+            by_role[role] = (lambda s: lambda u, method="GET", json=None: s.request(method, u, json=json))(sess)
+            bound += 1
+    return Transport(request=anon.request, by_role=by_role), bound, spec
 
 
 def build_cookie_transport(base_url, login_url, credentials, protected_url, *,
@@ -141,7 +301,8 @@ def build_cookie_transport(base_url, login_url, credentials, protected_url, *,
         fields.update(extra_login_fields or {})
         if not form_login(sess, login_url, fields, csrf_field):
             return None
-        return sess if _identity_proven(sess, anon, protected_url) else None
+        uname = cred.get("username") or cred.get("login") or cred.get("email")
+        return sess if _identity_proven(sess, anon, protected_url, uname) else None
 
     bound = 0
     creds = list(credentials or [])
