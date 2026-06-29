@@ -417,7 +417,7 @@ def verify_reflected_xss(candidate: Candidate, transport: Transport) -> Verdict:
     without a browser, and the evidence says so. Attribute-breakout and stored XSS are out of scope.
     Probes through the attacker session when present."""
     import uuid
-    loc, o = candidate.location, candidate.oracle
+    loc = candidate.location
     marker = "grinx" + uuid.uuid4().hex[:8]
     payload = "<" + marker          # a prefix, not a closed tag — also catches strip-'>' filters
     agent = transport.by_role.get("attacker") or (
