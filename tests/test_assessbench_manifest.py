@@ -75,6 +75,26 @@ def test_non_integer_port_rejected(tmp_path):
         load_manifest(_write(tmp_path, bad))
 
 
+def test_bool_port_rejected(tmp_path):
+    # IMPORTANT-5: bool is an int subclass; port: true must NOT pass as port=1
+    bad = VALID.replace("port: 3000", "port: true")
+    with pytest.raises(ManifestError):
+        load_manifest(_write(tmp_path, bad))
+
+
+def test_location_must_be_a_path(tmp_path):
+    # CRITICAL-3: an all-placeholder / non-path location must be rejected
+    bad = VALID.replace('location: "/rest/basket/{id}"', 'location: "{endpoint}"')
+    with pytest.raises(ManifestError):
+        load_manifest(_write(tmp_path, bad))
+
+
+def test_location_with_whitespace_rejected(tmp_path):
+    bad = VALID.replace('location: "/rest/basket/{id}"', 'location: "/rest/order history/{id}"')
+    with pytest.raises(ManifestError):
+        load_manifest(_write(tmp_path, bad))
+
+
 def test_vuln_classes_includes_core():
     for c in ("broken-access-control", "idor", "ssrf", "sql-injection"):
         assert c in VULN_CLASSES

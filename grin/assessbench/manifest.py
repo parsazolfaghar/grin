@@ -34,6 +34,15 @@ class GroundTruth:
     severity: str
     description: str = ""
 
+    def __post_init__(self):
+        # Validate here too (not only in load_manifest) so programmatic construction can't
+        # smuggle a degenerate location past the scorer (e.g. "" or "{endpoint}" matched
+        # everything before this guard). Location must be a concrete, whitespace-free path.
+        loc = self.location
+        if not isinstance(loc, str) or not loc.startswith("/") or any(c.isspace() for c in loc):
+            raise ManifestError(
+                f"ground_truth location must be a whitespace-free path starting with '/': {loc!r}")
+
 
 @dataclass(frozen=True)
 class BenchTarget:
@@ -61,7 +70,9 @@ def load_manifest(path: str) -> BenchTarget:
     for k in _REQUIRED:
         if k not in data or data[k] in (None, ""):
             raise ManifestError(f"manifest missing required field: {k}")
-    if not isinstance(data["port"], int):
+    if not isinstance(data["port"], int) or isinstance(data["port"], bool):
+        # bool is an int subclass in Python, so `port: true` would slip through a bare
+        # isinstance(int) check and resolve to port=1.
         raise ManifestError(f"port must be an integer, got {data['port']!r}")
 
     gt_raw = data["ground_truth"]

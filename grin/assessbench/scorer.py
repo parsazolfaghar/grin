@@ -1,20 +1,32 @@
 """Score grin's assessment findings against a bench target's ground truth.
 
-Pure functions. The output is precision/recall plus the per-item breakdown. Matching is
-deliberately conservative — a finding matches a known bug only when BOTH its vuln class and
-its location line up — because the headline metric is **precision**: the guard against telling
-a maintainer about a bug that isn't there. We would rather under-credit a vague finding (lower
-recall) than over-credit it (inflated precision) and ship a false positive.
+Pure functions. Output is precision/recall plus the per-item breakdown. The design bias is
+toward NOT over-crediting: a finding matches a known bug only when its vuln class AND an
+exact endpoint path line up, because the headline metric is **precision** — the guard against
+telling a maintainer about a bug that isn't real.
 
-Known limitation (SP1): class matching is exact. A finding tagged `idor` does not match a
-ground-truth `broken-access-control` even though idor is a subclass; a synonym map is deferred
-to SP2 when the assessment pipeline settles which class labels it actually emits."""
+Matching specifics (hardened after adversarial review):
+- Location match is **anchored full-match on an extracted path**, never a substring. `/admin`
+  does not match `/admin-panel`; `/api/users/{id}` does not match `/api/users/9/profile`.
+- Paths are extracted from a finding's `location` and `evidence` (host/scheme/query stripped),
+  so a finding may offer several candidate paths; any one exact-matching the ground-truth
+  pattern counts.
+- Class keyword fallback (for findings with no `vuln_class`) requires a whole-token match, so
+  `xss` does not match `xss-like`.
+- Finding↔ground-truth assignment is an **optimal maximum bipartite matching**, so the
+  tp/fp/fn counts are reproducible regardless of the order findings were emitted.
+
+Known limitation (SP1): class matching is exact — a finding tagged `idor` does not match a
+ground-truth `broken-access-control`. A synonym map is deferred to SP2."""
 from __future__ import annotations
 import re
 from dataclasses import dataclass
 
 from grin.finding import Finding
 from grin.assessbench.manifest import BenchTarget, GroundTruth
+
+_SCHEME_HOST = re.compile(r"https?://[^/\s]+", re.I)
+_PATH_TOKEN = re.compile(r"/[^\s?#\"'<>)]*")
 
 
 @dataclass(frozen=True)
@@ -30,52 +42,90 @@ class Score:
     recall: float
 
 
-def _loc_regex(gt_location: str) -> re.Pattern:
-    """A ground-truth location with `{token}` placeholders becomes a regex where each
-    placeholder matches exactly one path segment (`[^/]+`). Literal parts are escaped."""
+def _loc_pattern(gt_location: str) -> re.Pattern:
+    """Anchored regex for a ground-truth location; each `{token}` matches one path segment."""
     parts = re.split(r"\{[^}]*\}", gt_location.lower())
-    pattern = "[^/]+".join(re.escape(p) for p in parts)
-    return re.compile(pattern)
+    body = "[^/]+".join(re.escape(p) for p in parts)
+    return re.compile("^" + body + "$")
+
+
+def _candidate_paths(text: str) -> list[str]:
+    """Extract candidate endpoint paths from free text (a location field or evidence prose).
+
+    Scheme+host is stripped first so a URL's path becomes a bare path; query/fragment are
+    dropped at the token boundary. Trailing slash normalized (root stays '/')."""
+    if not text:
+        return []
+    stripped = _SCHEME_HOST.sub(" ", text)
+    out = []
+    for tok in _PATH_TOKEN.findall(stripped):
+        norm = tok.rstrip("/").lower() or "/"
+        out.append(norm)
+    return out
 
 
 def _class_matches(finding: Finding, gt: GroundTruth) -> bool:
     if finding.vuln_class:
         return finding.vuln_class.strip().lower() == gt.vuln_class
-    # Finding came from a tool that didn't tag a class — fall back to a title keyword.
+    # Finding from a tool that didn't tag a class — fall back to a whole-token title keyword.
+    # `(?<![\w-])...(?![\w-])` so neither word chars nor hyphens may abut (kills 'xss-like').
     title = finding.title.lower()
-    return gt.vuln_class in title or gt.vuln_class.replace("-", " ") in title
+    for kw in {gt.vuln_class, gt.vuln_class.replace("-", " ")}:
+        if re.search(r"(?<![\w-])" + re.escape(kw) + r"(?![\w-])", title):
+            return True
+    return False
 
 
-def _location_matches(finding: Finding, rx: re.Pattern) -> bool:
-    haystack = f"{finding.location} {finding.evidence}".lower()
-    return rx.search(haystack) is not None
+def _location_matches(finding: Finding, pat: re.Pattern) -> bool:
+    for cand in _candidate_paths(finding.location) + _candidate_paths(finding.evidence):
+        if pat.fullmatch(cand):
+            return True
+    return False
+
+
+def _max_matching(adjacency: list[list[int]], n_findings: int) -> list[int]:
+    """Optimal maximum bipartite matching (Kuhn's augmenting paths). Deterministic given the
+    order of `adjacency`. Returns gt_index -> finding_index (or -1 if unmatched)."""
+    finding_to_gt = [-1] * n_findings
+    gt_to_finding = [-1] * len(adjacency)
+
+    def augment(g: int, seen: list[bool]) -> bool:
+        for f in adjacency[g]:
+            if not seen[f]:
+                seen[f] = True
+                if finding_to_gt[f] == -1 or augment(finding_to_gt[f], seen):
+                    finding_to_gt[f] = g
+                    gt_to_finding[g] = f
+                    return True
+        return False
+
+    for g in range(len(adjacency)):
+        augment(g, [False] * n_findings)
+    return gt_to_finding
 
 
 def score(findings, target: BenchTarget) -> Score:
     findings = list(findings)
-    used = [False] * len(findings)
-    matched: list = []
-    missed: list = []
-
-    # Greedy one-to-one: each ground-truth claims the first still-unused finding that matches
-    # on BOTH class and location. Deterministic given input order; a single finding can satisfy
-    # at most one ground-truth entry (no recall inflation from one vague hit).
+    # Build the match graph: which findings legitimately match each ground-truth entry.
+    adjacency: list[list[int]] = []
     for gt in target.ground_truth:
-        rx = _loc_regex(gt.location)
-        hit = None
-        for i, f in enumerate(findings):
-            if used[i]:
-                continue
-            if _class_matches(f, gt) and _location_matches(f, rx):
-                hit = i
-                break
-        if hit is not None:
-            used[hit] = True
-            matched.append((gt.id, findings[hit].title))
+        pat = _loc_pattern(gt.location)
+        adjacency.append([i for i, f in enumerate(findings)
+                          if _class_matches(f, gt) and _location_matches(f, pat)])
+
+    gt_to_finding = _max_matching(adjacency, len(findings))
+
+    matched, missed = [], []
+    used = set()
+    for g, gt in enumerate(target.ground_truth):
+        f = gt_to_finding[g]
+        if f != -1:
+            matched.append((gt.id, findings[f].title))
+            used.add(f)
         else:
             missed.append(gt.id)
+    spurious = [findings[i].title for i in range(len(findings)) if i not in used]
 
-    spurious = [findings[i].title for i in range(len(findings)) if not used[i]]
     tp, fp, fn = len(matched), len(spurious), len(missed)
     precision = tp / (tp + fp) if (tp + fp) else 1.0   # nothing reported -> nothing false
     recall = tp / (tp + fn) if (tp + fn) else 0.0
