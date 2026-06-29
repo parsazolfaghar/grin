@@ -12,7 +12,7 @@ from grin.finding import Finding
 # Common injectable param names to try even when not linked on the page (the params reading the
 # HTML never reveals). Combined with form-input names discovered in the body.
 _COMMON_PARAMS = ("q", "search", "name", "id", "query", "s", "keyword", "page", "title", "message")
-_INPUT_NAME_RE = re.compile(r'name=["\']([A-Za-z0-9_\-]+)["\']')
+_INPUT_NAME_RE = re.compile(r'name\s*=\s*["\']?([A-Za-z0-9_\-]+)')   # quoted OR unquoted attribute
 # Param names worth an SSRF probe — clearly URL-bearing. Excludes open-redirect/LFI-prone names
 # (redirect/next/page/file) to keep the SSRF candidate set focused.
 _URL_PARAM_RE = re.compile(

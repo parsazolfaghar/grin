@@ -55,6 +55,13 @@ def test_recon_generates_bac_sqli_ssti_candidates():
     assert sqli.method == "POST" and sqli.inject_field == "email" and "login" in sqli.url
 
 
+def test_recon_extracts_unquoted_form_input_names():
+    def fetch(url):
+        return (200, '<form><input name=search><input name="comment"></form>')
+    fields = {c.inject_field for c in recon("http://t", fetch) if c.vuln_class == "ssti"}
+    assert "search" in fields and "comment" in fields     # unquoted name=search now extracted
+
+
 def test_recon_emits_ssrf_candidate_for_url_param_when_oob_present():
     def fetch(url):
         return (200, '<form><input name="url"><input name="q"></form>')
