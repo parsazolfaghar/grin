@@ -115,6 +115,19 @@ def run_general(base_url, credentials=None, *, request=None,
     return assess(candidates, transport, target=target or base_url)
 
 
+def _dedup_bac_dirs(findings):
+    """A bare directory (location ending '/') and the files under it are the SAME exposure; when
+    a file under it also confirmed, drop the directory finding (matches bac-probe's behavior)."""
+    bac = {f.location for f in findings if f.vuln_class == "broken-access-control"}
+    out = []
+    for f in findings:
+        if (f.vuln_class == "broken-access-control" and f.location.endswith("/")
+                and any(o != f.location and o.startswith(f.location) for o in bac)):
+            continue
+        out.append(f)
+    return out
+
+
 def assess(candidates, transport, target: str = ""):
     """Verify every candidate; return a Finding for each CONFIRMED verdict (in input order)."""
     findings = []
@@ -133,4 +146,4 @@ def assess(candidates, transport, target: str = ""):
             vuln_class=verdict.vuln_class,
             location=verdict.location,
         ))
-    return findings
+    return _dedup_bac_dirs(findings)

@@ -103,3 +103,16 @@ def test_run_general_no_creds_skips_idor_but_still_finds_unauth():
     classes = {f.vuln_class for f in findings}
     assert "broken-access-control" in classes
     assert "idor" not in classes                   # no creds -> no IDOR candidate
+
+
+def test_assess_dedups_bare_directory_when_file_under_it_confirms():
+    from grin.verify import Candidate as C
+
+    def anon(u):
+        return (200, "secret " + u) if "/ftp" in u else (200, "SHELL")
+    cands = [C("broken-access-control", "/ftp/", "http://t/ftp/", oracle={"baseline_url": "http://t/"}),
+             C("broken-access-control", "/ftp/legal.md", "http://t/ftp/legal.md",
+               oracle={"baseline_url": "http://t/"})]
+    findings = assess(cands, Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon}))
+    locs = {f.location for f in findings}
+    assert "/ftp/legal.md" in locs and "/ftp/" not in locs   # bare dir subsumed by the file
