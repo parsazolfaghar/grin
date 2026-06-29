@@ -51,6 +51,7 @@ class Engagement:
     aggressive: bool = False
     stealth: str = "off"
     strength: str = "normal"
+    assess: bool = False   # SP2: opt-in assessment behavior (find+report real vulns, not flags)
 
 
 def _require(data: dict, key: str):
@@ -122,7 +123,8 @@ def validate_engagement(data: dict) -> Engagement:
     return Engagement(id=eid, name=name, mode=mode, scope=scope, roe=roe,
                       autonomy=autonomy, env=dict(env), audit_log=audit_log, state=state,
                       aggressive=bool(data.get("aggressive", False)),
-                      stealth=stealth, strength=strength)
+                      stealth=stealth, strength=strength,
+                      assess=bool(data.get("assess", False)))
 
 
 def load_engagement(path: str) -> Engagement:

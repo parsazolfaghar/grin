@@ -10,6 +10,7 @@ from grin.engagement import Engagement
 from grin.extractors import extract, extract_findings
 from grin.lootfile import persist_artifact, decrypt_persisted_key
 from grin.journal import Journal, Step, journal_path
+from grin.mode import resolve_mode
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
 from grin.results import ResultStore
@@ -127,13 +128,18 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
     noprogress = 0
     recon_count: dict = {}   # (tool, target) -> times a recon tool has run; caps the re-scan loop
 
+    # Behavioral mode (CTF vs assessment) is constant for the task: assessment when the engagement
+    # opts in OR the target is a web URL; otherwise CTF (the unchanged default).
+    _target_type = "web-url" if str(target).lower().startswith(("http://", "https://")) else ""
+    step_mode = resolve_mode("assessment" if getattr(eng, "assess", False) else "", _target_type)
+
     while len(journal.steps) < journal.max_steps:
         # Operator hit Stop: bail immediately, mid-objective (not just between objectives).
         if should_stop is not None and should_stop():
             journal.save()
             return TaskResult("completed", journal.findings, journal, secrets=journal.secrets)
         system, user = build_step_prompt(objective, target, journal, eng.roe.allowed_actions,
-                                         brain=brain)
+                                         brain=brain, mode=step_mode)
         raw = client.generate(model=model, system=system, prompt=user, temperature=0.3)
         decision = parse_step(raw, target)
 

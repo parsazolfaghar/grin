@@ -156,3 +156,9 @@ def test_strength_defaults_normal_and_validates(tmp_path):
         load_engagement(str(p)); assert False, "expected EngagementError"
     except EngagementError:
         pass
+
+
+def test_assess_defaults_false_and_loads_true():
+    # SP2: opt-in assessment behavioral flag; default False so every existing engagement is CTF
+    assert validate_engagement(VALID).assess is False
+    assert validate_engagement({**VALID, "assess": True}).assess is True
