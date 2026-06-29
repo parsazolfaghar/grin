@@ -13,6 +13,7 @@ app = ["PyQt6>=6.6", "docker>=7.0"]
 
 [tool.setuptools.package-data]
 "grin.app" = ["style.qss", "assets/*", "fonts/*"]
+"grin.assessbench" = ["targets/*.yaml"]
 
 [project.scripts]
 grin = "grin.cli:main"

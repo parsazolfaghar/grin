@@ -20,7 +20,7 @@ HELPERS = {
     "webexec": "web-rce", "sshloot": "ssh-loot", "suidhijack": "suid-hijack",
     "webscan": "web-scan", "idrive": "grin-shell", "sudoesc": "sudo-gtfo",
     "credsweep": "cred-sweep", "lficrack": "lfi-crack",
-    "adbtakeover": "adb-takeover",
+    "adbtakeover": "adb-takeover", "bac_probe": "bac-probe", "idor_probe": "idor-probe", "sqli_probe": "sqli-probe",
 }
 
 # The two arsenals are COMPLEMENTARY, not redundant: tools are split so a real engagement must reach

@@ -14,6 +14,10 @@ class Finding:
     tool: str
     command: str
     recommendation: str = ""
+    # Optional, defaulted so legacy findings (and asdict/Finding(**) round-trips) keep working.
+    # Populated by the assessment pipeline (SP2+); the assessbench scorer uses them when present.
+    vuln_class: str = ""
+    location: str = ""
 
 
 def normalize_severity(s) -> str:

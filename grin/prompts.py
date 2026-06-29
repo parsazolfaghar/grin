@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from grin.finding import Finding, normalize_severity
 from grin.jsonextract import extract_json
+from grin.mode import ASSESSMENT, CTF
 from grin.secret import Secret
 
 SYSTEM = (
@@ -16,6 +17,76 @@ SYSTEM = (
     "each result and following the lead it reveals — not by guessing many things. Propose the "
     "SINGLE next action, or finish with findings. Reply with ONE JSON object and nothing else."
 )
+
+# Assessment-mode mission (mode == ASSESSMENT). A real app has no flag; success is concrete,
+# reproducible vulnerability findings reported to the owner. This block REPLACES the CTF
+# flag-hunting methodology; the CTF mission is unchanged and still used in every other mode.
+ASSESSMENT_MISSION = (
+    "## Mission: security ASSESSMENT (not a CTF — there is NO flag)\n"
+    "You are assessing a REAL application for REAL vulnerabilities to report to its owner. Success "
+    "is a set of CONCRETE, REPRODUCIBLE findings — NOT capturing a flag. Do NOT hunt for flag files "
+    "or capture-the-flag artifacts, and do NOT blindly spray injection payloads at random parameters. "
+    "A real app has none of those; doing so burns the budget and produces nothing.\n\n"
+    "## What to do\n"
+    "1. ENUMERATE the reachable surface: fetch the app, read the body for links, comments, and "
+    "referenced paths; note API endpoints, static paths, and any directory that serves content.\n"
+    "2. For THIS engagement, hunt BROKEN ACCESS CONTROL: request endpoints and resources as an "
+    "UNAUTHENTICATED client (no login, no token) and read what comes back. A resource that returns "
+    "sensitive data or privileged functionality WITHOUT credentials is a broken-access-control "
+    "finding.\n"
+    "   - PREFER the `bac-probe` helper: it requests a list of candidate paths unauthenticated and "
+    "reports the ones exposing sensitive content (e.g. `/ftp/...`, admin areas, backups, `.git`, data "
+    "APIs): `bac-probe --url http://<target>/`.\n"
+    "   - CONFIRM by reading the response: a 200 returning confidential content (a file listing, a "
+    "backup, another entity's data) is the finding; a login page or a 401/403 is NOT.\n"
+    "3. If the goal provides CREDENTIALS for two users, ALSO test for IDOR (broken object-level "
+    "authorization) — whether one user can read another user's objects. Use the `idor-probe` helper, "
+    "which logs in both and checks whether user A can read user B's resource:\n"
+    "   `idor-probe --url http://<target>:<port> --user-a <emailA:passA> --user-b <emailB:passB> "
+    "--resource /rest/basket/{id}`\n"
+    "   A reported IDOR is a finding with `vuln_class: idor` and the resource path as `location`.\n"
+    "3b. Test for SQL INJECTION at the login with the `sqli-probe` helper — it sprays injection "
+    "payloads in the login field and flags a login that succeeds WITHOUT valid credentials:\n"
+    "   `sqli-probe --url http://<target>:<port>`\n"
+    "   A reported bypass is a finding with `vuln_class: sql-injection`.\n"
+    "4. REPORT each confirmed issue in the `findings` list of your reply, each with: a clear title, "
+    "the `vuln_class` (`broken-access-control` or `idor`), the exact `location` (the path/endpoint), a "
+    "severity, and the EVIDENCE (the request you sent and the sensitive response).\n\n"
+    "## Done\n"
+    "You are done when you have enumerated the reachable surface and reported the access-control "
+    "findings you can evidence — NOT when you 'capture' something. Reporting ZERO findings after "
+    "thorough enumeration is a valid result: never invent one, because a false report to a real owner "
+    "is worse than none.\n\n"
+    "## How to reply (ONE JSON object, nothing else)\n"
+    "To run a tool, reply EXACTLY:\n"
+    '{"action": {"tool": "bac-probe", "command": "bac-probe --url http://<target>:<port>/"}}\n'
+    "(Any shell command works the same way, e.g. tool `curl`, command `curl -s http://<target>/`.)\n"
+    "To finish, reply EXACTLY:\n"
+    '{"done": true, "findings": [{"title": "...", "vuln_class": "broken-access-control", '
+    '"location": "/the/path", "severity": "medium", "evidence": "the request + the sensitive '
+    'response", "tool": "bac-probe", "command": "...", "recommendation": "..."}]}\n'
+    "Findings from bac-probe are also captured automatically — but you MUST actually RUN bac-probe "
+    "(an action) first; do not declare done before running it. Return ONLY the JSON object.\n"
+)
+
+
+def assessment_commands(base_url, credentials=None, resource_template="/rest/basket/{id}"):
+    """Exact, ready-to-run probe commands for THIS target, so the agent copies them verbatim
+    instead of paraphrasing the URL/creds (the reliability bug: a dropped port and invented creds
+    made a proven IDOR get missed). Returns [] for an empty base_url. idor-probe is only emitted
+    when two credentials are supplied."""
+    base = (base_url or "").rstrip("/")
+    if not base:
+        return []
+    cmds = [f"bac-probe --url {base}/", f"sqli-probe --url {base}"]
+    creds = list(credentials or [])
+    if len(creds) >= 2:
+        a, b = creds[0], creds[1]
+        cmds.append(f"idor-probe --url {base} "
+                    f"--user-a {a['email']}:{a['password']} "
+                    f"--user-b {b['email']}:{b['password']} "
+                    f"--resource {resource_template}")
+    return cmds
 
 
 def _recent_failure(journal):
@@ -60,7 +131,8 @@ def _self_correct_banner(journal) -> str:
 
 
 def build_step_prompt(objective: str, target: str, journal, allowed_classes,
-                      brain=None) -> tuple[str, str]:
+                      brain=None, mode: str = CTF, base_url: str = "",
+                      credentials=None) -> tuple[str, str]:
     history = journal.render_history()
     # Grin Brain: inject the proven plays for the situations detected in this run's history, so the
     # right deterministic helper is applied EVERY time instead of rediscovered by luck.
@@ -71,6 +143,31 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes,
             learned = brain.render(detect_situations(history, target=target))
         except Exception:  # noqa: BLE001 - the brain must never break a run
             learned = ""
+    if mode == ASSESSMENT:
+        # Assessment mode: a different mission entirely (find + report real vulns, no flag-hunting).
+        # The CTF construction below is left untouched so its behavior is byte-for-byte unchanged.
+        # Note: the Brain's `learned` plays are intentionally OMITTED here — they are CTF-shaped
+        # (ssh-loot / flag-grab) and would contradict the assessment mission.
+        # Pre-built exact commands for this target — the reliability fix. The agent should COPY one
+        # verbatim rather than paraphrase the URL/creds (paraphrasing dropped a port + invented creds
+        # and made a proven IDOR get missed).
+        cmds = assessment_commands(base_url, credentials)
+        cmd_block = ""
+        if cmds:
+            cmd_block = ("## Ready-to-run commands for THIS target — copy ONE of these VERBATIM as "
+                         "your action `command` (the URL and credentials are already correct; do NOT "
+                         "edit them, do NOT invent placeholder creds):\n"
+                         + "".join(f"  {c}\n" for c in cmds) + "\n")
+        user = (
+            f"Objective: {objective}\n"
+            f"Authorized target: {target}\n"
+            f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
+            + f"History so far:\n{history}\n\n"
+            + _self_correct_banner(journal)
+            + cmd_block
+            + ASSESSMENT_MISSION
+        )
+        return SYSTEM, user
     user = (
         f"Objective: {objective}\n"
         f"Authorized target: {target}\n"
@@ -342,6 +439,8 @@ def _parse_findings(items, default_target) -> list:
             tool=str(it.get("tool", "")).strip(),
             command=str(it.get("command", "")).strip(),
             recommendation=str(it.get("recommendation", "")).strip(),
+            vuln_class=str(it.get("vuln_class", "")).strip(),
+            location=str(it.get("location", "")).strip(),
         ))
     return out
 

@@ -238,13 +238,95 @@ def _extract_nuclei(command: str, output: str, target: str) -> List[Finding]:
     return out
 
 
+_BAC_HIT_RE = re.compile(r"^\s*HIT\s+(\S+)\s+(\d+)\s*(.*)$")
+
+
+def _extract_bac_probe(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _BAC_HIT_RE.match(line)
+        if not m:
+            continue
+        path, status, reason = m.group(1), m.group(2), m.group(3).strip()
+        out.append(Finding(
+            title=f"Broken access control: {path} exposed without authentication",
+            target=target,
+            severity="medium",
+            evidence=f"GET {path} -> {status} unauthenticated; {reason}".strip(),
+            tool="bac-probe",
+            command=command,
+            recommendation="Require authentication/authorization for this resource.",
+            vuln_class="broken-access-control",
+            location=path,
+        ))
+    return out
+
+
+_IDOR_RE = re.compile(r"^\s*IDOR\s+(\S+)\s+(\d+)\s*(.*)$")
+
+
+def _extract_idor(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _IDOR_RE.match(line)
+        if not m:
+            continue
+        url, status, reason = m.group(1), m.group(2), m.group(3).strip()
+        path = re.sub(r"^https?://[^/]+", "", url) or url
+        out.append(Finding(
+            title=f"IDOR: cross-user access to {path}",
+            target=target,
+            severity="high",
+            evidence=f"GET {url} -> {status} returned another user's data; {reason}".strip(),
+            tool="idor-probe",
+            command=command,
+            recommendation="Enforce object-level authorization: verify the resource belongs to "
+                           "the authenticated caller.",
+            vuln_class="idor",
+            location=path,
+        ))
+    return out
+
+
+_SQLI_RE = re.compile(r"^\s*SQLI\s+(\S+)\s+(.*)$")
+
+
+def _extract_sqli(command: str, output: str, target: str) -> List[Finding]:
+    out: List[Finding] = []
+    for line in (output or "").splitlines():
+        m = _SQLI_RE.match(line)
+        if not m:
+            continue
+        url, rest = m.group(1), m.group(2).strip()
+        path = re.sub(r"^https?://[^/]+", "", url) or url
+        out.append(Finding(
+            title=f"SQL injection authentication bypass at {path}",
+            target=target,
+            severity="critical",
+            evidence=f"login at {url} bypassed with payload: {rest}",
+            tool="sqli-probe",
+            command=command,
+            recommendation="Use parameterized queries / an ORM; never build SQL from user input.",
+            vuln_class="sql-injection",
+            location=path,
+        ))
+    return out
+
+
 def extract_findings(tool: str, command: str, output: str, target: str) -> List[Finding]:
     """Deterministic vulnerability findings parsed from a known tool's output. Never raises; [] when
-    nothing matches. Currently: nuclei."""
+    nothing matches. Currently: nuclei, bac-probe, idor-probe, sqli-probe."""
     try:
         tl = (tool or "").lower()
-        if "nuclei" in tl or "nuclei" in (command or "").lower():
+        cl = (command or "").lower()
+        if "nuclei" in tl or "nuclei" in cl:
             return _extract_nuclei(command or "", output or "", target or "")
+        if "bac-probe" in tl or "bac-probe" in cl:
+            return _extract_bac_probe(command or "", output or "", target or "")
+        if "idor-probe" in tl or "idor-probe" in cl:
+            return _extract_idor(command or "", output or "", target or "")
+        if "sqli-probe" in tl or "sqli-probe" in cl:
+            return _extract_sqli(command or "", output or "", target or "")
         return []
     except Exception:
         return []

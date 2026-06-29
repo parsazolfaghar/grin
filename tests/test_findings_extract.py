@@ -34,3 +34,35 @@ def test_extract_findings_non_nuclei_tool_is_empty():
 def test_extract_findings_never_raises_on_junk():
     assert extract_findings("nuclei", "", None, "t") == []
     assert extract_findings("nuclei", "", "", "t") == []
+
+
+def test_extract_bac_probe_findings_carry_class_and_location():
+    out = ("bac-probe http://t/ (unauthenticated) — 1 finding(s)\n"
+           "HIT /ftp/legal.md 200 sensitive content served without authentication\n")
+    fs = extract_findings("bac-probe", "bac-probe --url http://t/", out, "http://t")
+    assert len(fs) == 1
+    f = fs[0]
+    assert f.vuln_class == "broken-access-control"
+    assert f.location == "/ftp/legal.md"
+    assert "/ftp/legal.md" in f.evidence and "200" in f.evidence
+
+
+def test_extract_bac_probe_no_hits_is_empty():
+    out = "bac-probe http://t/ (unauthenticated) — 0 finding(s)\n"
+    assert extract_findings("bac-probe", "bac-probe --url http://t/", out, "http://t") == []
+
+
+def test_extract_idor_findings():
+    out = ("idor-probe http://t/ (as a@b.c) — 1 finding(s)\n"
+           "IDOR http://t/rest/basket/2 200 victim data reachable across users\n")
+    fs = extract_findings("idor-probe", "idor-probe --url http://t/", out, "http://t")
+    assert len(fs) == 1
+    assert fs[0].vuln_class == "idor" and fs[0].location == "/rest/basket/2"
+
+
+def test_extract_sqli_findings():
+    out = ("sqli-probe http://t/rest/user/login — 1 finding(s)\n"
+           "SQLI http://t/rest/user/login ' OR 1=1-- authentication bypass\n")
+    fs = extract_findings("sqli-probe", "sqli-probe --url http://t/", out, "http://t")
+    assert len(fs) == 1
+    assert fs[0].vuln_class == "sql-injection" and fs[0].location == "/rest/user/login"

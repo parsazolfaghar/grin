@@ -7,6 +7,7 @@ from datetime import datetime
 
 from grin.aggressive import sweep_objectives, discovered_services
 from grin.analyst import initial_plan, replan
+from grin.mode import ASSESSMENT, CTF
 from grin.checkpoint import new_flags, route_queue
 from grin.discoveries import discover
 from grin.engagement import Engagement
@@ -297,7 +298,8 @@ def _drive_loop(eng: Engagement, *, goal: str, queue: list, findings: list,
                     seen.add(key)
                     queue.append(o)
         decision = replan(planner_client, planner_model, goal, findings,
-                          len(objectives_run), len(queue), scope_targets, secrets=secrets)
+                          len(objectives_run), len(queue), scope_targets, secrets=secrets,
+                          mode=(ASSESSMENT if eng.assess else CTF))
         plan_log.append({"kind": "replan", "done": decision.done, "reason": decision.reason,
                          "objectives": list(decision.next_objectives)})
         if decision.done and not aggressive:
@@ -321,7 +323,8 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
         apply_device_stealth(eng, runner=runner)
 
     eff_planner = planner_model or model
-    queue = initial_plan(planner_client, eff_planner, goal, eng.scope.include, seeds or [])
+    queue = initial_plan(planner_client, eff_planner, goal, eng.scope.include, seeds or [],
+                         mode=(ASSESSMENT if eng.assess else CTF))
     if not queue:
         # Cold-start fallback: the planner returned no objectives (a model hiccup). Don't silently
         # no-op with 0 objectives — seed a recon objective per in-scope target so the engagement
@@ -329,6 +332,20 @@ def orchestrate(eng: Engagement, *, goal: str, planner_client, executor_client, 
         queue = [Objective("enumerate services and identify the vulnerability to exploit", t,
                            "active-scan") for t in eng.scope.include]
     findings: list = []
+    # Deterministic assessment sweep: in assessment mode, fire the known-class probes directly
+    # (through the authorized spine) so their detection does not depend on the LLM choosing to run
+    # them — the loop kept varying on whether/how it ran each probe. The LLM loop then reasons on top.
+    if getattr(eng, "assess", False) and getattr(eng, "base_url", ""):
+        from grin.assessment import assessment_sweep
+        from grin.spine import submit_action
+        _scope_t = eng.scope.include[0] if eng.scope.include else eng.base_url
+
+        def _run_probe(tool, command):
+            oc = submit_action(eng, target=_scope_t, tool=tool, command=command,
+                               declared_class=None, runner=runner, now=now)
+            return (oc.result.output if (oc.status == "executed" and oc.result) else "") or ""
+        _merge_findings(findings, assessment_sweep(eng.base_url, eng.credentials, _run_probe,
+                                                   eng.base_url))
     objectives_run: list = []
     paused: list = []
     plan_log: list = [{"kind": "initial_plan", "objectives": list(queue)}]

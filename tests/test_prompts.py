@@ -181,3 +181,80 @@ def test_step_prompt_warns_target_is_host_and_to_use_creds():
     low = user.lower()
     assert "file path" in low or "not a file" in low
     assert "secrets" in low and ("credential" in low or "creds" in low or "login" in low)
+
+
+# --- SP2: mode-aware prompt ---
+
+def test_default_mode_is_ctf_byte_identical():
+    # the default (no mode arg) must equal explicit ctf — proves we didn't disturb existing callers
+    _s1, u_default = build_step_prompt("o", "203.0.113.7", _journal(), ["active-scan"])
+    _s2, u_ctf = build_step_prompt("o", "203.0.113.7", _journal(), ["active-scan"], mode="ctf")
+    assert u_default == u_ctf
+
+
+def test_ctf_prompt_still_has_flag_framing():
+    _s, u = build_step_prompt("o", "203.0.113.7", _journal(), ["active-scan"], mode="ctf")
+    assert "flag.txt" in u and "{{7*7}}" in u   # CTF methodology intact
+
+
+def test_assessment_prompt_drops_flag_hunting():
+    _s, u = build_step_prompt("o", "http://t/", _journal(), ["active-scan"], mode="assessment")
+    assert "flag.txt" not in u
+    assert "{{7*7}}" not in u
+    assert "/root/flag" not in u
+
+
+def test_assessment_prompt_has_assessment_framing_and_header():
+    _s, u = build_step_prompt("assess the app", "http://t/", _journal(),
+                              ["passive", "active-scan"], mode="assessment")
+    low = u.lower()
+    assert "broken-access-control" in low or "access control" in low
+    assert "unauthenticated" in low or "without credentials" in low
+    assert "finding" in low                 # report findings, not flags
+    assert "assess the app" in u and "http://t/" in u    # common header preserved
+    assert "active-scan" in u
+    assert '"action"' in u                  # the model must know the action reply schema
+    assert "bac-probe" in u
+
+
+def test_parse_step_assessment_findings_carry_vuln_class_and_location():
+    raw = ('{"done": true, "findings": [{"title": "bac", "vuln_class": "broken-access-control", '
+           '"location": "/ftp/x", "severity": "medium", "evidence": "e", "tool": "bac-probe", '
+           '"command": "c"}]}')
+    d = parse_step(raw, "http://t")
+    assert d.kind == "done"
+    f = d.findings[0]
+    assert f.vuln_class == "broken-access-control" and f.location == "/ftp/x"
+
+
+from grin.prompts import assessment_commands
+
+
+def test_assessment_commands_basic_no_creds():
+    cmds = assessment_commands("http://t:3000/")
+    assert "bac-probe --url http://t:3000/" in cmds
+    assert "sqli-probe --url http://t:3000" in cmds
+    assert not any("idor-probe" in c for c in cmds)   # needs two credentials
+
+
+def test_assessment_commands_with_credentials_builds_exact_idor():
+    creds = [{"email": "a@x", "password": "p1"}, {"email": "b@x", "password": "p2"}]
+    cmds = assessment_commands("http://t:3000", creds)
+    idor = [c for c in cmds if "idor-probe" in c][0]
+    assert "--url http://t:3000" in idor
+    assert "--user-a a@x:p1" in idor and "--user-b b@x:p2" in idor
+    assert "--resource /rest/basket/{id}" in idor
+
+
+def test_assessment_commands_empty_base_url_is_empty():
+    assert assessment_commands("") == []
+
+
+def test_assessment_prompt_injects_exact_verbatim_commands():
+    creds = [{"email": "a@x", "password": "p1"}, {"email": "b@x", "password": "p2"}]
+    _s, u = build_step_prompt("o", "http://t:3000", _journal(), ["active-scan"],
+                              mode="assessment", base_url="http://t:3000", credentials=creds)
+    assert "VERBATIM" in u
+    assert "bac-probe --url http://t:3000/" in u
+    assert "sqli-probe --url http://t:3000" in u
+    assert "idor-probe --url http://t:3000 --user-a a@x:p1 --user-b b@x:p2" in u

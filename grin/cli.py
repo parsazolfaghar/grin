@@ -882,6 +882,53 @@ def cmd_labbench(*, matrix_path: str, out: str, runner: str = "grin-kali") -> in
     return 0
 
 
+def _load_findings_file(path: str):
+    """Load a JSON list of finding dicts into Finding objects, ignoring unknown keys."""
+    from dataclasses import fields
+    from grin.finding import Finding
+    valid = {f.name for f in fields(Finding)}
+    with open(path) as fh:
+        data = json.load(fh)
+    if not isinstance(data, list):
+        raise ValueError("findings file must be a JSON list of finding objects")
+    out = []
+    for d in data:
+        if not isinstance(d, dict):
+            raise ValueError(f"findings entry is not an object: {d!r}")
+        out.append(Finding(**{k: v for k, v in d.items() if k in valid}))
+    return out
+
+
+def cmd_assessbench(*, target_id: str, findings: str = None, json_out: bool = False) -> int:
+    from grin.assessbench.manifest import load_bench_target, ManifestError
+    from grin.assessbench.scorer import score as _score_findings
+    from grin.assessbench.report import to_text as _ab_text, to_json as _ab_json
+    try:
+        target = load_bench_target(target_id)
+    except ManifestError as e:
+        print(f"error: {e}")
+        return 2
+    if findings:
+        try:
+            fs = _load_findings_file(findings)
+        except (OSError, ValueError, json.JSONDecodeError, TypeError) as e:
+            print(f"error: cannot load findings {findings}: {e}")
+            return 2
+        result = _score_findings(fs, target)
+        print(json.dumps(_ab_json(result), indent=2) if json_out else _ab_text(result))
+        return 0
+    # No findings supplied: show how to stand the target up + its ground-truth answer key.
+    print(target.name)
+    print(f"  provision: docker run -d --name {target.id} "
+          f"-p {target.port}:{target.port} {target.image}")
+    print(f"  url: {target.resolved_url('127.0.0.1')}")
+    print(f"  ground truth ({len(target.ground_truth)} known vulnerabilities):")
+    for g in target.ground_truth:
+        print(f"    [{g.severity}] {g.vuln_class}  {g.location}  — {g.description}")
+    print(f"\n  then score findings with: grin assessbench {target.id} --findings <file.json>")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     from grin import __version__
@@ -1009,6 +1056,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_lb.add_argument("--out", default="lab/results/ranking.txt")
     p_lb.add_argument("--runner", default="grin-kali")
 
+    p_ab = sub.add_parser("assessbench",
+                          help="score assessment findings against a known-vulnerable app")
+    p_ab.add_argument("target_id", help="bench target id (e.g. juice-shop)")
+    p_ab.add_argument("--findings", default=None,
+                      help="JSON file of findings to score; omit to print the answer key")
+    p_ab.add_argument("--json", dest="json_out", action="store_true",
+                      help="emit the score as JSON")
+
     p_ars = sub.add_parser("arsenal", help="provision/manage the Kali+BlackArch tool arsenals")
     p_ars.add_argument("action", choices=["up", "down", "status", "add", "deploy"])
     p_ars.add_argument("tool", nargs="?", default=None,
@@ -1093,6 +1148,9 @@ def main(argv=None) -> int:
                        arsenal=args.arsenal)
     if args.group == "labbench":
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
+    if args.group == "assessbench":
+        return cmd_assessbench(target_id=args.target_id, findings=args.findings,
+                               json_out=args.json_out)
     if args.group == "arsenal":
         return cmd_arsenal(args.action, tool=args.tool)
     if args.group == "brain":
