@@ -175,11 +175,118 @@ def verify_bac(candidate: Candidate, transport: Transport) -> Verdict:
     return Verdict(REJECTED, "broken-access-control", loc, "no sensitive content exposed")
 
 
+# --- write-side BAC / identity forgery (the "forged-review" class) ------------------------------
+def _find_record_with_marker(body: str, marker_field: str, nonce: str):
+    """Find the single JSON record whose `marker_field` value EXACTLY equals this write's nonce.
+    Exact equality (not substring, not any-field) pins the match to the record we just wrote —
+    not a wrapper object around the list, nor an unrelated record that mentions the nonce."""
+    import json as _json
+    try:
+        data = _json.loads(body)
+    except Exception:
+        return None
+    nonce = nonce.strip()
+    found = []
+
+    def walk(node):
+        if isinstance(node, dict):
+            if str(node.get(marker_field, "")).strip() == nonce:
+                found.append(node)
+            for v in node.values():
+                walk(v)
+        elif isinstance(node, list):
+            for v in node:
+                walk(v)
+
+    walk(data)
+    return found[0] if found else None
+
+
+def verify_write_authz(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: an attacker writes a record carrying ANOTHER user's identity in an attribution
+    field, and the server persists that forged identity with no surviving marker of the real
+    (attacker) author. Reported as broken-access-control so it scores against the GT.
+
+    Precision layers (each must hold or it is not CONFIRMED):
+      - CONTROL write first (attacker's own identity): proves writes surface on read AND that the
+        attribution field is client-reflected at all. If not -> INCONCLUSIVE, never a false clean.
+      - exact record co-location: the forged identity is read from the record whose marker_field
+        EQUALS this write's unique nonce — not merely somewhere in the collection response.
+      - cosmetic-field guard: if that record's OTHER fields still expose the attacker's true
+        identity, real ownership is intact and the field was only cosmetic -> REJECTED."""
+    import uuid
+    loc, o = candidate.location, candidate.oracle
+    attacker = transport.by_role.get("attacker")
+    if attacker is None:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "needs an attacker session")
+    required = ("write_url", "read_url", "forged_field", "marker_field", "forged_value")
+    if any(not o.get(k) for k in required):
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "incomplete write-authz candidate")
+    ff, mf = o["forged_field"], o["marker_field"]
+    write_method = o.get("write_method", "POST")
+    control_value = o.get("control_value", "grin-control-author")
+
+    def write_and_read(identity):
+        """-> (kind, write_status, record). kind 'error' means a request failed / 5xx / no status
+        (couldn't test); 'ok' carries the write status and the located record (or None)."""
+        nonce = "grin-" + uuid.uuid4().hex[:12]
+        body = dict(o.get("body_template") or {})
+        body[ff], body[mf] = identity, nonce
+        try:
+            ws, _wb = attacker(o["write_url"], method=write_method, json=body)
+        except Exception:
+            return "error", None, None
+        if not ws or ws >= 500:
+            return "error", None, None
+        try:
+            rs, rb = attacker(o["read_url"])
+        except Exception:
+            return "error", None, None
+        if not rs or rs >= 500:
+            return "error", None, None
+        return "ok", ws, _find_record_with_marker(rb or "", mf, nonce)
+
+    # CONTROL: prove the write/read path works AND the attribution field is client-reflected.
+    kind, ws, ctrl = write_and_read(control_value)
+    if kind == "error" or not (200 <= ws < 300) or ctrl is None:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc,
+                       "could not exercise the write/read path as the attacker")
+    if str(ctrl.get(ff, "")).strip().lower() != str(control_value).strip().lower():
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc,
+                       "attribution field is not client-reflected — cannot test forgery")
+
+    # FORGERY: write the victim's identity into the attribution field.
+    kind, ws, forged = write_and_read(o["forged_value"])
+    if kind == "error":
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "forged write/read errored")
+    if not (200 <= ws < 300):
+        return Verdict(REJECTED, "broken-access-control", loc, "server rejected the forged write")
+    if forged is None:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "forged write did not surface on read")
+    if str(forged.get(ff, "")).strip().lower() != str(o["forged_value"]).strip().lower():
+        return Verdict(REJECTED, "broken-access-control", loc,
+                       "server overrode the attribution field with the session identity")
+    # Cosmetic-field guard: a SEPARATE field still exposing the attacker's true identity means real
+    # ownership survived. Scan the record's OTHER scalar fields (skip the forged + marker fields, so
+    # the attacker's own marker text never triggers a false REJECTED).
+    attacker_ids = [str(a).strip().lower() for a in (o.get("attacker_identity") or []) if a]
+    for k, v in forged.items():
+        if k in (ff, mf):
+            continue
+        vs = str(v).strip().lower()
+        if any(aid and aid in vs for aid in attacker_ids):
+            return Verdict(REJECTED, "broken-access-control", loc,
+                           "record still exposes the attacker's true identity — field is cosmetic")
+    return Verdict(CONFIRMED, "broken-access-control", loc,
+                   f"attacker forged a record attributed to {o['forged_value']!r} with no surviving true-owner marker")
+
+
 _REGISTRY: dict = {
     "ssti": verify_ssti,
     "idor": verify_idor,
     "sql-injection": verify_sqli,
     "broken-access-control": verify_bac,
+    "forged-review": verify_write_authz,
 }
 
 

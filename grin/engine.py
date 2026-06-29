@@ -84,7 +84,9 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     The harness owns auth + resource discovery: it logs in the first two credentials as attacker
     and victim, and returns the victim's owned resource id so the caller can form the IDOR
     candidate. Returns (transport, victim_resource_id)."""
-    by_role = {"anon": lambda u: request("GET", u)}
+    # Role callables default to GET (read-side verifiers call role(url)) but carry their auth into
+    # writes too: role(url, method="POST", json=body) — needed by the write-side verifier.
+    by_role = {"anon": lambda u, method="GET", json=None: request(method, u, json=json)}
     victim_id = None
     creds = list(credentials or [])
     if len(creds) >= 2:
@@ -94,24 +96,41 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
         tb, victim_id = login_session(base_url, creds[1]["email"], creds[1]["password"],
                                       post, login_path)
         if ta:
-            by_role["attacker"] = lambda u, t=ta: request("GET", u,
-                                                          headers={"Authorization": "Bearer " + t})
+            by_role["attacker"] = lambda u, method="GET", json=None, t=ta: request(
+                method, u, json=json, headers={"Authorization": "Bearer " + t})
         if tb:
-            by_role["victim"] = lambda u, t=tb: request("GET", u,
-                                                        headers={"Authorization": "Bearer " + t})
+            by_role["victim"] = lambda u, method="GET", json=None, t=tb: request(
+                method, u, json=json, headers={"Authorization": "Bearer " + t})
     return Transport(request=request, by_role=by_role), victim_id
 
 
 def run_general(base_url, credentials=None, *, request=None,
-                resource_template="/rest/basket/{id}", login_path="/rest/user/login", target=""):
+                resource_template="/rest/basket/{id}", login_path="/rest/user/login",
+                review_template="/rest/products/{pid}/reviews", review_pid=1, target=""):
     """End-to-end: build the transport (sessions), recon the surface, resolve the session-coupled
-    IDOR candidate, and assess everything. Deterministic; the LLM is not in this path."""
+    IDOR + write-side-BAC candidates, and assess everything. Deterministic; the LLM is not in this
+    path."""
     request = request or _urllib_request()
+    base = base_url.rstrip("/")
+    creds = list(credentials or [])
     transport, victim_id = build_transport(request, base_url, credentials, login_path)
     candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
-    if victim_id is not None and "attacker" in transport.by_role and "victim" in transport.by_role:
-        url = base_url.rstrip("/") + resource_template.replace("{id}", str(victim_id))
+    have_two = "attacker" in transport.by_role and "victim" in transport.by_role
+    if victim_id is not None and have_two:
+        url = base + resource_template.replace("{id}", str(victim_id))
         candidates.append(Candidate("idor", resource_template, url))
+    if have_two and len(creds) >= 2:
+        # write-side BAC: forge a review attributed to the victim's identity. The harness owns the
+        # identities (the login emails); location is the report key, the oracle carries live URLs.
+        review_url = base + review_template.replace("{pid}", str(review_pid))
+        candidates.append(Candidate(
+            "forged-review", "/rest/products/reviews", review_url,
+            oracle={
+                "write_url": review_url, "read_url": review_url, "write_method": "PUT",
+                "body_template": {}, "forged_field": "author", "marker_field": "message",
+                "forged_value": creds[1]["email"], "control_value": creds[0]["email"],
+                "attacker_identity": [creds[0]["email"]],
+            }))
     return assess(candidates, transport, target=target or base_url)
 
 

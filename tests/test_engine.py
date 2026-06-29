@@ -105,6 +105,47 @@ def test_run_general_no_creds_skips_idor_but_still_finds_unauth():
     assert "idor" not in classes                   # no creds -> no IDOR candidate
 
 
+def test_build_transport_role_supports_authenticated_writes():
+    # the per-role callable must carry auth into writes (method + json), not just GET reads
+    from grin.engine import build_transport
+    seen = {}
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/rest/user/login"):
+            return (200, '{"authentication":{"token":"TA","bid":6}}')
+        seen["method"], seen["json"], seen["auth"] = method, json, (headers or {}).get("Authorization")
+        return (200, "ok")
+    creds = [{"email": "a@x", "password": "p"}, {"email": "b@x", "password": "p"}]
+    transport, _ = build_transport(request, "http://t", creds)
+    transport.by_role["attacker"]("http://t/w", method="POST", json={"k": "v"})
+    assert seen["method"] == "POST" and seen["json"] == {"k": "v"}
+    assert seen["auth"] == "Bearer TA"
+
+
+def test_run_general_detects_forged_review():
+    store = []
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/rest/user/login"):
+            bid = 6 if "aaa" in (json or {}).get("email", "") else 7
+            tok = "TA" if bid == 6 else "TB"
+            return (200, '{"authentication":{"token":"%s","bid":%d}}' % (tok, bid))
+        if "/reviews" in url and method == "PUT":
+            store.append({"message": (json or {}).get("message", ""),
+                          "author": (json or {}).get("author", "")})   # author taken from body = vuln
+            return (200, '{"status":"success"}')
+        if "/reviews" in url and method == "GET":
+            import json as _j
+            return (200, _j.dumps({"data": list(store)}))
+        if url.endswith("/"):
+            return (200, "SHELL")
+        return (404, "")
+    creds = [{"email": "aaa@x", "password": "p"}, {"email": "bbb@x", "password": "p"}]
+    findings = run_general("http://t:3000", creds, request=request)
+    forged = [f for f in findings if f.location == "/rest/products/reviews"]
+    assert forged and forged[0].vuln_class == "broken-access-control"
+
+
 def test_assess_dedups_bare_directory_when_file_under_it_confirms():
     from grin.verify import Candidate as C
 

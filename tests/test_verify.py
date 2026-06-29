@@ -183,3 +183,108 @@ def test_verify_bac_uses_url_path_not_decorated_location():
     c = Candidate(vuln_class="broken-access-control", location="(anon) /ftp/legal.md",
                   url="http://t/ftp/legal.md", oracle={"baseline_url": "http://t/"})
     assert verify(c, t).status == CONFIRMED
+
+
+# --- verify_write_authz (write-side BAC / identity forgery; the "forged-review" class) ---
+import json as _J
+
+
+def _reviews_role(*, overrides_field=False, cosmetic_owner=False, never_surfaces=False,
+                  drop_field=False, block_forged_value=None):
+    """A fake authenticated 'reviews' endpoint as a write-capable role callable.
+
+    role(url, method="GET", json=None) -> (status, body). POST appends a review record built
+    from the request body; GET returns the wrapped collection (Juice-Shop-shaped {data:[...]}).
+      overrides_field=True  -> server forces author from the session (the SECURE app)
+      cosmetic_owner=True   -> a separate true-owner field exposes the real (attacker) identity
+      never_surfaces=True   -> writes 'succeed' (2xx) but the read never reflects them
+    """
+    store = []
+
+    def role(url, method="GET", json=None):
+        if method == "POST":
+            body = json or {}
+            author = body.get("author", "")
+            if block_forged_value is not None and author == block_forged_value:
+                return (403, '{"error":"forbidden"}')   # server blocks forging this identity
+            rec = {"message": body.get("message", "")}
+            if not drop_field:
+                rec["author"] = author
+            if overrides_field:
+                rec["author"] = "attacker@x"          # session identity wins
+            if cosmetic_owner:
+                rec["userId"] = "attacker@x"          # real ownership preserved separately
+            if not never_surfaces:
+                store.append(rec)
+            return (201, '{"status":"success"}')
+        return (200, _J.dumps({"status": "success", "data": list(store)}))
+    return role
+
+
+def _write_authz_candidate():
+    return Candidate(
+        vuln_class="forged-review", location="/rest/products/reviews",
+        url="http://t/rest/products/reviews",
+        oracle={
+            "write_url": "http://t/rest/products/reviews",
+            "read_url": "http://t/rest/products/reviews",
+            "body_template": {},
+            "forged_field": "author", "marker_field": "message",
+            "forged_value": "victim@x", "control_value": "attacker@x",
+            "attacker_identity": ["attacker@x"],
+        })
+
+
+def test_verify_write_authz_confirmed_on_identity_forgery():
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role()})
+    v = verify(_write_authz_candidate(), t)
+    assert v.status == CONFIRMED
+    assert v.vuln_class == "broken-access-control"      # reported class scores against the GT
+    assert v.location == "/rest/products/reviews"
+
+
+def test_verify_write_authz_rejected_when_server_overrides_field():
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role(overrides_field=True)})
+    assert verify(_write_authz_candidate(), t).status == REJECTED
+
+
+def test_verify_write_authz_rejected_when_record_exposes_true_owner():
+    # the forged value persists in a cosmetic field, but a separate field still proves real ownership
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role(cosmetic_owner=True)})
+    assert verify(_write_authz_candidate(), t).status == REJECTED
+
+
+def test_verify_write_authz_inconclusive_when_control_write_not_surfaced():
+    # writes return 2xx but the read never reflects them -> we never exercised the path
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role(never_surfaces=True)})
+    assert verify(_write_authz_candidate(), t).status == INCONCLUSIVE
+
+
+def test_verify_write_authz_inconclusive_without_attacker_session():
+    assert verify(_write_authz_candidate(),
+                  Transport(request=lambda *a, **k: (200, ""))).status == INCONCLUSIVE
+
+
+def test_verify_write_authz_locates_record_in_wrapped_collection():
+    # the marker must be matched inside the right record, not the wrapper object around the list
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role()})
+    assert verify(_write_authz_candidate(), t).status == CONFIRMED
+
+
+def test_verify_write_authz_inconclusive_when_field_not_client_reflected():
+    # the server drops the attribution field entirely -> the control can't prove it round-trips
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role(drop_field=True)})
+    assert verify(_write_authz_candidate(), t).status == INCONCLUSIVE
+
+
+def test_verify_write_authz_rejected_when_forged_write_blocked():
+    # control (attacker's own identity) succeeds, but forging the victim's identity is blocked (403)
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": _reviews_role(block_forged_value="victim@x")})
+    assert verify(_write_authz_candidate(), t).status == REJECTED
