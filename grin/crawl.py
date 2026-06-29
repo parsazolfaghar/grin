@@ -55,6 +55,27 @@ def _classify_readonly(url, start):
     return True
 
 
+# POST-form ALLOWLIST (positive match — Grok: a denylist can't infer server-side intent). Only
+# compute/lookup-style forms are probed, each mapped to the classes whose probe is safe there.
+# NEVER reflected-xss on POST (stored-XSS damage). NEVER mutating archetypes (no positive match).
+_EXEC_RE = re.compile(r"(exec|command|cmd|run|ping|host|^ip$|system|shell|nslookup|traceroute|dns|whois)", re.I)
+_FILE_RE = re.compile(r"(file|path|page|include|read|load|template|^doc$|filename|download)", re.I)
+_QUERY_RE = re.compile(r"(search|query|filter|lookup|find|keyword|term|^q$)", re.I)
+
+
+def _post_archetype_classes(action, field):
+    """Positive allowlist: only compute/lookup POST forms get probed, mapped to safe classes.
+    Returns [] (skip) for anything that isn't clearly a non-persistent compute/lookup form."""
+    a, f = action.lower(), field.lower()
+    if _EXEC_RE.search(a) or _EXEC_RE.search(f):
+        return ["command-injection"]
+    if _FILE_RE.search(a) or _FILE_RE.search(f):
+        return ["path-traversal", "sqli-error"]
+    if _QUERY_RE.search(a) or _QUERY_RE.search(f):
+        return ["sqli-error"]
+    return []
+
+
 def _looks_html(body):
     s = (body or "").lstrip()
     return bool(s) and s[:1] not in "{[" and "<" in s[:1024]
@@ -70,7 +91,7 @@ def _forms(body):
 
 
 def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50, max_depth=3,
-                           per_prefix=3):
+                           per_prefix=3, allow_post=False, post_out=None):
     """BFS the authenticated session for GET injection points. fetch(url)->(status, body) must use
     the attacker session. Returns (candidates, status) where status is 'ok' or 'deauth'; candidates
     are (location, url, inject_field) for the error-SQLi verifier. Emits ZERO on deauth."""
@@ -114,22 +135,35 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
                 base = url.split("?", 1)[0]
                 others = [(kk, vv) for kk, vv in urllib.parse.parse_qsl(pu.query) if kk != k]
                 _emit(out, seen_cands, base, others, k, pu.path)
-        # injection points: GET forms (skip any form with a password input = login/auth form)
+        # injection points from forms (skip any form with a password input = login/auth form)
         for form in _forms(body):
-            if (form["method"] or "get").lower() != "get":
-                continue
+            method = (form["method"] or "get").lower()
             if any(f["type"] == "password" for f in form["fields"]):
                 continue
             action = urllib.parse.urljoin(url, form["action"]) if form["action"] else url.split("?", 1)[0]
             action = urllib.parse.urldefrag(action)[0]      # action="#" -> the page itself, no fragment
-            if not _classify_readonly(action, start):
-                continue
-            inputs = [(f["name"], f["value"]) for f in form["fields"] if f.get("name")]
             inject = [f["name"] for f in form["fields"]
                       if f["tag"] == "input" and f["type"] in _FILLABLE_TYPES and not _SKIP_PARAM_RE.match(f["name"])]
-            for tf in inject:
-                fixed = [(k, v) for k, v in inputs if k != tf]
-                _emit(out, seen_cands, action, fixed, tf, urllib.parse.urlparse(action).path)
+            if method == "get":
+                if not _classify_readonly(action, start):
+                    continue
+                inputs = [(f["name"], f["value"]) for f in form["fields"] if f.get("name")]
+                for tf in inject:
+                    fixed = [(k, v) for k, v in inputs if k != tf]
+                    _emit(out, seen_cands, action, fixed, tf, urllib.parse.urlparse(action).path)
+            elif method == "post" and allow_post and post_out is not None:
+                # OPT-IN only. Positive archetype allowlist + per-archetype class gating; the verifier
+                # re-fetches `url` for a fresh CSRF and POSTs form-encoded.
+                if not _classify_readonly(action, start):
+                    continue
+                apath = urllib.parse.urlparse(action).path
+                for tf in inject:
+                    classes = _post_archetype_classes(action, tf)
+                    key = ("POST", action, tf)
+                    if classes and key not in seen_cands:
+                        seen_cands.add(key)
+                        post_out.append({"location": f"{apath} ({tf}) [POST]", "action": action,
+                                         "form_url": url, "field": tf, "classes": classes})
         if depth < max_depth:
             for href in _HREF_RE.findall(body):
                 nxt = urllib.parse.urljoin(url, href)

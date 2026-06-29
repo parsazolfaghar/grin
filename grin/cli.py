@@ -931,7 +931,7 @@ def cmd_assessbench(*, target_id: str, findings: str = None, json_out: bool = Fa
 
 def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = None,
                start_path: str = "/", extra_cookie=None, oob_base: str = None,
-               bench: str = None, json_out: bool = False) -> int:
+               bench: str = None, json_out: bool = False, allow_post: bool = False) -> int:
     """Run the autonomous assessment engine (the real-target overhaul) against a live URL."""
     from grin.engine import run_general, run_cookie_general
     credentials = []
@@ -955,7 +955,8 @@ def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = N
                 print("error: --cookie requires --protected <authenticated-only URL>")
                 return 2
             findings = run_cookie_general(url, credentials, protected, start_path=start_path,
-                                          extra_cookies=extra_cookies or None, oob=oob)
+                                          extra_cookies=extra_cookies or None, oob=oob,
+                                          allow_post=allow_post)
         else:
             findings = run_general(url, credentials or None, oob=oob)
     finally:
@@ -1131,6 +1132,9 @@ def build_parser() -> argparse.ArgumentParser:
                           "(HOST must be reachable from the target)")
     asx.add_argument("--bench", default=None,
                      help="also score findings against a bench target id (e.g. vampi, dvwa)")
+    asx.add_argument("--allow-post", action="store_true",
+                     help="opt-in: probe allowlisted compute/lookup POST forms (e.g. exec/ping) — "
+                          "auto-submits forms, so only on targets where mutation risk is accepted")
     asx.add_argument("--json", dest="json_out", action="store_true", help="emit findings/score as JSON")
 
     p_ab = sub.add_parser("assessbench",
@@ -1228,7 +1232,8 @@ def main(argv=None) -> int:
     if args.group == "assess":
         return cmd_assess(url=args.url, creds=args.creds, cookie=args.cookie, protected=args.protected,
                           start_path=args.start_path, extra_cookie=args.extra_cookie,
-                          oob_base=args.oob_base, bench=args.bench, json_out=args.json_out)
+                          oob_base=args.oob_base, bench=args.bench, json_out=args.json_out,
+                          allow_post=args.allow_post)
     if args.group == "assessbench":
         return cmd_assessbench(target_id=args.target_id, findings=args.findings,
                                json_out=args.json_out)

@@ -92,6 +92,20 @@ class CookieSession:
         return status, body
 
 
+def harvest_form_inputs(html, field):
+    """Return {name: value} for the form that contains an input named `field` (fresh CSRF/hidden
+    values included). Used to re-submit a form with one field overwritten by an injection payload."""
+    p = _FormParser()
+    try:
+        p.feed(html or "")
+    except Exception:
+        return None
+    for form in p.forms:
+        if any(f["name"] == field for f in form["fields"]):
+            return {f["name"]: f["value"] for f in form["fields"]}
+    return None
+
+
 def _extract_csrf(body, field):
     """Find a CSRF token value for a named hidden input (handles attribute ordering + quote style)."""
     for pat in (rf'name=["\']{re.escape(field)}["\'][^>]*?value=["\']([^"\']+)',
@@ -268,7 +282,7 @@ def build_cookie_transport_auto(base_url, credentials, protected_url, *, extra_c
     seed = dict(extra_cookies or {})
     anon = CookieSession(rf, seed=seed)
     spec = discover_form_login(base_url, lambda u: anon.request("GET", u))
-    by_role = {"anon": lambda u, method="GET", json=None: anon.request(method, u, json=json)}
+    by_role = {"anon": lambda u, method="GET", json=None, data=None: anon.request(method, u, json=json, data=data)}
     if spec is None:
         return Transport(request=anon.request, by_role=by_role), 0, None
     bound = 0
@@ -277,7 +291,7 @@ def build_cookie_transport_auto(base_url, credentials, protected_url, *, extra_c
         uname = cred.get("username") or cred.get("login") or cred.get("email")
         form_login_auto(sess, uname, cred.get("password"), spec)
         if _identity_proven(sess, anon, protected_url, uname):
-            by_role[role] = (lambda s: lambda u, method="GET", json=None: s.request(method, u, json=json))(sess)
+            by_role[role] = (lambda s: lambda u, method="GET", json=None, data=None: s.request(method, u, json=json, data=data))(sess)
             bound += 1
     return Transport(request=anon.request, by_role=by_role), bound, spec
 
@@ -292,7 +306,7 @@ def build_cookie_transport(base_url, login_url, credentials, protected_url, *,
     rf = request_full or _make_request_full()
     seed = dict(extra_cookies or {})
     anon = CookieSession(rf, seed=seed)
-    by_role = {"anon": lambda u, method="GET", json=None: anon.request(method, u, json=json)}
+    by_role = {"anon": lambda u, method="GET", json=None, data=None: anon.request(method, u, json=json, data=data)}
 
     def login_role(cred):
         sess = CookieSession(rf, seed=seed)
@@ -309,6 +323,6 @@ def build_cookie_transport(base_url, login_url, credentials, protected_url, *,
     for role, cred in zip(("attacker", "victim"), creds):
         sess = login_role(cred)
         if sess is not None:
-            by_role[role] = (lambda s: lambda u, method="GET", json=None: s.request(method, u, json=json))(sess)
+            by_role[role] = (lambda s: lambda u, method="GET", json=None, data=None: s.request(method, u, json=json, data=data))(sess)
             bound += 1
     return Transport(request=anon.request, by_role=by_role), bound

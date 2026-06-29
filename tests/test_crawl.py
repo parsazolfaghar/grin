@@ -71,6 +71,51 @@ def test_crawl_ignores_static_resources():
     assert status == "ok" and {c[2] for c in cands} == {"q"}
 
 
+def test_post_archetype_allowlist():
+    from grin.crawl import _post_archetype_classes
+    assert _post_archetype_classes("/vulnerabilities/exec/", "ip") == ["command-injection"]
+    assert "path-traversal" in _post_archetype_classes("/load", "file")
+    assert _post_archetype_classes("/search", "q") == ["sqli-error"]
+    assert _post_archetype_classes("/account/update", "bio") == []      # not compute/lookup -> skip
+    assert _post_archetype_classes("/transfer", "amount") == []          # mutating -> skip
+
+
+def test_crawl_post_forms_off_by_default():
+    pages = {"/index.php": '<form method="post" action="/exec"><input type="text" name="ip">'
+                          '<input type="submit" name="Submit"></form> Logout'}
+    post_out = []
+    cands, status = crawl_injection_points("http://t/index.php", _site(pages),
+                                           allow_post=False, post_out=post_out)
+    assert status == "ok" and post_out == []        # POST never probed without opt-in
+
+
+def test_crawl_post_forms_emits_allowlisted_when_opted_in():
+    pages = {"/index.php": '<form method="post" action="/exec"><input type="text" name="ip">'
+                          '<input type="hidden" name="token" value="abc"><input type="submit" name="Submit"></form> Logout'}
+    post_out = []
+    crawl_injection_points("http://t/index.php", _site(pages), allow_post=True, post_out=post_out)
+    assert len(post_out) == 1
+    pf = post_out[0]
+    assert pf["field"] == "ip" and pf["classes"] == ["command-injection"]
+    assert pf["action"] == "http://t/exec" and pf["form_url"] == "http://t/index.php"
+
+
+def test_crawl_post_form_skips_login_and_mutating():
+    pages = {"/index.php":
+             '<form method="post" action="/login"><input name="user"><input type="password" name="pw"></form>'
+             '<form method="post" action="/comment"><input type="text" name="body"></form> Logout'}
+    post_out = []
+    crawl_injection_points("http://t/index.php", _site(pages), allow_post=True, post_out=post_out)
+    assert post_out == []     # login form (password) skipped; /comment not an allowlisted archetype
+
+
+def test_harvest_form_inputs_picks_form_with_field():
+    from grin.cookie_auth import harvest_form_inputs
+    html = ('<form><input name="q"></form>'
+            '<form><input name="ip" value="1.1.1.1"><input name="token" value="T"></form>')
+    assert harvest_form_inputs(html, "ip") == {"ip": "1.1.1.1", "token": "T"}
+
+
 def test_crawl_drops_junk_params():
     pages = {"/index.php": '<form method="get"><input name="page"><input name="csrf_token">'
                           '<input type="text" name="q"></form> Logout'}

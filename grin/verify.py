@@ -66,6 +66,25 @@ def _with_param(url: str, field_name: str, value: str) -> str:
     return f"{url}{sep}{field_name}={urllib.parse.quote(value)}"
 
 
+def _form_post_send(agent, form_url, action_url, field, value):
+    """POST a form with one field overwritten: re-fetch the form page (fresh CSRF/hidden values),
+    harvest its inputs, set field=value, POST form-encoded. agent must carry the auth + support data=
+    (the cookie role callable does). Returns (status, body); (0, "") if the form can't be harvested."""
+    from grin.cookie_auth import harvest_form_inputs
+    try:
+        _s, body = agent(form_url)
+    except Exception:
+        return (0, "")
+    inputs = harvest_form_inputs(body, field)
+    if inputs is None:
+        return (0, "")
+    inputs[field] = value
+    try:
+        return agent(action_url, method="POST", data=urllib.parse.urlencode(inputs))
+    except Exception:
+        return (0, "")
+
+
 def verify_ssti(candidate: Candidate, transport: Transport) -> Verdict:
     field_name = candidate.inject_field or "q"
     loc = candidate.location
@@ -356,6 +375,8 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
         lambda u, method="GET", json=None: transport.request(method, u, json=json))
 
     def send(value):
+        if o.get("form"):
+            return _form_post_send(agent, o["form_url"], candidate.url, candidate.inject_field or "q", value)
         if o.get("inject") == "path":
             url = o["url_template"].replace("{inject}", urllib.parse.quote(value, safe=""))
             return agent(url)
@@ -485,6 +506,8 @@ def verify_path_traversal(candidate: Candidate, transport: Transport) -> Verdict
         lambda u, method="GET", json=None: transport.request(method, u, json=json))
 
     def send(value):
+        if candidate.oracle.get("form"):
+            return _form_post_send(agent, candidate.oracle["form_url"], candidate.url, field, value)
         if candidate.method.upper() == "POST":
             return agent(candidate.url, method="POST", json={field: value})
         return agent(_with_param(candidate.url, field, value))
@@ -545,6 +568,8 @@ def verify_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
     arith = f"echo grin$(({a}*{b}))z"
 
     def send(value):
+        if candidate.oracle.get("form"):
+            return _form_post_send(agent, candidate.oracle["form_url"], candidate.url, field, value)
         if candidate.method.upper() == "POST":
             return agent(candidate.url, method="POST", json={field: value})
         return agent(_with_param(candidate.url, field, value))

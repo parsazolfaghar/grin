@@ -291,6 +291,21 @@ def test_verify_cmd_injection_rejected_on_reflection():
     assert verify(_cmdi_candidate(), Transport(request=request)).status == REJECTED
 
 
+def test_verify_cmd_injection_confirmed_over_post_form():
+    # form-POST path: attacker GETs the form (fresh token), POSTs form-encoded; the server executes
+    def attacker(u, method="GET", json=None, data=None):
+        if method == "GET":
+            return (200, '<form action="/exec" method="post"><input name="ip">'
+                         '<input name="user_token" value="T"><input type="submit" name="Submit"></form>')
+        form = dict(urllib.parse.parse_qsl(data or ""))
+        m = _re_cmdi.search(r"grin\$\(\((\d+)\*(\d+)\)\)z", form.get("ip", ""))
+        return (200, f"grin{int(m.group(1)) * int(m.group(2))}z") if m else (200, "ok")
+    t = Transport(request=lambda *a, **k: (404, ""), by_role={"attacker": attacker})
+    c = Candidate(vuln_class="command-injection", location="/exec (ip) [POST]", url="http://t/exec",
+                  method="POST", inject_field="ip", oracle={"form": True, "form_url": "http://t/exec-page"})
+    assert verify(c, t).status == CONFIRMED
+
+
 def test_verify_cmd_injection_confirmed_even_on_500():
     # the chained command 500s the original, but the echo still ran and the sentinel is in the body
     def request(method, url, json=None, headers=None):
