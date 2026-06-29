@@ -18,6 +18,10 @@ _INPUT_NAME_RE = re.compile(r'name=["\']([A-Za-z0-9_\-]+)["\']')
 _URL_PARAM_RE = re.compile(
     r"^(url|uri|link|src|source|dest|destination|target|callback|webhook|proxy|feed|fetch|load|"
     r"remote|site|image_url|avatar_url|return_url|redirect_uri|u|endpoint)$", re.I)
+# Redirect-bearing param names — open-redirect probes (a superset that includes redirect/next/return)
+_REDIRECT_PARAM_RE = re.compile(
+    r"^(url|redirect|redirect_uri|redirecturl|redir|next|return|returnurl|return_url|dest|"
+    r"destination|continue|goto|target|out|link|forward|to|u)$", re.I)
 
 
 def _extract_params(body: str):
@@ -57,6 +61,9 @@ def recon(base_url, fetch, login_path="/rest/user/login", oob=None):
             if _URL_PARAM_RE.match(param):
                 candidates.append(Candidate("ssrf", f"/ (param {param})", base + "/",
                                             inject_field=param, oracle={"oob": oob}))
+            if _REDIRECT_PARAM_RE.match(param):
+                candidates.append(Candidate("open-redirect", f"/ (param {param})", base + "/",
+                                            inject_field=param, oracle={"oob": oob}))
     return candidates
 
 # Per-class severity for the emitted finding. Conservative, overridable later by a CVSS pass.
@@ -73,6 +80,7 @@ _SEVERITY = {
     "broken-authentication": "critical",
     "xss": "high",
     "command-injection": "critical",
+    "open-redirect": "medium",
 }
 
 
@@ -158,6 +166,8 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
             candidates.append(Candidate("blind-command-injection", loc, url, inject_field=field, oracle={"oob": oob}))
             if _URL_PARAM_RE.match(field):
                 candidates.append(Candidate("ssrf", loc, url, inject_field=field, oracle={"oob": oob}))
+            if _REDIRECT_PARAM_RE.match(field):
+                candidates.append(Candidate("open-redirect", loc, url, inject_field=field, oracle={"oob": oob}))
     return assess(candidates, transport, target=target or base_url)
 
 

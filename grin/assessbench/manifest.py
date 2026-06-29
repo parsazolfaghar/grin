@@ -16,7 +16,7 @@ import yaml
 VULN_CLASSES = frozenset({
     "broken-access-control", "idor", "ssrf", "sql-injection", "command-injection",
     "xss", "auth-bypass", "path-traversal", "info-disclosure", "csrf",
-    "excessive-data-exposure", "mass-assignment", "broken-authentication",
+    "excessive-data-exposure", "mass-assignment", "broken-authentication", "open-redirect",
 })
 
 SEVERITIES = ("info", "low", "medium", "high", "critical")

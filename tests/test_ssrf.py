@@ -117,6 +117,28 @@ def test_verify_blind_cmd_injection_rejected_without_callback():
                   Transport(request=lambda *a, **k: (200, "done"))).status == REJECTED
 
 
+def test_verify_open_redirect_confirmed_when_grin_follows_to_oob():
+    # the redirect param reflects our URL; grin's client (its own IP) followed the redirect to the OOB
+    oob = _FakeOOB()
+
+    def request(method, url, json=None, headers=None):
+        import re as _re
+        mt = _re.search(r"/(tok\d+)", urllib.parse.unquote(url))
+        if mt:
+            oob.fire(mt.group(1), "10.0.0.1")     # grin's OWN ip (it followed the 3xx)
+        return (200, "")
+    c = Candidate(vuln_class="open-redirect", location="/go (next)", url="http://t/go",
+                  inject_field="next", oracle={"oob": oob, "ssrf_timeout": 2})
+    assert verify(c, Transport(request=request)).status == CONFIRMED
+
+
+def test_verify_open_redirect_rejected_when_no_redirect():
+    oob = _FakeOOB()
+    c = Candidate(vuln_class="open-redirect", location="/go (next)", url="http://t/go",
+                  inject_field="next", oracle={"oob": oob, "ssrf_timeout": 2})
+    assert verify(c, Transport(request=lambda *a, **k: (200, ""))).status == REJECTED
+
+
 def test_verify_ssrf_inconclusive_when_oob_unhealthy():
     assert verify(_ssrf_candidate(_FakeOOB(healthy=False)),
                   Transport(request=lambda *a, **k: (200, "ok"))).status == INCONCLUSIVE

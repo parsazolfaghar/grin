@@ -393,6 +393,33 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- open redirect (out-of-band, via grin's own client following the redirect) ----------------
+def verify_open_redirect(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: a redirect param reflects an attacker URL into a Location, so grin's redirect-
+    following client chases it to the OOB collaborator. The complement to SSRF: CONFIRMED on a
+    callback from GRIN's OWN IP (grin followed the redirect) — exactly the case SSRF excludes.
+    Uses the redirect-following transport.request; unhealthy collaborator -> INCONCLUSIVE."""
+    import time
+    loc, o = candidate.location, candidate.oracle
+    oob = o.get("oob")
+    if oob is None or not oob.healthy():
+        return Verdict(INCONCLUSIVE, "open-redirect", loc, "OOB collaborator unavailable / unreachable")
+    token = oob.mint_token()
+    cb = oob.callback_url(token)
+    field = candidate.inject_field or "url"
+    try:
+        transport.request("GET", _with_param(candidate.url, field, cb))
+    except Exception:
+        return Verdict(INCONCLUSIVE, "open-redirect", loc, "probe request raised an exception")
+    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    while time.time() < deadline:
+        if oob.hit_sources(token) & oob.grin_ips():
+            return Verdict(CONFIRMED, "open-redirect", loc,
+                           "the response redirected to an attacker-controlled URL (grin's client followed it to the collaborator)")
+        time.sleep(0.25)
+    return Verdict(REJECTED, "open-redirect", loc, "no redirect to the injected URL")
+
+
 # --- blind command injection (out-of-band callback) -------------------------------------------
 def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
     """Oracle: command injection with NO reflected output — the injected shell fetches grin's OOB
@@ -920,6 +947,7 @@ _REGISTRY: dict = {
     "command-injection": verify_cmd_injection,
     "blind-command-injection": verify_blind_cmd_injection,
     "path-traversal": verify_path_traversal,
+    "open-redirect": verify_open_redirect,
 }
 
 
