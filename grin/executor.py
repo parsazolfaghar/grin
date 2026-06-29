@@ -10,7 +10,7 @@ from grin.engagement import Engagement
 from grin.extractors import extract, extract_findings
 from grin.lootfile import persist_artifact, decrypt_persisted_key
 from grin.journal import Journal, Step, journal_path
-from grin.mode import resolve_mode
+from grin.mode import ASSESSMENT, resolve_mode
 from grin.prompts import build_step_prompt, parse_step
 from grin.spine import submit_action
 from grin.results import ResultStore
@@ -173,7 +173,9 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
             journal.set_secrets(existing)
             # The model thinks it's done. If it has NOT actually captured a flag but a foothold
             # exists, run the deterministic closer before accepting 'done' (fixes premature-done).
-            if not _has_flag(journal):
+            # The closer is a CTF flag-grab (ssh-loot / suid-hijack / cat flag); in assessment mode
+            # there is no flag, so it would fire on every 'done' and hijack the run — skip it.
+            if step_mode != ASSESSMENT and not _has_flag(journal):
                 _closer_pass(eng, target=target, journal=journal, runner=runner, now=now,
                              executed_commands=executed_commands, brain=brain)
             journal.save()
@@ -269,8 +271,10 @@ def execute_task(eng: Engagement, *, objective: str, target: str, client, runner
                               pending_id=out.pending_id, secrets=journal.secrets)
 
     # Budget spent without a flag: last-resort deterministic closer through the spine.
-    if _closer_pass(eng, target=target, journal=journal, runner=runner, now=now,
-                    executed_commands=executed_commands, brain=brain):
+    # (Skipped in assessment mode — the closer is a CTF flag-grab, not an assessment action.)
+    if step_mode != ASSESSMENT and _closer_pass(eng, target=target, journal=journal, runner=runner,
+                                                now=now, executed_commands=executed_commands,
+                                                brain=brain):
         journal.save()
         return TaskResult("completed", journal.findings, journal, secrets=journal.secrets)
     journal.save()

@@ -106,11 +106,12 @@ def build_step_prompt(objective: str, target: str, journal, allowed_classes,
     if mode == ASSESSMENT:
         # Assessment mode: a different mission entirely (find + report real vulns, no flag-hunting).
         # The CTF construction below is left untouched so its behavior is byte-for-byte unchanged.
+        # Note: the Brain's `learned` plays are intentionally OMITTED here — they are CTF-shaped
+        # (ssh-loot / flag-grab) and would contradict the assessment mission.
         user = (
             f"Objective: {objective}\n"
             f"Authorized target: {target}\n"
             f"Permitted action classes (ROE): {', '.join(allowed_classes)}\n\n"
-            + learned
             + f"History so far:\n{history}\n\n"
             + _self_correct_banner(journal)
             + ASSESSMENT_MISSION
