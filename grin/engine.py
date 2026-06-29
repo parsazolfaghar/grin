@@ -106,7 +106,12 @@ def _urllib_request():
             r = urllib.request.urlopen(req, timeout=8)
             return r.status, r.read(262144).decode("utf-8", "replace")
         except urllib.error.HTTPError as e:
-            return e.code, ""
+            # KEEP the error body: body-first verifiers (error-SQLi, path-traversal, cmd-injection)
+            # must see a DB error / file read / sentinel even when it renders as a 4xx/5xx.
+            try:
+                return e.code, e.read(262144).decode("utf-8", "replace")
+            except Exception:
+                return e.code, ""
         except Exception:
             return 0, ""
     return request
