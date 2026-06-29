@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from grin.objective import Objective
 from grin.classes import ACTION_CLASSES
 from grin.jsonextract import extract_json
+from grin.mode import ASSESSMENT, CTF
 
 PLANNER_SYSTEM = (
     "You are Grin's Orchestrator/Analyst, planning an authorized, scope-bound penetration test. "
@@ -44,7 +45,31 @@ class AnalystDecision:
     reason: str
 
 
-def initial_plan(client, model: str, goal: str, scope_targets, seeds) -> list:
+def initial_plan(client, model: str, goal: str, scope_targets, seeds, mode: str = CTF) -> list:
+    if mode == ASSESSMENT:
+        user = (
+            f"Engagement goal: {goal}\n"
+            f"In-scope targets (patterns): {', '.join(scope_targets)}\n"
+            f"Operator seed targets: {', '.join(seeds) if seeds else '(none)'}\n\n"
+            "Produce the FIRST short list of objectives for a security ASSESSMENT: enumerate the "
+            "application surface and find REAL vulnerabilities to REPORT — there is NO flag to "
+            "capture. For THIS engagement, focus on BROKEN ACCESS CONTROL. Plan objectives to "
+            "(1) enumerate the app, and (2) run the `bac-probe` helper to find resources served "
+            "WITHOUT authentication and report them as findings. Do NOT plan loot, flag, or "
+            "credential-theft objectives.\n"
+            "Reply EXACTLY with a JSON array of objectives:\n"
+            '{"objectives": ['
+            '{"objective": "enumerate the web application surface and endpoints", '
+            '"target": "<in-scope-target>", "action_class": "active-scan"}, '
+            '{"objective": "test for broken access control with bac-probe (resources served '
+            'without authentication)", "target": "<in-scope-target>", "action_class": "active-scan"}'
+            ']} '
+            "(action_class is one of passive|active-scan|exploit|post-exploit).\n"
+            "Return ONLY the JSON."
+        )
+        data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,
+                                             temperature=0.3))
+        return _parse_objectives(data.get("objectives", [])) if isinstance(data, dict) else []
     user = (
         f"Engagement goal: {goal}\n"
         f"In-scope targets (patterns): {', '.join(scope_targets)}\n"
@@ -96,8 +121,38 @@ def _render_secrets(secrets) -> str:
 
 
 def replan(client, model: str, goal: str, findings, done_count: int,
-           remaining_count: int, scope_targets: list, secrets=None) -> AnalystDecision:
+           remaining_count: int, scope_targets: list, secrets=None,
+           mode: str = CTF) -> AnalystDecision:
     secrets = secrets or []
+    if mode == ASSESSMENT:
+        user = (
+            f"Engagement goal: {goal}\n"
+            f"In-scope targets (you may ONLY target these): {', '.join(scope_targets)}\n"
+            f"Objectives completed: {done_count}; still queued: {remaining_count}\n\n"
+            f"Findings so far:\n{_render_findings(findings)}\n\n"
+            "Decide: is the ASSESSMENT goal met?\n"
+            "The goal IS met once you have enumerated the reachable surface and the broken-access-"
+            "control findings are reported (a resource served WITHOUT authentication is a finding; "
+            "they appear under Findings above). If enumeration is done and findings are reported, "
+            "reply done=true. Reporting ZERO findings after thorough enumeration is ALSO a valid "
+            "done — never invent one. Do NOT plan loot, flag, or credential-theft objectives.\n"
+            "If enumeration is NOT yet complete, propose active-scan objectives (e.g. run "
+            "`bac-probe` on paths not yet checked) against in-scope targets only.\n\n"
+            "Do not repeat completed work.\n"
+            'Reply EXACTLY: {"done": false, "reason": "why", "next_objectives": '
+            '[{"objective": "run bac-probe to test untested paths for missing auth", '
+            '"target": "<in-scope-target>", "action_class": "active-scan"}]}\n'
+            "Return ONLY the JSON."
+        )
+        data = _extract_json(client.generate(model=model, system=PLANNER_SYSTEM, prompt=user,
+                                             temperature=0.3))
+        if isinstance(data, dict) and ("done" in data or "next_objectives" in data):
+            return AnalystDecision(
+                next_objectives=_parse_objectives(data.get("next_objectives", [])),
+                done=bool(data.get("done", False)),
+                reason=str(data.get("reason", "")).strip(),
+            )
+        return AnalystDecision(next_objectives=[], done=False, reason="unparseable analyst reply")
     user = (
         f"Engagement goal: {goal}\n"
         f"In-scope targets (you may ONLY target these): {', '.join(scope_targets)}\n"

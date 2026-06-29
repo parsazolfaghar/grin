@@ -225,3 +225,34 @@ def test_initial_plan_prompt_mentions_exploitation_goal():
     assert '"action_class": "exploit"' in prompt or '"action_class":"exploit"' in prompt
     # The guidance text must explicitly direct toward exploitation as the goal of recon
     assert "exploit" in prompt.lower()
+
+
+# --- SP2: assessment-mode planning (uses the existing _RecordingClient above) ---
+
+def test_initial_plan_assessment_prompt_targets_access_control():
+    c = _RecordingClient(json.dumps({"objectives": []}))
+    initial_plan(c, "m", "assess the app", ["http://t/"], [], mode="assessment")
+    p = c.prompt.lower()
+    assert "bac-probe" in p and "access control" in p
+    assert "capture the flag" not in p
+
+
+def test_initial_plan_ctf_mode_unchanged():
+    c = _RecordingClient(json.dumps({"objectives": []}))
+    initial_plan(c, "m", "g", ["t"], [])          # default ctf
+    p = c.prompt.lower()
+    assert "exploit" in p and "bac-probe" not in p
+
+
+def test_replan_assessment_prompt_drops_flag_framing():
+    c = _RecordingClient(json.dumps({"done": True, "next_objectives": []}))
+    replan(c, "m", "assess", [], 1, 0, ["http://t/"], mode="assessment")
+    p = c.prompt.lower()
+    assert "access-control" in p
+    assert "capture the flag" not in p
+
+
+def test_replan_ctf_mode_unchanged():
+    c = _RecordingClient(json.dumps({"done": False, "next_objectives": []}))
+    replan(c, "m", "g", [], 0, 1, ["t"])          # default ctf
+    assert "flag" in c.prompt.lower()
