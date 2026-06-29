@@ -722,7 +722,7 @@ def test_verify_write_authz_rejected_when_forged_write_blocked():
 
 # --- stored XSS ------------------------------------------------------------------------------
 def _stored_app(*, encode=False, ctx="text", stores=True, anon_sees=True,
-                has_anon=True, has_victim=False):
+                has_anon=True, has_victim=False, anon_status=200):
     """A fake guestbook: a GET ?comment=X writes; a GET to the view renders the store.
     encode -> output is HTML-escaped; ctx picks the render context; anon_sees gates the anon view."""
     store = {"v": None}
@@ -750,7 +750,7 @@ def _stored_app(*, encode=False, ctx="text", stores=True, anon_sees=True,
         return (200, render())
 
     def anon(u):
-        return (200, render()) if anon_sees else (200, "<html><input type='password'></html>")
+        return (anon_status, render()) if anon_sees else (200, "<html><input type='password'></html>")
 
     def victim(u):
         return (200, render())
@@ -886,5 +886,19 @@ def test_nosql_injection_falls_through_to_bracket_form():
 def test_nosql_injection_inconclusive_when_post_raises():
     def anon(u, method="GET", json=None, data=None, headers=None):
         raise RuntimeError("down")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    assert verify(_nosql_candidate(), t).status == INCONCLUSIVE
+
+
+def test_stored_xss_reader_error_page_not_confirmed():
+    # a distinct reader returns a 5xx error page that still echoes the marker -> must NOT confirm
+    v = verify(_stored_candidate(), _stored_app(has_anon=True, has_victim=False, anon_status=500))
+    assert v.status == INCONCLUSIVE
+
+
+def test_nosql_injection_transport_failure_inconclusive():
+    # every attempt returns status 0 (transport failure) -> not a clean comparable test -> INCONCLUSIVE
+    def anon(u, method="GET", json=None, data=None, headers=None):
+        return (0, "")
     t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
     assert verify(_nosql_candidate(), t).status == INCONCLUSIVE

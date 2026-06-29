@@ -816,6 +816,8 @@ def verify_stored_xss(candidate: Candidate, transport: Transport) -> Verdict:
         except Exception:
             continue
         b = b or ""
+        if not _s or _s >= 400:          # an error page that echoes context is not a stored render
+            continue
         if not _looks_html_body(b):
             continue
         i = b.lower().find(marker.lower())
@@ -1152,8 +1154,10 @@ def verify_nosql_injection(candidate: Candidate, transport: Transport) -> Verdic
         except Exception:
             continue
         sent_any = True
-        if sa == 429 or sb == 429 or (sa or 0) >= 500 or (sb or 0) >= 500:
-            continue                                   # throttle/error -> not a clean test, try next form
+        # a clean test needs BOTH sides to return a comparable, non-throttle/non-error status; a
+        # missing/0/None status (transport failure) or 429/5xx is not comparable -> try the next form
+        if not (sa and sb) or sa == 429 or sb == 429 or sa >= 500 or sb >= 500:
+            continue
         clean_any = True
         if _nosql_auth_artifact(sa, ba):
             return Verdict(REJECTED, "nosql-injection", loc,
