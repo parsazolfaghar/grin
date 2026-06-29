@@ -213,3 +213,15 @@ def test_assessment_prompt_has_assessment_framing_and_header():
     assert "finding" in low                 # report findings, not flags
     assert "assess the app" in u and "http://t/" in u    # common header preserved
     assert "active-scan" in u
+    assert '"action"' in u                  # the model must know the action reply schema
+    assert "bac-probe" in u
+
+
+def test_parse_step_assessment_findings_carry_vuln_class_and_location():
+    raw = ('{"done": true, "findings": [{"title": "bac", "vuln_class": "broken-access-control", '
+           '"location": "/ftp/x", "severity": "medium", "evidence": "e", "tool": "bac-probe", '
+           '"command": "c"}]}')
+    d = parse_step(raw, "http://t")
+    assert d.kind == "done"
+    f = d.findings[0]
+    assert f.vuln_class == "broken-access-control" and f.location == "/ftp/x"

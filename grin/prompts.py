@@ -46,7 +46,17 @@ ASSESSMENT_MISSION = (
     "You are done when you have enumerated the reachable surface and reported the access-control "
     "findings you can evidence — NOT when you 'capture' something. Reporting ZERO findings after "
     "thorough enumeration is a valid result: never invent one, because a false report to a real owner "
-    "is worse than none.\n"
+    "is worse than none.\n\n"
+    "## How to reply (ONE JSON object, nothing else)\n"
+    "To run a tool, reply EXACTLY:\n"
+    '{"action": {"tool": "bac-probe", "command": "bac-probe --url http://<target>:<port>/"}}\n'
+    "(Any shell command works the same way, e.g. tool `curl`, command `curl -s http://<target>/`.)\n"
+    "To finish, reply EXACTLY:\n"
+    '{"done": true, "findings": [{"title": "...", "vuln_class": "broken-access-control", '
+    '"location": "/the/path", "severity": "medium", "evidence": "the request + the sensitive '
+    'response", "tool": "bac-probe", "command": "...", "recommendation": "..."}]}\n'
+    "Findings from bac-probe are also captured automatically — but you MUST actually RUN bac-probe "
+    "(an action) first; do not declare done before running it. Return ONLY the JSON object.\n"
 )
 
 
@@ -388,6 +398,8 @@ def _parse_findings(items, default_target) -> list:
             tool=str(it.get("tool", "")).strip(),
             command=str(it.get("command", "")).strip(),
             recommendation=str(it.get("recommendation", "")).strip(),
+            vuln_class=str(it.get("vuln_class", "")).strip(),
+            location=str(it.get("location", "")).strip(),
         ))
     return out
 
