@@ -37,6 +37,7 @@ class _Handler(http.server.BaseHTTPRequestHandler):
 class OOBServer:
     def __init__(self, port, reachable_base, bind_host="0.0.0.0"):
         self.port = port
+        self.bind_host = bind_host
         self.reachable_base = reachable_base.rstrip("/")
         self._raw = []                 # (path, source_ip)
         self._lock = threading.Lock()
@@ -49,7 +50,7 @@ class OOBServer:
             self._raw.append((path, ip))
 
     def start(self):
-        self._httpd = http.server.ThreadingHTTPServer(("0.0.0.0", self.port), _Handler)
+        self._httpd = http.server.ThreadingHTTPServer((self.bind_host, self.port), _Handler)
         self._httpd.oob = self
         threading.Thread(target=self._httpd.serve_forever, daemon=True).start()
 

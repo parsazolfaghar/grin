@@ -14,7 +14,7 @@ import yaml
 # Closed vocabulary the scorer understands. Extend deliberately, in lockstep with the scorer
 # and the assessment pipeline that emits these classes.
 VULN_CLASSES = frozenset({
-    "broken-access-control", "idor", "ssrf", "sql-injection", "command-injection",
+    "broken-access-control", "idor", "ssrf", "sql-injection", "command-injection", "ssti",
     "xss", "auth-bypass", "path-traversal", "info-disclosure", "csrf",
     "excessive-data-exposure", "mass-assignment", "broken-authentication", "open-redirect",
 })

@@ -626,7 +626,15 @@ def _in_noninjectable_context(body_lower, idx):
     for tag in ("script", "style", "textarea", "title", "noscript"):
         if pre.rfind("<" + tag) > pre.rfind("</" + tag):
             return True
-    seg = pre[pre.rfind("<"):] if "<" in pre else pre   # the tag currently being written, if any
+    # Quoted-attribute check applies ONLY when we are inside an unclosed tag (the last '<' has no
+    # '>' after it). If the tag already closed, the reflection is in a text node — apostrophes /
+    # quotes in surrounding text (it's, don't) must NOT flip parity and false-reject a real sink.
+    last_lt = pre.rfind("<")
+    if last_lt == -1:
+        return False
+    seg = pre[last_lt:]
+    if ">" in seg:
+        return False                                    # tag closed -> text node, not an attribute
     return seg.count('"') % 2 == 1 or seg.count("'") % 2 == 1
 
 

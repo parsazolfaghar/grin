@@ -342,6 +342,13 @@ def test_verify_reflected_xss_rejected_inside_quoted_attribute():
     assert v.status == REJECTED
 
 
+def test_verify_reflected_xss_confirmed_in_text_with_apostrophe():
+    # surrounding HTML TEXT contains an apostrophe — must not flip attribute-quote parity (was a FN)
+    def render(x):
+        return f"<html><body>it's a test, here: {x} done</body></html>"
+    assert verify(_xss_candidate(), _xss_transport(render)).status == CONFIRMED
+
+
 def test_verify_reflected_xss_rejected_in_json_response():
     def request(method, url, json=None, headers=None):
         val = urllib.parse.unquote(url.split("name=", 1)[1]) if "name=" in url else ""
