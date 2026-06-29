@@ -150,6 +150,27 @@ def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
     password = candidate.oracle.get("password", "wrong-pw-xyz")
     token_path = candidate.oracle.get("token_path", ("authentication", "token"))
     _SENTINELS = {"", "0", "false", "null", "none", "undefined"}
+
+    def token_of(body):
+        try:
+            tok = _json.loads(body)
+            for key in token_path:
+                tok = tok[key]
+            return tok if str(tok).strip().lower() not in _SENTINELS else None
+        except Exception:
+            return None
+
+    # Benign control: a non-SQL wrong login must NOT yield a token. If it does, the endpoint hands
+    # out tokens regardless of credentials — any "bypass" below would be a false positive.
+    try:
+        cs, cb = transport.request("POST", candidate.url,
+                                   json={field_name: "grin-benign@example.test", "password": password})
+        if cs == 200 and token_of(cb) is not None:
+            return Verdict(REJECTED, "sql-injection", loc,
+                           "login returns a token for benign wrong credentials — not an injection bypass")
+    except Exception:
+        pass
+
     reached = False   # got at least one clean (non-5xx) response
     for payload in SQLI_PAYLOADS:
         try:
@@ -162,16 +183,9 @@ def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
         reached = True
         if status != 200:
             continue        # a 401 is a clean rejection of this payload, not a bypass
-        try:
-            data = _json.loads(body)
-            tok = data
-            for key in token_path:
-                tok = tok[key]
-            if str(tok).strip().lower() not in _SENTINELS:   # a real session token
-                return Verdict(CONFIRMED, "sql-injection", loc,
-                               f"login bypassed with payload {payload!r}")
-        except Exception:
-            continue
+        if token_of(body) is not None:   # a real session token, and the benign control got none
+            return Verdict(CONFIRMED, "sql-injection", loc,
+                           f"login bypassed with payload {payload!r}")
     if not reached:
         return Verdict(INCONCLUSIVE, "sql-injection", loc, "login endpoint unreachable / erroring")
     return Verdict(REJECTED, "sql-injection", loc, "no injection payload bypassed the login")
@@ -353,6 +367,9 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
     except Exception:
         return Verdict(INCONCLUSIVE, "sql-injection", loc, "request raised an exception")
     a, a2, b, c = a or "", a2 or "", b or "", c or ""
+    if sa in (401, 403):
+        return Verdict(INCONCLUSIVE, "sql-injection", loc,
+                       "endpoint requires authentication — not tested (would be a silent miss, not a clean negative)")
     if sa in _WAF_BLOCK or (sb in _WAF_BLOCK and sb != sa):
         return Verdict(INCONCLUSIVE, "sql-injection", loc, "probe appears policy-blocked (WAF)")
     if not sb or a != a2:

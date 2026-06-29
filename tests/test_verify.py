@@ -159,6 +159,13 @@ def test_verify_sqli_inconclusive_when_unreachable():
                   Transport(request=lambda *a, **k: (0, ""))).status == INCONCLUSIVE
 
 
+def test_verify_sqli_rejected_when_login_always_returns_token():
+    # an endpoint that hands out a token for ANY credentials is not an injection bypass (benign control)
+    def request(method, url, json=None, headers=None):
+        return (200, '{"authentication":{"token":"CONST-TOKEN"}}')
+    assert verify(_sqli_candidate(), Transport(request=request)).status == REJECTED
+
+
 # --- verify_bac (unauth sensitive access, baseline-diff) ---
 
 def _bac_candidate(path):
@@ -441,6 +448,11 @@ def test_verify_error_sqli_inconclusive_on_waf_block():
     def handler(value):
         return (403, "blocked") if "'" in value else (200, "ok")
     assert verify(_esqli_candidate(), _esqli_transport(handler)).status == INCONCLUSIVE
+
+
+def test_verify_error_sqli_inconclusive_when_auth_required():
+    # endpoint needs auth -> anon probe can't test it -> INCONCLUSIVE, not a silent clean negative
+    assert verify(_esqli_candidate(), _esqli_transport(lambda v: (401, ""))).status == INCONCLUSIVE
 
 
 def test_verify_bac_uses_url_path_not_decorated_location():

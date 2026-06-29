@@ -72,9 +72,11 @@ def test_run_general_finds_bac_sqli_idor_on_a_fake_vulnerable_app():
             email = (json or {}).get("email", "")
             if "OR 1=1" in email or "'--" in email:
                 return (200, '{"authentication":{"token":"BYPASS"}}')       # SQLi auth bypass
-            if "aaa" in email:
-                return (200, '{"authentication":{"token":"TA","bid":6}}')
-            return (200, '{"authentication":{"token":"TB","bid":7}}')
+            if email == "aaa@x":
+                return (200, '{"authentication":{"token":"TA","bid":6}}')   # real attacker login
+            if email == "bbb@x":
+                return (200, '{"authentication":{"token":"TB","bid":7}}')   # real victim login
+            return (401, "Invalid email or password.")                      # unknown/benign creds
         if "/ftp/legal.md" in url:
             return (200, "CONFIDENTIAL legal text")                          # BAC: unauth content
         if url.rstrip("/").endswith(":3000") or url.endswith("://t:3000/"):

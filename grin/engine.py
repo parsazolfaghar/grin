@@ -62,6 +62,7 @@ _SEVERITY = {
 
 def _urllib_request():
     import json as _json
+    import urllib.error
     import urllib.request
 
     def request(method, url, json=None, headers=None):
@@ -118,9 +119,20 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     return Transport(request=request, by_role=by_role), victim_id, attacker_id, ta
 
 
+def _endpoint_exists(transport, url):
+    """Cheap existence probe (GET): True unless the endpoint is absent (404) or unreachable.
+    Guards destructive writes from firing blindly at a path that isn't there."""
+    try:
+        status, _b = transport.request("GET", url)
+    except Exception:
+        return False
+    return bool(status) and status != 404
+
+
 def run_general(base_url, credentials=None, *, request=None,
                 resource_template="/rest/basket/{id}", login_path="/rest/user/login",
-                review_template="/rest/products/{pid}/reviews", review_pid=1, target=""):
+                review_template="/rest/products/{pid}/reviews", review_pid=1, target="",
+                allow_destructive=True):
     """End-to-end: build the transport (sessions), recon the surface, resolve the session-coupled
     IDOR + write-side-BAC candidates, and assess everything. Deterministic; the LLM is not in this
     path."""
@@ -132,13 +144,12 @@ def run_general(base_url, credentials=None, *, request=None,
         request, base_url, credentials, login_path)
     candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
     have_two = "attacker" in transport.by_role and "victim" in transport.by_role
-    if victim_id is not None and have_two:
+    if victim_id is not None and attacker_id is not None and have_two:
+        # Require BOTH ids so the negative control is always present — without the attacker's own
+        # resource, the shared/default-template guard can't run and an empty template would FP.
         url = base + resource_template.replace("{id}", str(victim_id))
-        # the attacker's OWN resource feeds the IDOR negative control (shared/default-template guard)
-        oracle = {}
-        if attacker_id is not None:
-            oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
-        candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
+        own = base + resource_template.replace("{id}", str(attacker_id))
+        candidates.append(Candidate("idor", resource_template, url, oracle={"attacker_own_url": own}))
     from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
                                           discover_exposure_candidates, discover_mass_assignment_target,
                                           discover_protected_endpoint)
@@ -150,7 +161,7 @@ def run_general(base_url, credentials=None, *, request=None,
                                         oracle={"token": attacker_token, "verify_url": vurl}))
     # mass assignment: self-registers control/treatment accounts (DESTRUCTIVE; only when the target
     # exposes a register + profile endpoint, so apps like Juice Shop are never touched by it)
-    ma = discover_mass_assignment_target(base_url, transport.by_role)
+    ma = discover_mass_assignment_target(base_url, transport.by_role) if allow_destructive else None
     if ma:
         candidates.append(Candidate("mass-assignment", ma["register_url"][len(base):] or "/register",
                                     ma["register_url"], oracle=ma))
@@ -167,9 +178,11 @@ def run_general(base_url, credentials=None, *, request=None,
         for loc, vurl, aurl in discover_idor_candidates(
                 base_url, transport.by_role, cid(creds[1]), cid(creds[0])):
             candidates.append(Candidate("idor", loc, vurl, oracle={"attacker_own_url": aurl}))
-    if have_two and len(creds) >= 2:
+    if have_two and len(creds) >= 2 and allow_destructive and _endpoint_exists(transport, base
+                                                                              + review_template.replace("{pid}", str(review_pid))):
         # write-side BAC: forge a review attributed to the victim's identity. The harness owns the
         # identities (the login ids); location is the report key, the oracle carries live URLs.
+        # Gated by an existence probe so we never fire a blind PUT at a non-review target.
         review_url = base + review_template.replace("{pid}", str(review_pid))
         candidates.append(Candidate(
             "forged-review", "/rest/products/reviews", review_url,
