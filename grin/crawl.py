@@ -29,6 +29,8 @@ _SKIP_PARAM_RE = re.compile(
     r"^(csrf.*|.*_token|token|nonce|authenticity_token|session.*|.*sessid|api_?key|key|submit|"
     r"page|offset|limit|start|sort|order|dir|utm_.*|ref|source|password|passwd|pwd|user_token)$", re.I)
 _HREF_RE = re.compile(r'href=["\']([^"\']+)', re.I)
+_RESOURCE_EXT = (".css", ".js", ".png", ".jpg", ".jpeg", ".gif", ".ico", ".svg", ".woff",
+                 ".woff2", ".ttf", ".eot", ".pdf", ".zip", ".gz", ".map", ".mp4", ".webp", ".xml")
 
 
 def _classify_readonly(url, start):
@@ -38,6 +40,8 @@ def _classify_readonly(url, start):
     if pu.scheme not in ("http", "https"):
         return False
     if (pu.scheme, pu.hostname, pu.port) != (su.scheme, su.hostname, su.port):
+        return False
+    if pu.path.lower().endswith(_RESOURCE_EXT):      # stylesheets/scripts/images are not pages
         return False
     for seg in (s for s in pu.path.split("/") if s):
         sl = seg.lower()
@@ -105,10 +109,10 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
             continue
         if st != 200 or not body:
             continue                     # a 404/redirect/empty page is not a deauth signal
+        if not _looks_html(body):
+            continue                     # non-HTML (CSS/JS/JSON) is not a page and not a deauth signal
         if not session_ok(body):
             return [], "deauth"          # halt + discard everything: never inject a dead session
-        if not _looks_html(body):
-            continue
         pu = urllib.parse.urlparse(url)
         # injection points: query params already on this URL
         for k, _v in urllib.parse.parse_qsl(pu.query):

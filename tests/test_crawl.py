@@ -62,6 +62,15 @@ def test_crawl_password_form_with_logout_is_not_deauth():
     assert {c[2] for c in cands} == {"ip"}      # login form skipped, the other GET param emitted
 
 
+def test_crawl_ignores_static_resources():
+    # a stylesheet <link> must not be fetched/crawled (and never trip the deauth halt)
+    pages = {"/index.php": '<link href="/dvwa/css/main.css"><a href="/p/">p</a> Logout',
+             "/dvwa/css/main.css": "body{color:red}",          # 200, not HTML, no logout marker
+             "/p/": '<form method="get"><input type="text" name="q"></form> Logout'}
+    cands, status = crawl_injection_points("http://t/index.php", _site(pages))
+    assert status == "ok" and {c[2] for c in cands} == {"q"}
+
+
 def test_crawl_drops_junk_params():
     pages = {"/index.php": '<form method="get"><input name="page"><input name="csrf_token">'
                           '<input type="text" name="q"></form> Logout'}
