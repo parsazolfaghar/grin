@@ -92,6 +92,31 @@ def test_verify_ssrf_excludes_grin_own_ip_open_redirect():
     assert verify(_ssrf_candidate(oob), Transport(request=request)).status == REJECTED
 
 
+def _blind_cmdi_candidate(oob):
+    return Candidate(vuln_class="blind-command-injection", location="/run (cmd)", url="http://t/run",
+                     inject_field="cmd", oracle={"oob": oob, "ssrf_timeout": 2})
+
+
+def test_verify_blind_cmd_injection_confirmed_on_oob_callback():
+    oob = _FakeOOB()
+
+    import re as _re
+
+    def request(method, url, json=None, headers=None):
+        # the target's shell runs the injected curl/wget -> OOB callback from the target IP
+        mt = _re.search(r"/(tok\d+)", urllib.parse.unquote(url))
+        if mt:
+            oob.fire(mt.group(1), "172.30.0.7")
+        return (200, "done")
+    assert verify(_blind_cmdi_candidate(oob), Transport(request=request)).status == CONFIRMED
+
+
+def test_verify_blind_cmd_injection_rejected_without_callback():
+    oob = _FakeOOB()
+    assert verify(_blind_cmdi_candidate(oob),
+                  Transport(request=lambda *a, **k: (200, "done"))).status == REJECTED
+
+
 def test_verify_ssrf_inconclusive_when_oob_unhealthy():
     assert verify(_ssrf_candidate(_FakeOOB(healthy=False)),
                   Transport(request=lambda *a, **k: (200, "ok"))).status == INCONCLUSIVE
