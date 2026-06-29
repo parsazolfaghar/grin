@@ -87,7 +87,7 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     # Role callables default to GET (read-side verifiers call role(url)) but carry their auth into
     # writes too: role(url, method="POST", json=body) — needed by the write-side verifier.
     by_role = {"anon": lambda u, method="GET", json=None: request(method, u, json=json)}
-    victim_id = None
+    victim_id = attacker_id = None
     creds = list(credentials or [])
     if len(creds) >= 2:
         from grin.login_discovery import discover_login, shape_login
@@ -99,10 +99,11 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
         # only when nothing is proven, so a non-discoverable target behaves exactly as before.
         shape = discover_login(base_url, cid(creds[0]), creds[0]["password"], post)
         if shape is not None:
-            ta, _ = shape_login(base_url, cid(creds[0]), creds[0]["password"], post, shape)
+            ta, attacker_id = shape_login(base_url, cid(creds[0]), creds[0]["password"], post, shape)
             tb, victim_id = shape_login(base_url, cid(creds[1]), creds[1]["password"], post, shape)
         else:
-            ta, _ = login_session(base_url, creds[0]["email"], creds[0]["password"], post, login_path)
+            ta, attacker_id = login_session(base_url, creds[0]["email"], creds[0]["password"],
+                                            post, login_path)
             tb, victim_id = login_session(base_url, creds[1]["email"], creds[1]["password"],
                                           post, login_path)
         if ta:
@@ -111,7 +112,7 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
         if tb:
             by_role["victim"] = lambda u, method="GET", json=None, t=tb: request(
                 method, u, json=json, headers={"Authorization": "Bearer " + t})
-    return Transport(request=request, by_role=by_role), victim_id
+    return Transport(request=request, by_role=by_role), victim_id, attacker_id
 
 
 def run_general(base_url, credentials=None, *, request=None,
@@ -123,12 +124,16 @@ def run_general(base_url, credentials=None, *, request=None,
     request = request or _urllib_request()
     base = base_url.rstrip("/")
     creds = list(credentials or [])
-    transport, victim_id = build_transport(request, base_url, credentials, login_path)
+    transport, victim_id, attacker_id = build_transport(request, base_url, credentials, login_path)
     candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
     have_two = "attacker" in transport.by_role and "victim" in transport.by_role
     if victim_id is not None and have_two:
         url = base + resource_template.replace("{id}", str(victim_id))
-        candidates.append(Candidate("idor", resource_template, url))
+        # the attacker's OWN resource feeds the IDOR negative control (shared/default-template guard)
+        oracle = {}
+        if attacker_id is not None:
+            oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
+        candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
     if have_two and len(creds) >= 2:
         # write-side BAC: forge a review attributed to the victim's identity. The harness owns the
         # identities (the login emails); location is the report key, the oracle carries live URLs.

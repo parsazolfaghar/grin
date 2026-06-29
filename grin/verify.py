@@ -90,10 +90,19 @@ def verify_ssti(candidate: Candidate, transport: Transport) -> Verdict:
 # --- IDOR --------------------------------------------------------------------------------------
 def verify_idor(candidate: Candidate, transport: Transport) -> Verdict:
     """Oracle: the attacker receives the victim's exact resource (a 200 byte-identical to the
-    victim's own view). Needs attacker + victim sessions from the harness."""
+    victim's own view). Needs attacker + victim sessions from the harness.
+
+    Two precision layers run when the harness supplies their inputs (it does in run_general),
+    so permissive resource-id discovery can't turn a non-BOLA into a finding:
+      - anon-denied: if an anonymous request gets the SAME bytes, the resource is world-readable,
+        not a cross-user authorization break -> REJECTED.
+      - attacker-own-id negative control: if the attacker's OWN resource (oracle.attacker_own_url)
+        returns the same bytes as the victim's, every authenticated user gets identical content —
+        a shared/default/empty template, not the victim's specific object -> REJECTED."""
     loc = candidate.location
     attacker = transport.by_role.get("attacker")
     victim = transport.by_role.get("victim")
+    anon = transport.by_role.get("anon")
     if not (attacker and victim):
         return Verdict(INCONCLUSIVE, "idor", loc, "needs attacker + victim sessions")
     try:
@@ -103,9 +112,26 @@ def verify_idor(candidate: Candidate, transport: Transport) -> Verdict:
         return Verdict(INCONCLUSIVE, "idor", loc, "request raised an exception")
     if sv != 200 or not (bv or "").strip():
         return Verdict(INCONCLUSIVE, "idor", loc, "could not establish the victim baseline")
-    if sa == 200 and ba == bv:
-        return Verdict(CONFIRMED, "idor", loc, "attacker received the victim's exact resource")
-    return Verdict(REJECTED, "idor", loc, "attacker did not receive the victim's resource")
+    if not (sa == 200 and ba == bv):
+        return Verdict(REJECTED, "idor", loc, "attacker did not receive the victim's resource")
+    if anon is not None:
+        try:
+            _san, ban = anon(candidate.url)
+        except Exception:
+            ban = None
+        if ban is not None and ban == bv:
+            return Verdict(REJECTED, "idor", loc,
+                           "resource is readable anonymously — not a cross-user authorization break")
+    own_url = candidate.oracle.get("attacker_own_url")
+    if own_url:
+        try:
+            _so, bo = attacker(own_url)
+        except Exception:
+            bo = None
+        if bo is not None and bo == bv:
+            return Verdict(REJECTED, "idor", loc,
+                           "every authenticated user receives identical bytes — shared/default resource, not victim-specific")
+    return Verdict(CONFIRMED, "idor", loc, "attacker received the victim's exact resource")
 
 
 # --- SQLi (auth bypass) ------------------------------------------------------------------------

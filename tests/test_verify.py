@@ -93,6 +93,43 @@ def test_verify_idor_inconclusive_without_sessions():
     assert verify(c, Transport(request=lambda *a, **k: (200, ""))).status == INCONCLUSIVE
 
 
+def test_verify_idor_rejected_when_resource_is_public():
+    # attacker==victim, but anon ALSO gets the same bytes -> world-readable, not a BOLA
+    body = '{"id":1,"name":"public product"}'
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"anon": lambda u: (200, body),
+                           "attacker": lambda u: (200, body), "victim": lambda u: (200, body)})
+    c = Candidate(vuln_class="idor", location="/products/1", url="http://t/products/1")
+    assert verify(c, t).status == REJECTED
+
+
+def test_verify_idor_rejected_when_shared_or_default_resource():
+    # attacker reading the victim's url == victim, but the attacker's OWN resource is identical too
+    # -> every authenticated user gets the same bytes (shared/empty template), not victim-specific
+    same = '{"items":[]}'
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"anon": lambda u: (401, ""),
+                           "attacker": lambda u: (200, same), "victim": lambda u: (200, same)})
+    c = Candidate(vuln_class="idor", location="/cart", url="http://t/cart/victim",
+                  oracle={"attacker_own_url": "http://t/cart/attacker"})
+    assert verify(c, t).status == REJECTED
+
+
+def test_verify_idor_confirmed_with_all_precision_layers():
+    # real BOLA: attacker gets victim's exact resource, anon is denied, attacker's OWN differs
+    vbody = '{"id":7,"owner":"victim","secret":"V"}'
+    abody = '{"id":6,"owner":"attacker","secret":"A"}'
+
+    def attacker(u):
+        return (200, vbody) if u.endswith("/7") else (200, abody)
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"anon": lambda u: (401, ""),
+                           "attacker": attacker, "victim": lambda u: (200, vbody)})
+    c = Candidate(vuln_class="idor", location="/basket/7", url="http://t/basket/7",
+                  oracle={"attacker_own_url": "http://t/basket/6"})
+    assert verify(c, t).status == CONFIRMED
+
+
 # --- verify_sqli (POST login auth bypass) ---
 
 def _login_request(vulnerable):

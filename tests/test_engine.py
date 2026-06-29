@@ -81,8 +81,11 @@ def test_run_general_finds_bac_sqli_idor_on_a_fake_vulnerable_app():
             return (200, "SPA-SHELL")
         if url.endswith("/"):
             return (200, "SPA-SHELL")                                       # root baseline
-        if "/rest/basket/7" in url:
-            return (200, '{"id":7,"data":"victim-basket"}')                 # IDOR: victim's object
+        authed = "Authorization" in (headers or {})
+        if "/rest/basket/7" in url:                                          # the victim's object
+            return (200, '{"id":7,"data":"victim-basket"}') if authed else (401, "")
+        if "/rest/basket/6" in url:                                          # the attacker's own
+            return (200, '{"id":6,"data":"attacker-basket"}') if authed else (401, "")
         return (404, "")
     creds = [{"email": "aaa@x", "password": "p"}, {"email": "bbb@x", "password": "p"}]
     findings = run_general("http://t:3000", creds, request=request)
@@ -116,7 +119,7 @@ def test_build_transport_role_supports_authenticated_writes():
         seen["method"], seen["json"], seen["auth"] = method, json, (headers or {}).get("Authorization")
         return (200, "ok")
     creds = [{"email": "a@x", "password": "p"}, {"email": "b@x", "password": "p"}]
-    transport, _ = build_transport(request, "http://t", creds)
+    transport, _, _ = build_transport(request, "http://t", creds)
     transport.by_role["attacker"]("http://t/w", method="POST", json={"k": "v"})
     assert seen["method"] == "POST" and seen["json"] == {"k": "v"}
     assert seen["auth"] == "Bearer TA"
@@ -139,7 +142,7 @@ def test_build_transport_discovers_non_juice_login_shape():
             return (404, "")
         return (200, "not-json")                  # every other probe is inert
     creds = [{"username": "atk", "password": "p"}, {"username": "vic", "password": "p"}]
-    transport, _vid = build_transport(request, "http://t", creds)
+    transport, _vid, _aid = build_transport(request, "http://t", creds)
     assert "attacker" in transport.by_role and "victim" in transport.by_role
 
 
