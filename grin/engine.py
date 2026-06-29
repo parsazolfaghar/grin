@@ -119,6 +119,23 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     return Transport(request=request, by_role=by_role), victim_id, attacker_id, ta
 
 
+def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
+                       extra_cookies=None, request_full=None, target=""):
+    """Fully autonomous assessment of a cookie-session app (no OpenAPI): auto-discover + drive the
+    login form, crawl the authenticated surface for injection points, and verify them. Returns the
+    confirmed findings ([] if login could not be established)."""
+    from grin.cookie_auth import build_cookie_transport_auto
+    from grin.crawl import crawl_injection_points
+    transport, _n, _spec = build_cookie_transport_auto(
+        base_url, credentials, protected_url, extra_cookies=extra_cookies, request_full=request_full)
+    attacker = transport.by_role.get("attacker")
+    if attacker is None:
+        return []
+    points, _status = crawl_injection_points(base_url.rstrip("/") + start_path, lambda u: attacker(u))
+    candidates = [Candidate("sqli-error", loc, url, inject_field=field) for loc, url, field in points]
+    return assess(candidates, transport, target=target or base_url)
+
+
 def _endpoint_exists(transport, url):
     """Cheap existence probe (GET): True unless the endpoint is absent (404) or unreachable.
     Guards destructive writes from firing blindly at a path that isn't there."""
