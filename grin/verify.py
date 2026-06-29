@@ -307,12 +307,72 @@ def verify_write_authz(candidate: Candidate, transport: Transport) -> Verdict:
                    f"attacker forged a record attributed to {o['forged_value']!r} with no surviving true-owner marker")
 
 
+# --- error-based SQL injection (data-extraction surface, not auth bypass) ----------------------
+# Vendor/ORM error fingerprints. Deliberately specific — generic "error"/"exception" would flag any
+# app that 500s on malformed input. Blind SQLi (no error surfaced) is OUT OF SCOPE for this oracle.
+_DB_ERROR_SIGNATURES = (
+    "sql syntax", "sqlite3.operationalerror", "sqlalchemy", "psycopg2",
+    "org.postgresql.util.psqlexception", "you have an error in your sql",
+    "unterminated quoted string", "unclosed quotation mark", "quoted string not properly terminated",
+    "unrecognized token", "odbc sql server driver", "ora-00933", "ora-01756", "ora-00921",
+    "mysql_fetch", "com.mysql", "java.sql.sqlsyntaxerror", "org.hibernate.exception.sqlgrammar",
+    "django.db.utils", "sequelize", "incorrect syntax near", 'near "',
+)
+_WAF_BLOCK = (403, 406, 429, 451)
+
+
+def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: a single quote breaks a SQL STRING context. CONFIRMED needs (1) a DB-error signature
+    that appears only with the broken quote — absent from the benign baseline AND from the balanced
+    (doubled-quote) control — AND (2) the injected marker echoed back inside that error (payload-
+    adjacent evidence that OUR input reached the SQL parser, not just any 500). Reported as
+    sql-injection. Blind SQLi (no error surfaced) is out of scope -> REJECTED there, not a finding."""
+    import uuid
+    loc, o = candidate.location, candidate.oracle
+    marker = "grin" + uuid.uuid4().hex[:8]
+
+    def send(value):
+        if o.get("inject") == "path":
+            url = o["url_template"].replace("{inject}", urllib.parse.quote(value, safe=""))
+            return transport.request("GET", url)
+        field = candidate.inject_field or "q"
+        if candidate.method.upper() == "POST":
+            return transport.request("POST", candidate.url, json={field: value})
+        return transport.request("GET", _with_param(candidate.url, field, value))
+
+    try:
+        sa, a = send(marker)
+        _sa2, a2 = send(marker)                 # stability: an unstable baseline can't be trusted
+        sb, b = send(marker + "'")              # broken: odd number of quotes
+        _sc, c = send(marker + "''")            # balanced: the doubled quote escapes cleanly
+    except Exception:
+        return Verdict(INCONCLUSIVE, "sql-injection", loc, "request raised an exception")
+    a, a2, b, c = a or "", a2 or "", b or "", c or ""
+    if sa in _WAF_BLOCK or (sb in _WAF_BLOCK and sb != sa):
+        return Verdict(INCONCLUSIVE, "sql-injection", loc, "probe appears policy-blocked (WAF)")
+    if not sb or a != a2:
+        return Verdict(INCONCLUSIVE, "sql-injection", loc, "unstable baseline / no response — cannot test cleanly")
+    bl, al, cl = b.lower(), a.lower(), c.lower()
+    sig = next((s for s in _DB_ERROR_SIGNATURES if s in bl), None)
+    if sig is None:
+        return Verdict(REJECTED, "sql-injection", loc, "a single quote did not surface a database error")
+    if sig in al or sig in cl:
+        return Verdict(REJECTED, "sql-injection", loc,
+                       "the database-error signature is not specific to the broken-quote input")
+    if marker not in b:
+        return Verdict(REJECTED, "sql-injection", loc,
+                       "the database error does not echo the injected input (no payload-adjacent evidence)")
+    return Verdict(CONFIRMED, "sql-injection", loc,
+                   f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
+
+
 _REGISTRY: dict = {
     "ssti": verify_ssti,
     "idor": verify_idor,
     "sql-injection": verify_sqli,
     "broken-access-control": verify_bac,
     "forged-review": verify_write_authz,
+    "sqli-error": verify_error_sqli,
 }
 
 

@@ -134,6 +134,15 @@ def test_discover_skips_without_openapi():
     assert discover_idor_candidates("http://t", by_role, "vic", "atk") == []
 
 
+def test_discover_sqli_candidates_from_detail_params():
+    from grin.resource_discovery import discover_sqli_candidates
+    spec = {"paths": {"/users/v1": {"get": {}}, "/users/v1/{username}": {"get": {}}}}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    cands = discover_sqli_candidates("http://t", by_role)
+    assert cands == [("/users/v1/{username}", "http://t/users/v1/{inject}")]
+
+
 def test_fetch_openapi_tries_common_locations():
     def get(url):
         return (200, _J.dumps({"paths": {"/x": {"get": {}}}})) if url.endswith("/swagger.json") else (404, "")

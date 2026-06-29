@@ -236,6 +236,24 @@ def _candidate_for_pair(base, pair, victim, attacker, victim_identity, attacker_
     return pair.detail_template, victim_url, attacker_own_url
 
 
+def discover_sqli_candidates(base_url, by_role, *, max_params=20):
+    """Error-based SQLi injection points from the OpenAPI surface: each object-by-id detail path
+    param is a candidate string context. Returns [(location, url_template), ...] where url_template
+    has the param replaced by '{inject}'. Needs no auth (anon fetch). Read-only."""
+    getter = by_role.get("anon") or by_role.get("victim")
+    if not getter:
+        return []
+    spec = fetch_openapi(base_url, getter)
+    if not spec:
+        return []
+    base = base_url.rstrip("/")
+    out = []
+    for pair in collection_detail_pairs(spec)[:max_params]:
+        url_template = base + pair.detail_template.replace("{" + pair.param_name + "}", "{inject}")
+        out.append((pair.detail_template, url_template))
+    return out
+
+
 def discover_idor_candidates(base_url, by_role, victim_identity, attacker_identity, *,
                              max_collections=12):
     """Returns [(location, victim_url, attacker_own_url), ...]. Read-only and conservative."""

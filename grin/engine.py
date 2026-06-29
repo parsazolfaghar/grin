@@ -135,10 +135,14 @@ def run_general(base_url, credentials=None, *, request=None,
         if attacker_id is not None:
             oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
         candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
+    from grin.resource_discovery import discover_idor_candidates, discover_sqli_candidates
+    # error-based SQLi at OpenAPI detail-path params (needs no auth; the oracle is self-verifying)
+    for loc, url_template in discover_sqli_candidates(base_url, transport.by_role):
+        candidates.append(Candidate("sqli-error", loc, url_template,
+                                    oracle={"inject": "path", "url_template": url_template}))
     if have_two:
         # Generalize beyond the login-derived id: discover victim-owned resources from the target's
         # OpenAPI surface (ownership-proven, conservative). The hardened oracle is the precision gate.
-        from grin.resource_discovery import discover_idor_candidates
         for loc, vurl, aurl in discover_idor_candidates(
                 base_url, transport.by_role, cid(creds[1]), cid(creds[0])):
             candidates.append(Candidate("idor", loc, vurl, oracle={"attacker_own_url": aurl}))

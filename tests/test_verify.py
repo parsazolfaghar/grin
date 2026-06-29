@@ -213,6 +213,72 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_error_sqli (error-based, data-extraction SQLi) ---
+
+def _esqli_candidate():
+    return Candidate(vuln_class="sqli-error", location="/users/v1/{username}",
+                     url="http://t/users/v1/{username}",
+                     oracle={"inject": "path", "url_template": "http://t/users/v1/{inject}"})
+
+
+def _esqli_transport(handler):
+    # handler(value_from_url) -> (status, body); we recover the injected value from the path
+    def request(method, url, json=None, headers=None):
+        import urllib.parse as up
+        value = up.unquote(url.rsplit("/", 1)[-1])
+        return handler(value)
+    return Transport(request=request)
+
+
+def test_verify_error_sqli_confirmed_on_quote_break_with_echo():
+    # a single quote (odd) breaks; the doubled quote (even) is fine; the DB error echoes our marker
+    def handler(value):
+        if value.count("'") % 2 == 1:
+            return (500, f'sqlite3.OperationalError: near "{value}": syntax error')
+        return (200, '{"username": "%s"}' % value)
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == CONFIRMED
+
+
+def test_verify_error_sqli_rejected_on_generic_500_without_db_signature():
+    # any malformed input 500s, but with a NullPointer-style error, no DB signature
+    def handler(value):
+        if "'" in value:
+            return (500, "java.lang.NullPointerException at Handler.process")
+        return (200, "ok")
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == REJECTED
+
+
+def test_verify_error_sqli_rejected_when_signature_always_present():
+    # the page always shows a SQL banner (ORM debug) -> in baseline too -> not a differential
+    def handler(value):
+        return (200, "powered by sqlalchemy; result ok")
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == REJECTED
+
+
+def test_verify_error_sqli_rejected_without_payload_echo():
+    # DB error appears on the quote but does NOT echo our marker (generic SQL 500, not our input)
+    def handler(value):
+        if value.count("'") % 2 == 1:
+            return (500, "sqlite3.OperationalError: database is locked")
+        return (200, "ok")
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == REJECTED
+
+
+def test_verify_error_sqli_inconclusive_on_unstable_baseline():
+    state = {"n": 0}
+
+    def handler(value):
+        state["n"] += 1
+        return (200, f"nonce-{state['n']}")     # baseline differs between identical requests
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == INCONCLUSIVE
+
+
+def test_verify_error_sqli_inconclusive_on_waf_block():
+    def handler(value):
+        return (403, "blocked") if "'" in value else (200, "ok")
+    assert verify(_esqli_candidate(), _esqli_transport(handler)).status == INCONCLUSIVE
+
+
 def test_verify_bac_uses_url_path_not_decorated_location():
     def anon(u):
         return (200, "CONFIDENTIAL legal text") if "ftp" in u else (200, "SHELL")

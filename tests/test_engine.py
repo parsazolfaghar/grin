@@ -159,6 +159,28 @@ def test_run_general_discovers_and_confirms_idor_via_openapi():
     assert idor and idor[0].vuln_class == "idor"
 
 
+def test_run_general_discovers_and_confirms_error_sqli_via_openapi():
+    # OpenAPI exposes /users/v1/{username}; the path param is injectable (quote breaks the SQL string)
+    import json as _J
+    spec = {"paths": {"/users/v1": {"get": {}}, "/users/v1/{username}": {"get": {}}}}
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/openapi.json"):
+            return (200, _J.dumps(spec))
+        if "/users/v1/" in url:
+            import urllib.parse as up
+            value = up.unquote(url.rsplit("/", 1)[-1])
+            if value.count("'") % 2 == 1:
+                return (500, 'sqlite3.OperationalError: near "%s": syntax error' % value)
+            return (200, '{"username": "%s"}' % value)
+        if url.endswith("/"):
+            return (200, "SHELL")
+        return (404, "")
+    findings = run_general("http://t", None, request=request)
+    sqli = [f for f in findings if f.location == "/users/v1/{username}"]
+    assert sqli and sqli[0].vuln_class == "sql-injection"
+
+
 def test_build_transport_discovers_non_juice_login_shape():
     # a VAmPI-shaped API (username field, token at auth_token) the Juice-Shop default would miss
     from grin.engine import build_transport
