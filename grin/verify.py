@@ -366,6 +366,69 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- excessive data exposure (OWASP API3): sensitive records served without auth --------------
+# Password-family ONLY (the unambiguous signal). 'secret'/'api_key'/'token' are deliberately
+# excluded — public share-secrets and publishable keys would blow the FP budget.
+_CREDENTIAL_FIELDS = ("password", "passwd", "pwd", "password_hash", "passwordhash")
+_IDENTITY_FIELDS = ("username", "email", "user", "user_id", "userid", "uid", "login")
+_SCHEMA_KEYS = ("components", "schemas", "definitions", "properties", "example", "examples", "parameters")
+_MASK_VALUES = ("", "null", "none", "[redacted]", "redacted", "changeme", "string", "password",
+                "example", "your_password", "<password>")
+
+
+def _is_real_secret(val) -> bool:
+    if not isinstance(val, (str, int)):
+        return False
+    s = str(val).strip()
+    return bool(s) and set(s) != {"*"} and s.lower() not in _MASK_VALUES
+
+
+def _scan_exposed(node, in_schema=False) -> bool:
+    """True if some object carries BOTH an identity field and a real password-family value. Skips
+    OpenAPI/JSON-schema subtrees (where {password: 'string'} is a type, not a leak)."""
+    if isinstance(node, dict):
+        if not in_schema:
+            keys = {str(k).lower(): k for k in node}
+            cred = next((f for f in _CREDENTIAL_FIELDS if f in keys), None)
+            if cred and any(f in keys for f in _IDENTITY_FIELDS) and _is_real_secret(node[keys[cred]]):
+                return True
+        for k, v in node.items():
+            if _scan_exposed(v, in_schema or str(k).lower() in _SCHEMA_KEYS):
+                return True
+    elif isinstance(node, list):
+        return any(_scan_exposed(v, in_schema) for v in node)
+    return False
+
+
+def verify_exposure(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: an anonymous request receives records co-locating an identity and a password-family
+    value (cleartext or hash). The anon gate proves 'no auth'; the credential+identity co-location
+    proves the data is sensitive PII, not a public share-secret. JSON-only this slice (CSV/HTML/XML
+    leaks are a documented follow-up); blind/masked values are out of scope."""
+    import json as _json
+    loc = candidate.location
+    anon = transport.by_role.get("anon")
+    getter = anon if anon is not None else (lambda u: transport.request("GET", u))
+    try:
+        status, body = getter(candidate.url)
+    except Exception:
+        return Verdict(INCONCLUSIVE, "excessive-data-exposure", loc, "request raised an exception")
+    if status in (401, 403, 404):
+        return Verdict(REJECTED, "excessive-data-exposure", loc, "access is properly restricted")
+    if not status or status >= 500 or status == 429:
+        return Verdict(INCONCLUSIVE, "excessive-data-exposure", loc, f"could not test cleanly (status {status})")
+    if status != 200:
+        return Verdict(REJECTED, "excessive-data-exposure", loc, f"no exposure (status {status})")
+    try:
+        parsed = _json.loads(body or "")
+    except Exception:
+        return Verdict(REJECTED, "excessive-data-exposure", loc, "response is not JSON (out of scope for this oracle)")
+    if _scan_exposed(parsed):
+        return Verdict(CONFIRMED, "excessive-data-exposure", loc,
+                       "identity + password records served to an anonymous request")
+    return Verdict(REJECTED, "excessive-data-exposure", loc, "no exposed identity+credential records")
+
+
 _REGISTRY: dict = {
     "ssti": verify_ssti,
     "idor": verify_idor,
@@ -373,6 +436,7 @@ _REGISTRY: dict = {
     "broken-access-control": verify_bac,
     "forged-review": verify_write_authz,
     "sqli-error": verify_error_sqli,
+    "excessive-data-exposure": verify_exposure,
 }
 
 

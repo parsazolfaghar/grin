@@ -213,6 +213,57 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_exposure (excessive data exposure: identity+credential to anon) ---
+
+def _exposure_transport(status, body):
+    return Transport(request=lambda *a, **k: (200, ""),
+                     by_role={"anon": lambda u: (status, body)})
+
+
+def _expo_cand():
+    return Candidate(vuln_class="excessive-data-exposure", location="/users/v1/_debug",
+                     url="http://t/users/v1/_debug")
+
+
+def test_verify_exposure_confirmed_on_identity_plus_password_records():
+    body = '{"users":[{"username":"admin","password":"pass1"},{"username":"bob","password":"pass2"}]}'
+    assert verify(_expo_cand(), _exposure_transport(200, body)).status == CONFIRMED
+
+
+def test_verify_exposure_rejected_on_public_secret_without_identity():
+    # a public share-secret object (no identity + password co-location) must NOT confirm
+    body = '{"room":"lobby","secret":"join-xkcd-42"}'
+    assert verify(_expo_cand(), _exposure_transport(200, body)).status == REJECTED
+
+
+def test_verify_exposure_rejected_on_identity_only_listing():
+    body = '{"users":["admin","bob","carol"]}'      # usernames only, no credentials
+    assert verify(_expo_cand(), _exposure_transport(200, body)).status == REJECTED
+
+
+def test_verify_exposure_rejected_in_openapi_schema_subtree():
+    # {password: "string"} under a schema is a TYPE, not a leak
+    body = '{"components":{"schemas":{"User":{"properties":{"username":{"type":"string"},"password":{"type":"string"}}}}}}'
+    assert verify(_expo_cand(), _exposure_transport(200, body)).status == REJECTED
+
+
+def test_verify_exposure_rejected_on_masked_value():
+    body = '{"users":[{"username":"admin","password":"****"}]}'
+    assert verify(_expo_cand(), _exposure_transport(200, body)).status == REJECTED
+
+
+def test_verify_exposure_rejected_when_restricted():
+    assert verify(_expo_cand(), _exposure_transport(401, "")).status == REJECTED
+
+
+def test_verify_exposure_inconclusive_on_server_error():
+    assert verify(_expo_cand(), _exposure_transport(500, "")).status == INCONCLUSIVE
+
+
+def test_verify_exposure_rejected_on_non_json():
+    assert verify(_expo_cand(), _exposure_transport(200, "<html>hello</html>")).status == REJECTED
+
+
 # --- verify_error_sqli (error-based, data-extraction SQLi) ---
 
 def _esqli_candidate():

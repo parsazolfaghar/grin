@@ -236,6 +236,52 @@ def _candidate_for_pair(base, pair, victim, attacker, victim_identity, attacker_
     return pair.detail_template, victim_url, attacker_own_url
 
 
+# Whole-segment action words: a GET to these may have side effects on non-RESTful apps. We never
+# probe them (VAmPI's GET /createdb RESETS the database). Segment-boundary match, not substring.
+_ACTION_SEGMENTS = frozenset((
+    "create", "delete", "remove", "reset", "drop", "destroy", "purge", "clear", "logout", "login",
+    "register", "init", "build", "migrate", "seed", "run", "execute", "trigger", "export", "sync",
+    "shutdown", "reload", "rotate", "flush", "send", "install", "promote",
+))
+_ACTION_PREFIXES = ("create", "init", "drop", "reset")
+
+
+def _is_safe_get_path(path):
+    """A GET path safe to probe anonymously: no path params, no action segments (so we never hit a
+    side-effecting GET like /createdb), and not the OpenAPI doc itself."""
+    if any(d in path.lower() for d in ("openapi", "swagger", "api-docs")):
+        return False
+    for seg in (s for s in path.split("/") if s):
+        if _PARAM_RE.match(seg):
+            return False
+        sl = seg.lower()
+        if sl in _ACTION_SEGMENTS or sl.endswith("db") or any(sl.startswith(p) for p in _ACTION_PREFIXES):
+            return False
+    return True
+
+
+def discover_exposure_candidates(base_url, by_role, *, max_paths=30):
+    """Anonymous-readable data endpoints (from OpenAPI) to check for excessive data exposure.
+    Returns [(location, url), ...]. Side-effecting GETs are excluded. No auth needed."""
+    getter = by_role.get("anon") or by_role.get("victim")
+    if not getter:
+        return []
+    spec = fetch_openapi(base_url, getter)
+    if not spec:
+        return []
+    base, prefix = base_url.rstrip("/"), _spec_prefix(spec)
+    out = []
+    for p, ops in spec.get("paths", {}).items():
+        if not isinstance(ops, dict) or "get" not in {k.lower() for k in ops}:
+            continue
+        if not _is_safe_get_path(p):
+            continue
+        out.append((prefix + p, base + prefix + p))
+        if len(out) >= max_paths:
+            break
+    return out
+
+
 def discover_sqli_candidates(base_url, by_role, *, max_params=20):
     """Error-based SQLi injection points from the OpenAPI surface: each object-by-id detail path
     param is a candidate string context. Returns [(location, url_template), ...] where url_template

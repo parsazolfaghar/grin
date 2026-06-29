@@ -54,6 +54,7 @@ _SEVERITY = {
     "broken-access-control": "medium",
     "ssrf": "high",
     "path-traversal": "high",
+    "excessive-data-exposure": "high",
 }
 
 
@@ -135,11 +136,15 @@ def run_general(base_url, credentials=None, *, request=None,
         if attacker_id is not None:
             oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
         candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
-    from grin.resource_discovery import discover_idor_candidates, discover_sqli_candidates
+    from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
+                                          discover_exposure_candidates)
     # error-based SQLi at OpenAPI detail-path params (needs no auth; the oracle is self-verifying)
     for loc, url_template in discover_sqli_candidates(base_url, transport.by_role):
         candidates.append(Candidate("sqli-error", loc, url_template,
                                     oracle={"inject": "path", "url_template": url_template}))
+    # excessive data exposure at anon-readable data endpoints (side-effecting GETs are excluded)
+    for loc, url in discover_exposure_candidates(base_url, transport.by_role):
+        candidates.append(Candidate("excessive-data-exposure", loc, url))
     if have_two:
         # Generalize beyond the login-derived id: discover victim-owned resources from the target's
         # OpenAPI surface (ownership-proven, conservative). The hardened oracle is the precision gate.

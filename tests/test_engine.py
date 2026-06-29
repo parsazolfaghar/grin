@@ -159,6 +159,29 @@ def test_run_general_discovers_and_confirms_idor_via_openapi():
     assert idor and idor[0].vuln_class == "idor"
 
 
+def test_run_general_discovers_and_confirms_excessive_exposure_via_openapi():
+    # OpenAPI exposes a /_debug data endpoint that leaks identity+password records to anon
+    import json as _J
+    spec = {"paths": {"/users/v1/_debug": {"get": {}}, "/createdb": {"get": {}}}}
+    reset = {"hit": False}
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/openapi.json"):
+            return (200, _J.dumps(spec))
+        if url.endswith("/createdb"):
+            reset["hit"] = True                 # must NEVER be probed (side-effecting GET)
+            return (200, "db reset")
+        if url.endswith("/users/v1/_debug"):
+            return (200, '{"users":[{"username":"admin","password":"pass1"}]}')
+        if url.endswith("/"):
+            return (200, "SHELL")
+        return (404, "")
+    findings = run_general("http://t", None, request=request)
+    expo = [f for f in findings if f.vuln_class == "excessive-data-exposure"]
+    assert expo and expo[0].location == "/users/v1/_debug"
+    assert reset["hit"] is False                # recon never triggered the destructive GET
+
+
 def test_run_general_discovers_and_confirms_error_sqli_via_openapi():
     # OpenAPI exposes /users/v1/{username}; the path param is injectable (quote breaks the SQL string)
     import json as _J

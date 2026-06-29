@@ -143,6 +143,27 @@ def test_discover_sqli_candidates_from_detail_params():
     assert cands == [("/users/v1/{username}", "http://t/users/v1/{inject}")]
 
 
+def test_is_safe_get_path_excludes_side_effecting_gets():
+    from grin.resource_discovery import _is_safe_get_path
+    assert _is_safe_get_path("/users/v1/_debug") is True
+    assert _is_safe_get_path("/books/v1") is True
+    assert _is_safe_get_path("/createdb") is False        # create prefix + db suffix
+    assert _is_safe_get_path("/users/v1/{username}") is False   # path param
+    assert _is_safe_get_path("/jobs/run") is False        # action segment
+    assert _is_safe_get_path("/openapi.json") is False    # the spec itself
+
+
+def test_discover_exposure_candidates_skips_createdb():
+    from grin.resource_discovery import discover_exposure_candidates
+    spec = {"paths": {"/createdb": {"get": {}}, "/users/v1/_debug": {"get": {}},
+                      "/users/v1/{username}": {"get": {}}}}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    cands = discover_exposure_candidates("http://t", by_role)
+    locs = [c[0] for c in cands]
+    assert "/users/v1/_debug" in locs and "/createdb" not in locs
+
+
 def test_fetch_openapi_tries_common_locations():
     def get(url):
         return (200, _J.dumps({"paths": {"/x": {"get": {}}}})) if url.endswith("/swagger.json") else (404, "")
