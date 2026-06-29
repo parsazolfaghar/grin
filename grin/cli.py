@@ -929,6 +929,64 @@ def cmd_assessbench(*, target_id: str, findings: str = None, json_out: bool = Fa
     return 0
 
 
+def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = None,
+               start_path: str = "/", extra_cookie=None, oob_base: str = None,
+               bench: str = None, json_out: bool = False) -> int:
+    """Run the autonomous assessment engine (the real-target overhaul) against a live URL."""
+    from grin.engine import run_general, run_cookie_general
+    credentials = []
+    for c in (creds or []):
+        login, _, password = c.partition(":")
+        credentials.append({"login": login, "password": password})
+    extra_cookies = dict(kv.split("=", 1) for kv in (extra_cookie or []) if "=" in kv)
+
+    oob = None
+    if oob_base:
+        from grin.oob import OOBServer
+        _host, _, port = oob_base.partition(":")
+        oob = OOBServer(int(port or 9100), f"http://{oob_base}")
+        oob.start()
+        if not oob.self_test(timeout=5):
+            print("warning: OOB collaborator self-test failed — SSRF / open-redirect / blind-cmdi "
+                  "will be INCONCLUSIVE (is the bind host reachable from the target?)")
+    try:
+        if cookie:
+            if not protected:
+                print("error: --cookie requires --protected <authenticated-only URL>")
+                return 2
+            findings = run_cookie_general(url, credentials, protected, start_path=start_path,
+                                          extra_cookies=extra_cookies or None, oob=oob)
+        else:
+            findings = run_general(url, credentials or None, oob=oob)
+    finally:
+        if oob is not None:
+            oob.stop()
+
+    if bench:
+        from grin.assessbench.manifest import load_bench_target, ManifestError
+        from grin.assessbench.scorer import score as _score
+        from grin.assessbench.report import to_text as _txt, to_json as _js
+        try:
+            target = load_bench_target(bench)
+        except ManifestError as e:
+            print(f"error: {e}")
+            return 2
+        result = _score(findings, target)
+        print(json.dumps(_js(result), indent=2) if json_out else _txt(result))
+        return 0
+    if json_out:
+        print(json.dumps([{"severity": f.severity, "vuln_class": f.vuln_class,
+                           "location": f.location, "evidence": f.evidence, "target": f.target}
+                          for f in findings], indent=2))
+        return 0
+    if not findings:
+        print("no vulnerabilities confirmed")
+    for f in findings:
+        print(f"  [{f.severity}] {f.vuln_class}  {f.location}")
+        print(f"      {f.evidence}")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="grin", description="Grin engagement spine (SP1)")
     from grin import __version__
@@ -1056,6 +1114,25 @@ def build_parser() -> argparse.ArgumentParser:
     p_lb.add_argument("--out", default="lab/results/ranking.txt")
     p_lb.add_argument("--runner", default="grin-kali")
 
+    asx = sub.add_parser("assess",
+                         help="autonomous deterministic assessment of a live URL (the real-target engine)")
+    asx.add_argument("url", help="base URL of the target (e.g. http://localhost:3000)")
+    asx.add_argument("--user", dest="creds", action="append", default=[], metavar="LOGIN:PASSWORD",
+                     help="credentials for authenticated checks; pass twice (attacker, victim) for IDOR/forged-review")
+    asx.add_argument("--cookie", action="store_true",
+                     help="cookie/session app: auto-discover the login form + crawl the authed surface")
+    asx.add_argument("--protected", default=None,
+                     help="an authenticated-only URL (required with --cookie) used to prove login")
+    asx.add_argument("--start-path", default="/", help="crawl start path for --cookie (default /)")
+    asx.add_argument("--extra-cookie", action="append", default=[], metavar="KEY=VALUE",
+                     help="seed an extra cookie into every session (e.g. security=low for DVWA)")
+    asx.add_argument("--oob", dest="oob_base", default=None, metavar="HOST:PORT",
+                     help="enable the OOB collaborator for SSRF/open-redirect/blind-cmdi "
+                          "(HOST must be reachable from the target)")
+    asx.add_argument("--bench", default=None,
+                     help="also score findings against a bench target id (e.g. vampi, dvwa)")
+    asx.add_argument("--json", dest="json_out", action="store_true", help="emit findings/score as JSON")
+
     p_ab = sub.add_parser("assessbench",
                           help="score assessment findings against a known-vulnerable app")
     p_ab.add_argument("target_id", help="bench target id (e.g. juice-shop)")
@@ -1148,6 +1225,10 @@ def main(argv=None) -> int:
                        arsenal=args.arsenal)
     if args.group == "labbench":
         return cmd_labbench(matrix_path=args.matrix_path, out=args.out, runner=args.runner)
+    if args.group == "assess":
+        return cmd_assess(url=args.url, creds=args.creds, cookie=args.cookie, protected=args.protected,
+                          start_path=args.start_path, extra_cookie=args.extra_cookie,
+                          oob_base=args.oob_base, bench=args.bench, json_out=args.json_out)
     if args.group == "assessbench":
         return cmd_assessbench(target_id=args.target_id, findings=args.findings,
                                json_out=args.json_out)
