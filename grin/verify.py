@@ -366,6 +366,131 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
                    f"a single quote broke a SQL string context ({sig!r}); the injected input is echoed in the database error")
 
 
+# --- mass assignment (OWASP API6): a client-supplied privilege field persists at registration ---
+# Boolean privilege flags only. 'role'/'verified'/'is_active' are deliberately excluded — apps
+# legitimately let users pick those at signup, so they are not near-zero-FP signals.
+_PRIV_FIELDS = ("admin", "is_admin", "isAdmin", "is_staff", "isStaff",
+                "is_superuser", "isSuperuser", "superadmin")
+_MISSING = object()
+
+
+def _priv_true(v) -> bool:
+    if isinstance(v, bool):
+        return v is True
+    if isinstance(v, int):
+        return v == 1
+    if isinstance(v, str):
+        return v.strip().lower() in ("true", "1", "yes", "t")
+    return False
+
+
+def _priv_false(v) -> bool:
+    if isinstance(v, bool):
+        return v is False
+    if isinstance(v, int):
+        return v == 0
+    if isinstance(v, str):
+        return v.strip().lower() in ("false", "0", "no", "f", "")
+    return False
+
+
+def _find_field_value(node, field):
+    """Recursively find a scalar value for `field` (case-insensitive). _MISSING if absent."""
+    fl = field.lower()
+    if isinstance(node, dict):
+        for k, v in node.items():
+            if str(k).lower() == fl and not isinstance(v, (dict, list)):
+                return v
+        for v in node.values():
+            r = _find_field_value(v, field)
+            if r is not _MISSING:
+                return r
+    elif isinstance(node, list):
+        for v in node:
+            r = _find_field_value(v, field)
+            if r is not _MISSING:
+                return r
+    return _MISSING
+
+
+def verify_mass_assignment(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: a privilege field supplied in the REGISTRATION body persists, when the server should
+    set it itself. Self-contained: registers a control account (no priv field), discovers how to
+    log in from it, reads its profile, then for each privilege field registers a treatment account
+    with the field set and compares. CONFIRMED needs the treatment profile privileged AND the
+    control NOT — re-confirmed on a SECOND fresh login (kills session-echo / one-shot hydration).
+
+    DESTRUCTIVE: creates accounts (prefixed grin-ma-) on the target. Authorized targets only.
+    Reports a writable privilege field, not proven functional privilege escalation."""
+    import uuid
+    import json as _json
+    from grin.login_discovery import discover_login, shape_login
+    loc, o = candidate.location, candidate.oracle
+    base, reg_url, profile_url = o["base_url"], o["register_url"], o["profile_url"]
+    extra = o.get("register_template") or {}
+    pw = "Grin-MA-pw-9173!"
+    post = lambda u, b: transport.request("POST", u, json=b)   # noqa: E731
+
+    def register(username, priv=None):
+        body = {"username": username, "email": username + "@grin.test", "password": pw,
+                "passwordRepeat": pw, "confirmPassword": pw}
+        body.update(extra)
+        if priv is not None:
+            body[priv] = True
+        try:
+            s, _b = post(reg_url, body)
+        except Exception:
+            return False
+        return 200 <= (s or 0) < 300
+
+    def profile_of(username, shape):
+        tok, _ = shape_login(base, username, pw, post, shape)
+        if not tok:
+            return None
+        try:
+            s, b = transport.request("GET", profile_url, headers={"Authorization": "Bearer " + tok})
+        except Exception:
+            return None
+        if s != 200:
+            return None
+        try:
+            return _json.loads(b or "")
+        except Exception:
+            return None
+
+    ctl = "grin-ma-" + uuid.uuid4().hex[:10]
+    if not register(ctl):
+        return Verdict(INCONCLUSIVE, "mass-assignment", loc, "could not register a control account")
+    shape = discover_login(base, ctl, pw, post)
+    if shape is None:
+        return Verdict(INCONCLUSIVE, "mass-assignment", loc, "could not establish how to log in")
+    pc = profile_of(ctl, shape)
+    if pc is None:
+        return Verdict(INCONCLUSIVE, "mass-assignment", loc, "could not read the control profile")
+    tested = False
+    for priv_field in _PRIV_FIELDS:
+        trt = "grin-ma-" + uuid.uuid4().hex[:10]
+        if not register(trt, priv=priv_field):
+            continue
+        pt = profile_of(trt, shape)
+        if pt is None:
+            continue
+        cval, tval = _find_field_value(pc, priv_field), _find_field_value(pt, priv_field)
+        if cval is _MISSING or tval is _MISSING:
+            continue
+        tested = True
+        if _priv_true(tval) and _priv_false(cval):
+            pt2 = profile_of(trt, shape)        # second fresh login — kills session-echo FPs
+            if pt2 is not None and _priv_true(_find_field_value(pt2, priv_field)):
+                return Verdict(CONFIRMED, "mass-assignment", loc,
+                               f"registration persisted client-supplied {priv_field!r}; the control account did not (re-confirmed on a fresh login)")
+    if not tested:
+        return Verdict(INCONCLUSIVE, "mass-assignment", loc,
+                       "no privilege field was readable on the profile to compare")
+    return Verdict(REJECTED, "mass-assignment", loc,
+                   "the server ignored client-supplied privilege fields at registration")
+
+
 # --- excessive data exposure (OWASP API3): sensitive records served without auth --------------
 # Password-family ONLY (the unambiguous signal). 'secret'/'api_key'/'token' are deliberately
 # excluded — public share-secrets and publishable keys would blow the FP budget.
@@ -437,6 +562,7 @@ _REGISTRY: dict = {
     "forged-review": verify_write_authz,
     "sqli-error": verify_error_sqli,
     "excessive-data-exposure": verify_exposure,
+    "mass-assignment": verify_mass_assignment,
 }
 
 

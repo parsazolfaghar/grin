@@ -55,6 +55,7 @@ _SEVERITY = {
     "ssrf": "high",
     "path-traversal": "high",
     "excessive-data-exposure": "high",
+    "mass-assignment": "high",
 }
 
 
@@ -137,7 +138,13 @@ def run_general(base_url, credentials=None, *, request=None,
             oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
         candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
     from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
-                                          discover_exposure_candidates)
+                                          discover_exposure_candidates, discover_mass_assignment_target)
+    # mass assignment: self-registers control/treatment accounts (DESTRUCTIVE; only when the target
+    # exposes a register + profile endpoint, so apps like Juice Shop are never touched by it)
+    ma = discover_mass_assignment_target(base_url, transport.by_role)
+    if ma:
+        candidates.append(Candidate("mass-assignment", ma["register_url"][len(base):] or "/register",
+                                    ma["register_url"], oracle=ma))
     # error-based SQLi at OpenAPI detail-path params (needs no auth; the oracle is self-verifying)
     for loc, url_template in discover_sqli_candidates(base_url, transport.by_role):
         candidates.append(Candidate("sqli-error", loc, url_template,

@@ -164,6 +164,24 @@ def test_discover_exposure_candidates_skips_createdb():
     assert "/users/v1/_debug" in locs and "/createdb" not in locs
 
 
+def test_discover_mass_assignment_target_finds_register_and_profile():
+    from grin.resource_discovery import discover_mass_assignment_target
+    spec = {"paths": {"/users/v1/register": {"post": {}}, "/me": {"get": {}},
+                      "/members": {"get": {}}}}     # /members must NOT be mistaken for /me
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    ma = discover_mass_assignment_target("http://t", by_role)
+    assert ma["register_url"] == "http://t/users/v1/register" and ma["profile_url"] == "http://t/me"
+
+
+def test_discover_mass_assignment_target_none_without_register():
+    from grin.resource_discovery import discover_mass_assignment_target
+    spec = {"paths": {"/api/Users": {"post": {}}, "/me": {"get": {}}}}   # no register-named path
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    assert discover_mass_assignment_target("http://t", by_role) is None
+
+
 def test_fetch_openapi_tries_common_locations():
     def get(url):
         return (200, _J.dumps({"paths": {"/x": {"get": {}}}})) if url.endswith("/swagger.json") else (404, "")

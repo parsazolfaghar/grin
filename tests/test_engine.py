@@ -159,6 +159,44 @@ def test_run_general_discovers_and_confirms_idor_via_openapi():
     assert idor and idor[0].vuln_class == "idor"
 
 
+def test_run_general_discovers_and_confirms_mass_assignment_via_openapi():
+    # OpenAPI exposes a register + /me; the server persists a client-supplied admin flag
+    import base64
+    import json as _J
+    spec = {"paths": {"/users/v1/register": {"post": {}}, "/users/v1/login": {"post": {}},
+                      "/me": {"get": {}}}}
+    store = {}
+
+    def jwt(sub):
+        b = lambda d: base64.urlsafe_b64encode(_J.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+        return ".".join([b({"alg": "HS256"}), b({"sub": sub}), "sig"])
+
+    def sub_of(headers):
+        try:
+            seg = (headers or {}).get("Authorization", "").replace("Bearer ", "").split(".")[1]
+            return _J.loads(base64.urlsafe_b64decode(seg + "=" * (-len(seg) % 4)))["sub"]
+        except Exception:
+            return None
+
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/openapi.json"):
+            return (200, _J.dumps(spec))
+        if method == "POST" and url.endswith("/users/v1/register"):
+            b = json or {}
+            store[b.get("username")] = {"admin": b.get("admin") is True}
+            return (201, "{}")
+        if method == "POST" and url.endswith("/users/v1/login"):
+            u = (json or {}).get("username")
+            return (200, _J.dumps({"auth_token": jwt(u)})) if u in store else (401, "")
+        if method == "GET" and url.endswith("/me"):
+            s = sub_of(headers)
+            return (200, _J.dumps({"data": {"username": s, "admin": store[s]["admin"]}})) if s in store else (401, "")
+        return (404, "")
+    findings = run_general("http://t", None, request=request)
+    ma = [f for f in findings if f.vuln_class == "mass-assignment"]
+    assert ma and store     # confirmed, and accounts were actually created
+
+
 def test_run_general_discovers_and_confirms_excessive_exposure_via_openapi():
     # OpenAPI exposes a /_debug data endpoint that leaks identity+password records to anon
     import json as _J

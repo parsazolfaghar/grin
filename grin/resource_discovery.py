@@ -260,6 +260,33 @@ def _is_safe_get_path(path):
     return True
 
 
+def discover_mass_assignment_target(base_url, by_role):
+    """Find a registration endpoint + a self-profile endpoint from OpenAPI, so the mass-assignment
+    verifier can self-register and read back persisted privilege. Returns the oracle dict or None."""
+    getter = by_role.get("anon") or by_role.get("victim")
+    if not getter:
+        return None
+    spec = fetch_openapi(base_url, getter)
+    if not spec:
+        return None
+    base, prefix = base_url.rstrip("/"), _spec_prefix(spec)
+    reg = prof = None
+    for p, ops in spec.get("paths", {}).items():
+        if not isinstance(ops, dict):
+            continue
+        ol = {k.lower() for k in ops}
+        pl = p.lower()
+        segs = [s for s in p.split("/") if s]
+        if reg is None and "post" in ol and any(h in pl for h in ("register", "signup", "sign-up")):
+            reg = prefix + p
+        if (prof is None and "get" in ol and not any(_PARAM_RE.match(s) for s in segs)
+                and (segs and segs[-1].lower() == "me" or any(h in pl for h in ("profile", "whoami")))):
+            prof = prefix + p
+    if reg and prof:
+        return {"base_url": base_url, "register_url": base + reg, "profile_url": base + prof}
+    return None
+
+
 def discover_exposure_candidates(base_url, by_role, *, max_paths=30):
     """Anonymous-readable data endpoints (from OpenAPI) to check for excessive data exposure.
     Returns [(location, url), ...]. Side-effecting GETs are excluded. No auth needed."""

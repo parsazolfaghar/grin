@@ -213,6 +213,72 @@ def test_verify_ssti_inconclusive_when_product_in_error_response():
     assert verify_ssti(_ssti_candidate(), _transport(handler)).status == INCONCLUSIVE
 
 
+# --- verify_mass_assignment (privilege field persists at registration) ---
+import base64 as _b64
+
+
+def _ma_jwt(sub):
+    b = lambda d: _b64.urlsafe_b64encode(_J.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+    return ".".join([b({"alg": "HS256"}), b({"sub": sub}), "sig"])
+
+
+def _ma_sub(tok):
+    try:
+        seg = tok.split(".")[1]
+        seg += "=" * (-len(seg) % 4)
+        return _J.loads(_b64.urlsafe_b64decode(seg))["sub"]
+    except Exception:
+        return None
+
+
+def _ma_app(*, persist=True, expose_field=True):
+    """Synthetic register/login/profile app. persist=True => the server stores client-supplied
+    privilege flags (vulnerable). expose_field=False => /me hides the flag (can't verify)."""
+    store = {}
+
+    def request(method, url, json=None, headers=None):
+        if method == "POST" and url.endswith("/register"):
+            b = json or {}
+            admin = persist and any(b.get(f) is True for f in
+                                    ("admin", "is_admin", "isAdmin", "is_staff", "isStaff",
+                                     "is_superuser", "isSuperuser", "superadmin"))
+            store[b.get("username")] = {"admin": admin}
+            return (201, '{"status":"ok"}')
+        if method == "POST" and url.endswith("/users/v1/login"):
+            u = (json or {}).get("username")
+            return (200, _J.dumps({"auth_token": _ma_jwt(u)})) if u in store else (401, "")
+        if method == "GET" and url.endswith("/me"):
+            sub = _ma_sub((headers or {}).get("Authorization", "").replace("Bearer ", ""))
+            if sub in store:
+                data = {"username": sub}
+                if expose_field:
+                    data["admin"] = store[sub]["admin"]
+                return (200, _J.dumps({"data": data}))
+            return (401, "")
+        return (404, "")
+    return Transport(request=request,
+                     by_role={"anon": lambda u, method="GET", json=None: request(method, u, json=json)})
+
+
+def _ma_candidate():
+    return Candidate(vuln_class="mass-assignment", location="/register", url="http://t/register",
+                     oracle={"base_url": "http://t", "register_url": "http://t/register",
+                             "profile_url": "http://t/me"})
+
+
+def test_verify_mass_assignment_confirmed_when_priv_field_persists():
+    assert verify(_ma_candidate(), _ma_app(persist=True)).status == CONFIRMED
+
+
+def test_verify_mass_assignment_rejected_when_server_ignores_field():
+    assert verify(_ma_candidate(), _ma_app(persist=False)).status == REJECTED
+
+
+def test_verify_mass_assignment_inconclusive_when_field_not_on_profile():
+    # the privilege isn't readable on the profile -> cannot verify persistence -> not a finding
+    assert verify(_ma_candidate(), _ma_app(persist=True, expose_field=False)).status == INCONCLUSIVE
+
+
 # --- verify_exposure (excessive data exposure: identity+credential to anon) ---
 
 def _exposure_transport(status, body):
