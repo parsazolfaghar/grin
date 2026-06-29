@@ -134,3 +134,14 @@ def test_optimal_matching_is_order_independent():
     b = _finding("B", "idor", "/u/2")
     assert score([a, b], tgt).tp == 2
     assert score([b, a], tgt).tp == 2   # order must not change the count
+
+
+def test_evidence_not_mined_when_location_is_set():
+    # CRITICAL (final review): a finding ABOUT /api/admin must NOT be credited for /ftp just
+    # because its evidence crawl log happens to mention /ftp/acquisitions.md. When location is
+    # set, only location is used; evidence is the fallback only when location is empty.
+    tgt = _target(_gt("g1", "broken-access-control", "/ftp/{file}"))
+    findings = [_finding("admin", "broken-access-control", "/api/admin",
+                         evidence="crawled: /rest/basket/1, /ftp/acquisitions.md")]
+    s = score(findings, tgt)
+    assert s.tp == 0 and s.fp == 1 and s.fn == 1

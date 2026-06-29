@@ -891,7 +891,12 @@ def _load_findings_file(path: str):
         data = json.load(fh)
     if not isinstance(data, list):
         raise ValueError("findings file must be a JSON list of finding objects")
-    return [Finding(**{k: v for k, v in d.items() if k in valid}) for d in data]
+    out = []
+    for d in data:
+        if not isinstance(d, dict):
+            raise ValueError(f"findings entry is not an object: {d!r}")
+        out.append(Finding(**{k: v for k, v in d.items() if k in valid}))
+    return out
 
 
 def cmd_assessbench(*, target_id: str, findings: str = None, json_out: bool = False) -> int:

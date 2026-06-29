@@ -77,7 +77,12 @@ def _class_matches(finding: Finding, gt: GroundTruth) -> bool:
 
 
 def _location_matches(finding: Finding, pat: re.Pattern) -> bool:
-    for cand in _candidate_paths(finding.location) + _candidate_paths(finding.evidence):
+    # Use the explicit location field when set; fall back to mining paths out of evidence ONLY
+    # when location is empty (a tool that didn't tag a location). Otherwise a verbose evidence
+    # crawl log that incidentally mentions the ground-truth path would wrongly credit a finding
+    # that is actually about a different endpoint — a false true-positive (inflated precision).
+    candidates = _candidate_paths(finding.location) or _candidate_paths(finding.evidence)
+    for cand in candidates:
         if pat.fullmatch(cand):
             return True
     return False

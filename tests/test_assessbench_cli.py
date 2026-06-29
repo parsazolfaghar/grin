@@ -60,6 +60,16 @@ def test_assessbench_unknown_target_returns_error(capsys):
     assert rc == 2
 
 
+def test_assessbench_nondict_finding_entry_clean_error(tmp_path, capsys):
+    # CRITICAL (final review): a non-dict entry must yield a clean error, not an AttributeError
+    p = tmp_path / "f.json"
+    p.write_text(json.dumps(["not-an-object"]))
+    rc = cmd_assessbench(target_id="juice-shop", findings=str(p))
+    out = capsys.readouterr().out
+    assert rc == 2
+    assert "error" in out.lower()
+
+
 def test_assessbench_no_findings_shows_answer_key(capsys):
     rc = cmd_assessbench(target_id="juice-shop")
     out = capsys.readouterr().out
