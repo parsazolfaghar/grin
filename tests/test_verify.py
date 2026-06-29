@@ -833,3 +833,58 @@ def test_stored_xss_form_post_path_confirmed():
                   method="POST", inject_field="comment",
                   oracle={"view_url": "http://t/gb", "form": True, "form_url": "http://t/gb"})
     assert verify(c, t).status == CONFIRMED
+
+
+# --- NoSQL injection (Mongo operator-injection auth bypass) -----------------------------------
+def _nosql_app(*, vulnerable=True, broken_auth=False, throttled=False, json_rejects=False):
+    def anon(u, method="GET", json=None, data=None, headers=None):
+        if throttled:
+            return (429, "rate limited")
+        if json is not None:
+            if json_rejects:
+                return (500, "cannot parse json")
+            op = isinstance(json.get("username"), dict) or isinstance(json.get("password"), dict)
+        elif data is not None:
+            keys = [k for k, _ in urllib.parse.parse_qsl(data)]
+            op = any("[$" in k for k in keys)
+        else:
+            return (400, "no body")
+        if broken_auth:
+            return (200, '{"token":"eyJ-grin-anything-goes"}')
+        if vulnerable and op:
+            return (200, '{"token":"eyJ-grin-session-admin","user":"admin"}')
+        return (401, '{"error":"invalid credentials"}')
+    return Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+
+
+def _nosql_candidate():
+    return Candidate(vuln_class="nosql-injection", location="/login", url="http://t/login", method="POST")
+
+
+def test_nosql_injection_confirmed_on_operator_bypass():
+    assert verify(_nosql_candidate(), _nosql_app(vulnerable=True)).status == CONFIRMED
+
+
+def test_nosql_injection_broken_auth_rejected():
+    # an app that authenticates random strings is broken auth, NOT NoSQL injection
+    assert verify(_nosql_candidate(), _nosql_app(broken_auth=True)).status == REJECTED
+
+
+def test_nosql_injection_not_vulnerable_rejected():
+    assert verify(_nosql_candidate(), _nosql_app(vulnerable=False)).status == REJECTED
+
+
+def test_nosql_injection_throttled_inconclusive():
+    assert verify(_nosql_candidate(), _nosql_app(throttled=True)).status == INCONCLUSIVE
+
+
+def test_nosql_injection_falls_through_to_bracket_form():
+    # JSON attempt 500s (parser rejects); the urlencoded [$ne] bracket form bypasses -> CONFIRMED
+    assert verify(_nosql_candidate(), _nosql_app(vulnerable=True, json_rejects=True)).status == CONFIRMED
+
+
+def test_nosql_injection_inconclusive_when_post_raises():
+    def anon(u, method="GET", json=None, data=None, headers=None):
+        raise RuntimeError("down")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    assert verify(_nosql_candidate(), t).status == INCONCLUSIVE

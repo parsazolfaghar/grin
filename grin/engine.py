@@ -81,6 +81,7 @@ _SEVERITY = {
     "xss": "high",
     "stored-xss": "high",
     "xxe": "high",
+    "nosql-injection": "critical",
     "command-injection": "critical",
     "open-redirect": "medium",
 }
@@ -231,7 +232,8 @@ def run_general(base_url, credentials=None, *, request=None,
         candidates.append(Candidate("idor", resource_template, url, oracle={"attacker_own_url": own}))
     from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
                                           discover_exposure_candidates, discover_mass_assignment_target,
-                                          discover_protected_endpoint, discover_xxe_candidates)
+                                          discover_protected_endpoint, discover_xxe_candidates,
+                                          discover_login_candidates)
     # broken auth: is the JWT signing secret weak enough to forge tokens? (needs a real token)
     if attacker_token:
         vurl = discover_protected_endpoint(base_url, transport.by_role)
@@ -254,6 +256,10 @@ def run_general(base_url, credentials=None, *, request=None,
     # XXE at endpoints whose OpenAPI requestBody accepts XML (benign probe; no recursive entities)
     for loc, url in discover_xxe_candidates(base_url, transport.by_role):
         candidates.append(Candidate("xxe", loc, url, method="POST", oracle={"oob": oob} if oob else {}))
+    # NoSQL operator-injection auth bypass at OpenAPI login endpoints (differential, no-auth probe)
+    for loc, url, uf, pf in discover_login_candidates(base_url, transport.by_role):
+        candidates.append(Candidate("nosql-injection", loc, url, method="POST",
+                                    oracle={"user_field": uf, "pass_field": pf}))
     if have_two:
         # Generalize beyond the login-derived id: discover victim-owned resources from the target's
         # OpenAPI surface (ownership-proven, conservative). The hardened oracle is the precision gate.

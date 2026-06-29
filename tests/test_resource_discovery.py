@@ -199,3 +199,20 @@ def test_discover_xxe_candidates_from_xml_request_body():
                (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
     cands = discover_xxe_candidates("http://t", by_role)
     assert cands == [("/parse [POST]", "http://t/parse")]    # only the XML-accepting op
+
+
+def test_discover_login_candidates_matches_login_paths_and_fields():
+    from grin.resource_discovery import discover_login_candidates
+    spec = {"paths": {
+        "/login": {"post": {"requestBody": {"content": {"application/json":
+                   {"schema": {"properties": {"email": {}, "passwd": {}}}}}}}},
+        "/users": {"get": {}},
+        "/signin": {"post": {}},
+    }}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    cands = discover_login_candidates("http://t", by_role)
+    locs = {c[0] for c in cands}
+    assert "/login" in locs and "/signin" in locs and "/users" not in locs
+    login = next(c for c in cands if c[0] == "/login")
+    assert login[2] == "email" and login[3] == "passwd"      # fields read from the schema

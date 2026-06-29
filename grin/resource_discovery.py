@@ -335,6 +335,48 @@ def discover_exposure_candidates(base_url, by_role, *, max_paths=30):
     return out
 
 
+_LOGIN_PATH_RE = re.compile(r"(login|sign[_-]?in|authenticate|auth/token|sessions?$|session/new)", re.I)
+
+
+def _login_fields(op):
+    """Best-effort username/password field names from a login op's JSON requestBody schema; falls
+    back to ('username','password')."""
+    uf, pf = "username", "password"
+    schema = (((op.get("requestBody") or {}).get("content") or {}).get("application/json") or {}).get("schema") or {}
+    props = schema.get("properties") if isinstance(schema, dict) else None
+    for name in (props or {}):
+        nl = str(name).lower()
+        if uf == "username" and any(k in nl for k in ("user", "email", "login")):
+            uf = name
+        if pf == "password" and "pass" in nl:
+            pf = name
+    return uf, pf
+
+
+def discover_login_candidates(base_url, by_role, *, max_paths=8):
+    """Login endpoints (from OpenAPI) to test for NoSQL operator-injection auth bypass. Returns
+    [(location, url, user_field, pass_field), ...] for POST ops on login-ish paths. No auth needed."""
+    getter = by_role.get("anon") or by_role.get("victim")
+    if not getter:
+        return []
+    spec = fetch_openapi(base_url, getter)
+    if not spec:
+        return []
+    base, prefix = base_url.rstrip("/"), _spec_prefix(spec)
+    out = []
+    for p, ops in spec.get("paths", {}).items():
+        if not isinstance(ops, dict) or "post" not in {k.lower() for k in ops}:
+            continue
+        if not _LOGIN_PATH_RE.search(p):
+            continue
+        op = next((ops[k] for k in ops if k.lower() == "post"), {})
+        uf, pf = _login_fields(op if isinstance(op, dict) else {})
+        out.append((prefix + p, base + prefix + p, uf, pf))
+        if len(out) >= max_paths:
+            break
+    return out
+
+
 def discover_xxe_candidates(base_url, by_role, *, max_paths=20):
     """Endpoints (from OpenAPI) whose requestBody accepts an XML media type — the autonomous signal
     that an operation parses XML (the XXE surface). Returns [(location, url), ...] for POST/PUT ops.
