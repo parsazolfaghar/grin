@@ -15,7 +15,7 @@ import yaml
 # and the assessment pipeline that emits these classes.
 VULN_CLASSES = frozenset({
     "broken-access-control", "idor", "ssrf", "sql-injection", "command-injection", "ssti",
-    "xss", "stored-xss", "auth-bypass", "path-traversal", "info-disclosure", "csrf",
+    "xss", "stored-xss", "xxe", "auth-bypass", "path-traversal", "info-disclosure", "csrf",
     "excessive-data-exposure", "mass-assignment", "broken-authentication", "open-redirect",
 })
 

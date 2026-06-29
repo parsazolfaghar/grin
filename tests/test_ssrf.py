@@ -142,3 +142,91 @@ def test_verify_open_redirect_rejected_when_no_redirect():
 def test_verify_ssrf_inconclusive_when_oob_unhealthy():
     assert verify(_ssrf_candidate(_FakeOOB(healthy=False)),
                   Transport(request=lambda *a, **k: (200, "ok"))).status == INCONCLUSIVE
+
+
+# --- XXE ---------------------------------------------------------------------------------------
+_PASSWD = ("root:x:0:0:root:/root:/bin/bash\n"
+           "daemon:x:1:1:daemon:/usr/sbin:/usr/sbin/nologin\n")
+
+
+def _xxe_candidate(oob=None, template=None):
+    o = {"ssrf_timeout": 2}
+    if oob is not None:
+        o["oob"] = oob
+    if template is not None:
+        o["xml_template"] = template
+    return Candidate(vuln_class="xxe", location="/parse", url="http://t/parse",
+                     method="POST", oracle=o)
+
+
+def _xxe_app(*, vulnerable=True, benign_errors=False, baseline_passwd=False,
+             echo_raw=False, oob=None, ge_blocked=False, in_band=True):
+    """A fake XML endpoint. A vulnerable parser EXPANDS external entities (file read / OOB fetch);
+    echo_raw simulates a parser that echoes the raw body without expanding."""
+    def attacker(u, method="GET", json=None, data=None, headers=None):
+        xml = data or ""
+        if "grin-xxe-baseline" in xml:
+            if benign_errors:
+                return (500, "")
+            return (200, f"<r>{_PASSWD}</r>") if baseline_passwd else (200, "<r>grin-xxe-baseline</r>")
+        if "file:///etc/passwd" in xml:
+            if echo_raw:
+                return (200, f"<r>{xml}</r>")              # parser did not expand; raw echo
+            return (200, f"<r>{_PASSWD}</r>") if (vulnerable and in_band) else (200, "<r></r>")
+        if oob is not None and ("SYSTEM" in xml or "% grin" in xml):
+            import re as _re
+            is_pe = "% grin" in xml
+            if (is_pe or not ge_blocked) and vulnerable:
+                m = _re.search(r'https?://[^"\s]+', xml)
+                if m:
+                    tok = m.group(0).rsplit("/", 1)[-1].replace(".dtd", "")
+                    oob.fire(tok, "172.20.0.9")            # the TARGET fetched it
+            return (200, "<r></r>")
+        return (200, "<r></r>")
+    return Transport(request=lambda *a, **k: (200, ""), by_role={"attacker": attacker})
+
+
+def test_xxe_in_band_file_read_confirmed():
+    assert verify(_xxe_candidate(), _xxe_app(vulnerable=True)).status == CONFIRMED
+
+
+def test_xxe_raw_echo_not_confirmed():
+    # parser echoes my payload (which references file:///etc/passwd) but never expands it -> REJECTED
+    assert verify(_xxe_candidate(), _xxe_app(echo_raw=True)).status == REJECTED
+
+
+def test_xxe_benign_errors_asymmetry_not_confirmed():
+    # benign baseline 500s while attack returns passwd-ish text -> diff untrustworthy -> not CONFIRMED
+    assert verify(_xxe_candidate(), _xxe_app(benign_errors=True)).status == REJECTED
+
+
+def test_xxe_baseline_already_passwd_not_confirmed():
+    assert verify(_xxe_candidate(), _xxe_app(baseline_passwd=True)).status == REJECTED
+
+
+def test_xxe_not_vulnerable_rejected():
+    assert verify(_xxe_candidate(), _xxe_app(vulnerable=False)).status == REJECTED
+
+
+def test_xxe_blind_general_entity_confirmed():
+    oob = _FakeOOB()
+    v = verify(_xxe_candidate(oob), _xxe_app(vulnerable=True, oob=oob, in_band=False))
+    assert v.status == CONFIRMED and "external entity" in v.evidence
+
+
+def test_xxe_blind_parameter_entity_confirmed_when_general_blocked():
+    oob = _FakeOOB()
+    v = verify(_xxe_candidate(oob), _xxe_app(vulnerable=True, oob=oob, ge_blocked=True, in_band=False))
+    assert v.status == CONFIRMED and "external DTD" in v.evidence
+
+
+def test_xxe_blind_unhealthy_oob_rejected():
+    oob = _FakeOOB(healthy=False)
+    assert verify(_xxe_candidate(oob), _xxe_app(vulnerable=False, oob=oob)).status == REJECTED
+
+
+def test_xxe_inconclusive_when_post_raises():
+    def attacker(u, method="GET", json=None, data=None, headers=None):
+        raise RuntimeError("boom")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"attacker": attacker})
+    assert verify(_xxe_candidate(), t).status == INCONCLUSIVE

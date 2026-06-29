@@ -80,6 +80,7 @@ _SEVERITY = {
     "broken-authentication": "critical",
     "xss": "high",
     "stored-xss": "high",
+    "xxe": "high",
     "command-injection": "critical",
     "open-redirect": "medium",
 }
@@ -90,13 +91,15 @@ def _urllib_request():
     import urllib.error
     import urllib.request
 
-    def request(method, url, json=None, headers=None):
+    def request(method, url, json=None, headers=None, data=None):
         h = dict(headers or {})
-        data = None
+        body = None
         if json is not None:
-            data = _json.dumps(json).encode()
-            h["Content-Type"] = "application/json"
-        req = urllib.request.Request(url, data=data, method=method, headers=h)
+            body = _json.dumps(json).encode()
+            h.setdefault("Content-Type", "application/json")
+        elif data is not None:                       # raw body (e.g. XML for XXE); caller sets CT
+            body = data.encode() if isinstance(data, str) else data
+        req = urllib.request.Request(url, data=body, method=method, headers=h)
         try:
             r = urllib.request.urlopen(req, timeout=8)
             return r.status, r.read(262144).decode("utf-8", "replace")
@@ -228,7 +231,7 @@ def run_general(base_url, credentials=None, *, request=None,
         candidates.append(Candidate("idor", resource_template, url, oracle={"attacker_own_url": own}))
     from grin.resource_discovery import (discover_idor_candidates, discover_sqli_candidates,
                                           discover_exposure_candidates, discover_mass_assignment_target,
-                                          discover_protected_endpoint)
+                                          discover_protected_endpoint, discover_xxe_candidates)
     # broken auth: is the JWT signing secret weak enough to forge tokens? (needs a real token)
     if attacker_token:
         vurl = discover_protected_endpoint(base_url, transport.by_role)
@@ -248,6 +251,9 @@ def run_general(base_url, credentials=None, *, request=None,
     # excessive data exposure at anon-readable data endpoints (side-effecting GETs are excluded)
     for loc, url in discover_exposure_candidates(base_url, transport.by_role):
         candidates.append(Candidate("excessive-data-exposure", loc, url))
+    # XXE at endpoints whose OpenAPI requestBody accepts XML (benign probe; no recursive entities)
+    for loc, url in discover_xxe_candidates(base_url, transport.by_role):
+        candidates.append(Candidate("xxe", loc, url, method="POST", oracle={"oob": oob} if oob else {}))
     if have_two:
         # Generalize beyond the login-derived id: discover victim-owned resources from the target's
         # OpenAPI surface (ownership-proven, conservative). The hardened oracle is the precision gate.

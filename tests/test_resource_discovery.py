@@ -186,3 +186,16 @@ def test_fetch_openapi_tries_common_locations():
     def get(url):
         return (200, _J.dumps({"paths": {"/x": {"get": {}}}})) if url.endswith("/swagger.json") else (404, "")
     assert fetch_openapi("http://t", get)["paths"] == {"/x": {"get": {}}}
+
+
+def test_discover_xxe_candidates_from_xml_request_body():
+    from grin.resource_discovery import discover_xxe_candidates
+    spec = {"paths": {
+        "/parse": {"post": {"requestBody": {"content": {"application/xml": {}}}}},
+        "/json-only": {"post": {"requestBody": {"content": {"application/json": {}}}}},
+        "/read": {"get": {}},
+    }}
+    by_role = {"anon": lambda u, method="GET", json=None:
+               (200, _J.dumps(spec)) if u.endswith("/openapi.json") else (404, "")}
+    cands = discover_xxe_candidates("http://t", by_role)
+    assert cands == [("/parse [POST]", "http://t/parse")]    # only the XML-accepting op

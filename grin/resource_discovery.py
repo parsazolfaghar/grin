@@ -335,6 +335,34 @@ def discover_exposure_candidates(base_url, by_role, *, max_paths=30):
     return out
 
 
+def discover_xxe_candidates(base_url, by_role, *, max_paths=20):
+    """Endpoints (from OpenAPI) whose requestBody accepts an XML media type — the autonomous signal
+    that an operation parses XML (the XXE surface). Returns [(location, url), ...] for POST/PUT ops.
+    Needs no auth (anon fetch). The benign probe carries no recursive entities."""
+    getter = by_role.get("anon") or by_role.get("victim")
+    if not getter:
+        return []
+    spec = fetch_openapi(base_url, getter)
+    if not spec:
+        return []
+    base, prefix = base_url.rstrip("/"), _spec_prefix(spec)
+    out = []
+    for p, ops in spec.get("paths", {}).items():
+        if not isinstance(ops, dict):
+            continue
+        for verb, op in ops.items():
+            if verb.lower() not in ("post", "put", "patch") or not isinstance(op, dict):
+                continue
+            content = (op.get("requestBody") or {}).get("content") or {}
+            if any("xml" in str(mt).lower() for mt in content):
+                loc = f"{prefix + p} [{verb.upper()}]"
+                out.append((loc, base + prefix + p))
+                break
+        if len(out) >= max_paths:
+            break
+    return out
+
+
 def discover_sqli_candidates(base_url, by_role, *, max_params=20):
     """Error-based SQLi injection points from the OpenAPI surface: each object-by-id detail path
     param is a candidate string context. Returns [(location, url_template), ...] where url_template
