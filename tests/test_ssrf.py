@@ -230,3 +230,51 @@ def test_xxe_inconclusive_when_post_raises():
         raise RuntimeError("boom")
     t = Transport(request=lambda *a, **k: (200, ""), by_role={"attacker": attacker})
     assert verify(_xxe_candidate(), t).status == INCONCLUSIVE
+
+
+# --- deferred OOB finalize (one run-level poll window) -----------------------------------------
+def test_assess_defers_ssrf_and_blind_cmdi_external():
+    import re as _re
+    from grin.engine import assess
+    oob = _FakeOOB()
+
+    def request(method, url, json=None, headers=None, data=None):
+        m = _re.search(r"tok\d+", url + str(json))
+        if m:
+            oob.fire(m.group(0), "172.20.0.9")          # the TARGET fetched it (external)
+        return (200, "ok")
+    cands = [
+        Candidate("ssrf", "/a (url)", "http://t/a", inject_field="url",
+                  oracle={"oob": oob, "ssrf_timeout": 2}),
+        Candidate("blind-command-injection", "/b (cmd)", "http://t/b", inject_field="cmd",
+                  oracle={"oob": oob, "ssrf_timeout": 2}),
+    ]
+    classes = {f.vuln_class for f in assess(cands, Transport(request=request))}
+    assert "ssrf" in classes and "command-injection" in classes
+
+
+def test_assess_defers_open_redirect_grin_own_predicate():
+    import re as _re
+    from grin.engine import assess
+    oob = _FakeOOB()
+
+    def request(method, url, json=None, headers=None, data=None):
+        m = _re.search(r"tok\d+", url)
+        if m:
+            oob.fire(m.group(0), "10.0.0.1")            # grin's OWN ip (followed the redirect)
+        return (302, "")
+    c = Candidate("open-redirect", "/r (url)", "http://t/r", inject_field="url",
+                  oracle={"oob": oob, "ssrf_timeout": 2})
+    assert [f.vuln_class for f in assess([c], Transport(request=request))] == ["open-redirect"]
+
+
+def test_assess_oob_single_poll_window_not_per_candidate():
+    import time as _t
+    from grin.engine import assess
+    oob = _FakeOOB()                                    # nothing ever fires
+    cands = [Candidate("ssrf", f"/p{i} (url)", f"http://t/p{i}", inject_field="url",
+                       oracle={"oob": oob, "ssrf_timeout": 1}) for i in range(3)]
+    start = _t.monotonic()
+    findings = assess(cands, Transport(request=lambda *a, **k: (200, "ok")))
+    elapsed = _t.monotonic() - start
+    assert findings == [] and elapsed < 2.0             # ONE ~1s window, not 3x sequential (~3s)

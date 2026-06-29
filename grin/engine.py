@@ -5,6 +5,7 @@ This is the join the architecture is built around: recon produces Candidates, th
 one Transport (per-role sessions), and assess() runs verify() over the queue. REJECTED and
 INCONCLUSIVE never become findings — code, not the LLM, decides what is real."""
 import re
+import time
 
 from grin.verify import verify, Candidate, Transport, CONFIRMED
 from grin.finding import Finding
@@ -296,22 +297,62 @@ def _dedup_bac_dirs(findings):
     return out
 
 
+# OOB classes that defer to a single run-level poll window (each fires one token, one predicate).
+# XXE is excluded on purpose: its GE->PE fallback needs distinct inline evidence per arm.
+_OOB_DEFER_CLASSES = {"ssrf", "blind-command-injection", "open-redirect"}
+
+
+def _finding(vuln_class, location, target, url, evidence):
+    return Finding(
+        title=f"{vuln_class}: {location}",
+        target=target or url,
+        severity=_SEVERITY.get(vuln_class, "medium"),
+        evidence=evidence,
+        tool="grin-verify",
+        command=f"verify[{vuln_class}] {url}",
+        recommendation="",
+        vuln_class=vuln_class,
+        location=location,
+    )
+
+
 def assess(candidates, transport, target: str = ""):
-    """Verify every candidate; return a Finding for each CONFIRMED verdict (in input order)."""
+    """Verify every candidate; return a Finding for each CONFIRMED verdict. OOB callback classes
+    (ssrf/blind-cmdi/open-redirect) FIRE their probes during the main pass and resolve in ONE
+    run-level poll window at the end — turning N sequential per-candidate waits into a single wait."""
+    from grin.verify import _oob_hits
+    oob = next((c.oracle.get("oob") for c in candidates
+                if isinstance(c.oracle, dict) and c.oracle.get("oob")), None)
+    pending = [] if oob is not None else None
     findings = []
     for c in candidates:
+        if pending is not None and isinstance(c.oracle, dict) and c.oracle.get("oob") \
+                and c.vuln_class in _OOB_DEFER_CLASSES:
+            c.oracle["oob_defer"] = pending          # opt the verifier into deferral
         verdict = verify(c, transport)
         if verdict.status != CONFIRMED:
             continue
-        findings.append(Finding(
-            title=f"{verdict.vuln_class}: {verdict.location}",
-            target=target or c.url,
-            severity=_SEVERITY.get(verdict.vuln_class, "medium"),
-            evidence=verdict.evidence,
-            tool="grin-verify",
-            command=f"verify[{verdict.vuln_class}] {c.url}",
-            recommendation="",
-            vuln_class=verdict.vuln_class,
-            location=verdict.location,
-        ))
+        findings.append(_finding(verdict.vuln_class, verdict.location, target, c.url, verdict.evidence))
+
+    if pending:                                       # single poll window resolves every deferred probe
+        timeout = max((c.oracle.get("ssrf_timeout", 3) for c in candidates
+                       if isinstance(c.oracle, dict)), default=3)
+        unresolved, deadline = list(range(len(pending))), time.time() + float(timeout)
+        done = {}
+        while unresolved and time.time() < deadline:
+            still = []
+            for i in unresolved:
+                rec = pending[i]
+                hit = _oob_hits(oob, rec["tokens"], rec["pred"])
+                if hit:
+                    done[i] = rec["evidence_fn"](hit)
+                else:
+                    still.append(i)
+            if not still:
+                break
+            unresolved = still
+            time.sleep(0.25)
+        for i in sorted(done):
+            rec = pending[i]
+            findings.append(_finding(rec["vuln_class"], rec["location"], target, target, done[i]))
     return _dedup_bac_dirs(findings)

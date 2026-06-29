@@ -415,12 +415,47 @@ def verify_error_sqli(candidate: Candidate, transport: Transport) -> Verdict:
 
 
 # --- open redirect (out-of-band, via grin's own client following the redirect) ----------------
+# --- shared OOB resolution (inline poll, or run-level deferral) --------------------------------
+def _oob_hits(oob, tokens, pred):
+    """Source IPs that hit the collaborator for any of `tokens`, filtered by predicate: 'external'
+    = the TARGET fetched it (not grin's own IP); 'grin_own' = grin's client followed a redirect."""
+    s = set()
+    for t in tokens:
+        s |= oob.hit_sources(t)
+    return (s & oob.grin_ips()) if pred == "grin_own" else (s - oob.grin_ips())
+
+
+def _oob_poll(oob, tokens, pred, timeout):
+    deadline = time.time() + float(timeout)
+    while time.time() < deadline:
+        hit = _oob_hits(oob, tokens, pred)
+        if hit:
+            return hit
+        time.sleep(0.25)
+    return set()
+
+
+def _oob_defer_or_poll(oracle, oob, vuln_class, loc, tokens, pred, evidence_fn, rejected_evidence):
+    """Called AFTER an OOB probe is fired. If the harness installed a run-level deferral collector
+    (oracle['oob_defer']), register the pending tokens and return a placeholder INCONCLUSIVE -- assess
+    resolves every deferred probe in ONE poll window at the end of the run (N sequential waits -> 1).
+    Otherwise poll inline (timeout from oracle['ssrf_timeout'])."""
+    defer = oracle.get("oob_defer")
+    if defer is not None:
+        defer.append({"vuln_class": vuln_class, "location": loc, "tokens": list(tokens),
+                      "pred": pred, "evidence_fn": evidence_fn})
+        return Verdict(INCONCLUSIVE, vuln_class, loc, "OOB probe fired; awaiting deferred run-level poll")
+    hit = _oob_poll(oob, tokens, pred, oracle.get("ssrf_timeout", 3))
+    if hit:
+        return Verdict(CONFIRMED, vuln_class, loc, evidence_fn(hit))
+    return Verdict(REJECTED, vuln_class, loc, rejected_evidence)
+
+
 def verify_open_redirect(candidate: Candidate, transport: Transport) -> Verdict:
     """Oracle: a redirect param reflects an attacker URL into a Location, so grin's redirect-
     following client chases it to the OOB collaborator. The complement to SSRF: CONFIRMED on a
     callback from GRIN's OWN IP (grin followed the redirect) — exactly the case SSRF excludes.
     Uses the redirect-following transport.request; unhealthy collaborator -> INCONCLUSIVE."""
-    import time
     loc, o = candidate.location, candidate.oracle
     oob = o.get("oob")
     if oob is None or not oob.healthy():
@@ -432,13 +467,10 @@ def verify_open_redirect(candidate: Candidate, transport: Transport) -> Verdict:
         transport.request("GET", _with_param(candidate.url, field, cb))
     except Exception:
         return Verdict(INCONCLUSIVE, "open-redirect", loc, "probe request raised an exception")
-    deadline = time.time() + float(o.get("ssrf_timeout", 3))
-    while time.time() < deadline:
-        if oob.hit_sources(token) & oob.grin_ips():
-            return Verdict(CONFIRMED, "open-redirect", loc,
-                           "the response redirected to an attacker-controlled URL (grin's client followed it to the collaborator)")
-        time.sleep(0.25)
-    return Verdict(REJECTED, "open-redirect", loc, "no redirect to the injected URL")
+    return _oob_defer_or_poll(
+        o, oob, "open-redirect", loc, [token], "grin_own",
+        lambda hit: "the response redirected to an attacker-controlled URL (grin's client followed it to the collaborator)",
+        "no redirect to the injected URL")
 
 
 # --- blind command injection (out-of-band callback) -------------------------------------------
@@ -447,7 +479,6 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
     collaborator. Reuses the SSRF precision model: CONFIRMED only on a callback from a source that
     is NOT grin's own (the target's shell made it). Unhealthy collaborator -> INCONCLUSIVE. The
     payload only fetches a URL (benign). Complements the in-band arithmetic oracle for blind sinks."""
-    import time
     loc, o = candidate.location, candidate.oracle
     oob = o.get("oob")
     if oob is None or not oob.healthy():
@@ -472,14 +503,10 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
             send(value)
         except Exception:
             continue
-    deadline = time.time() + float(o.get("ssrf_timeout", 3))
-    while time.time() < deadline:
-        external = oob.hit_sources(token) - oob.grin_ips()
-        if external:
-            return Verdict(CONFIRMED, "command-injection", loc,
-                           f"blind command injection: the target's shell fetched the OOB collaborator (source {sorted(external)})")
-        time.sleep(0.25)
-    return Verdict(REJECTED, "command-injection", loc, "no out-of-band callback from an injected shell command")
+    return _oob_defer_or_poll(
+        o, oob, "command-injection", loc, [token], "external",
+        lambda hit: f"blind command injection: the target's shell fetched the OOB collaborator (source {sorted(hit)})",
+        "no out-of-band callback from an injected shell command")
 
 
 # --- path traversal / local file read (/etc/passwd disclosure) --------------------------------
@@ -611,7 +638,6 @@ def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
     grin's own (the target made it, not grin's client following an open-redirect). An unhealthy /
     unreachable collaborator -> INCONCLUSIVE, never REJECTED (a dead collaborator is a coverage gap).
     Reported as 'outbound HTTP to the collaborator observed' — not full SSRF impact."""
-    import time
     loc, o = candidate.location, candidate.oracle
     oob = o.get("oob")
     if oob is None or not oob.healthy():
@@ -628,14 +654,10 @@ def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
             agent(_with_param(candidate.url, field, cb))
     except Exception:
         return Verdict(INCONCLUSIVE, "ssrf", loc, "probe request raised an exception")
-    deadline = time.time() + float(o.get("ssrf_timeout", 3))
-    while time.time() < deadline:
-        external = oob.hit_sources(token) - oob.grin_ips()
-        if external:
-            return Verdict(CONFIRMED, "ssrf", loc,
-                           f"the target made a server-side request to the OOB collaborator (source {sorted(external)})")
-        time.sleep(0.25)
-    return Verdict(REJECTED, "ssrf", loc, "no server-side request to the collaborator within the window")
+    return _oob_defer_or_poll(
+        o, oob, "ssrf", loc, [token], "external",
+        lambda hit: f"the target made a server-side request to the OOB collaborator (source {sorted(hit)})",
+        "no server-side request to the collaborator within the window")
 
 
 # --- reflected XSS (unencoded HTML reflection) ------------------------------------------------
