@@ -250,9 +250,14 @@ def test_run_general_discovers_and_confirms_mass_assignment_via_openapi():
             s = sub_of(headers)
             return (200, _J.dumps({"data": {"username": s, "admin": store[s]["admin"]}})) if s in store else (401, "")
         return (404, "")
-    findings = run_general("http://t", None, request=request)
+    findings = run_general("http://t", None, request=request, allow_destructive=True)
     ma = [f for f in findings if f.vuln_class == "mass-assignment"]
     assert ma and store     # confirmed, and accounts were actually created
+
+    # SAFE DEFAULT: without the destructive opt-in, mass-assignment must NOT run (no accounts created)
+    store.clear()
+    findings2 = run_general("http://t", None, request=request)
+    assert [f for f in findings2 if f.vuln_class == "mass-assignment"] == [] and store == {}
 
 
 def test_run_general_discovers_and_confirms_excessive_exposure_via_openapi():
@@ -340,7 +345,7 @@ def test_run_general_detects_forged_review():
             return (200, "SHELL")
         return (404, "")
     creds = [{"email": "aaa@x", "password": "p"}, {"email": "bbb@x", "password": "p"}]
-    findings = run_general("http://t:3000", creds, request=request)
+    findings = run_general("http://t:3000", creds, request=request, allow_destructive=True)
     forged = [f for f in findings if f.location == "/rest/products/reviews"]
     assert forged and forged[0].vuln_class == "broken-access-control"
 

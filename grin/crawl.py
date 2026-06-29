@@ -8,7 +8,8 @@ log itself out or mutate state, and the verifier is NOT a safety net for a bad v
   - a deauth HALT: if a fetched page shows login markers (or the logout marker vanished), stop the
     whole crawl and emit ZERO candidates — never crawl/inject a deauthenticated session;
   - never emit injection points from a form containing a password input (login/auth forms);
-  - GET only (POST forms are out of scope — auto-submitting them would mutate);
+  - GET by default; POST forms are probed ONLY behind an explicit opt-in (allow_post for
+    compute/lookup archetypes, allow_destructive for content sinks) since submitting them mutates;
   - hard caps: unique paths, candidates, per-path-prefix, depth.
 
 Junk params (csrf/session/submit/pagination/tracking/password) are dropped at emission. The
@@ -144,6 +145,8 @@ def crawl_injection_points(start_url, fetch, *, max_pages=30, max_candidates=50,
         if not _looks_html(body):
             continue                     # non-HTML (CSS/JS/JSON) is not a page and not a deauth signal
         if not session_ok(body):
+            if post_out is not None:     # also drop any POST candidates collected before the deauth
+                post_out.clear()
             return [], "deauth"          # halt + discard everything: never inject a dead session
         pu = urllib.parse.urlparse(url)
         # injection points: query params already on this URL

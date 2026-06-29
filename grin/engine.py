@@ -116,8 +116,9 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
     """Build the Transport (per-role request surface) from a request fn + optional credentials.
 
     The harness owns auth + resource discovery: it logs in the first two credentials as attacker
-    and victim, and returns the victim's owned resource id so the caller can form the IDOR
-    candidate. Returns (transport, victim_resource_id)."""
+    and victim. Returns (transport, victim_resource_id, attacker_resource_id, attacker_token) — the
+    ids let the caller form the IDOR + negative-control candidates; the token feeds the weak-JWT
+    verifier."""
     # Role callables default to GET (read-side verifiers call role(url)) but carry their auth into
     # writes too: role(url, method="POST", json=body) — needed by the write-side verifier.
     by_role = {"anon": lambda u, method="GET", json=None: request(method, u, json=json)}
@@ -136,9 +137,9 @@ def build_transport(request, base_url, credentials=None, login_path="/rest/user/
             ta, attacker_id = shape_login(base_url, cid(creds[0]), creds[0]["password"], post, shape)
             tb, victim_id = shape_login(base_url, cid(creds[1]), creds[1]["password"], post, shape)
         else:
-            ta, attacker_id = login_session(base_url, creds[0]["email"], creds[0]["password"],
+            ta, attacker_id = login_session(base_url, cid(creds[0]), creds[0]["password"],
                                             post, login_path)
-            tb, victim_id = login_session(base_url, creds[1]["email"], creds[1]["password"],
+            tb, victim_id = login_session(base_url, cid(creds[1]), creds[1]["password"],
                                           post, login_path)
         if ta:
             by_role["attacker"] = lambda u, method="GET", json=None, t=ta: request(
@@ -167,9 +168,11 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
     if attacker is None:
         return []
     post_out = [] if (allow_post or allow_destructive) else None
-    points, _status = crawl_injection_points(base_url.rstrip("/") + start_path, lambda u: attacker(u),
-                                             allow_post=allow_post, allow_destructive=allow_destructive,
-                                             post_out=post_out)
+    points, status = crawl_injection_points(base_url.rstrip("/") + start_path, lambda u: attacker(u),
+                                            allow_post=allow_post, allow_destructive=allow_destructive,
+                                            post_out=post_out)
+    if status == "deauth":      # the crawl lost the session — never verify against a dead session
+        return []
     candidates = []
     for pf in (post_out or []):                 # opt-in POST-form candidates (archetype-allowlisted)
         for cls in pf["classes"]:
@@ -213,7 +216,7 @@ def _endpoint_exists(transport, url):
 def run_general(base_url, credentials=None, *, request=None,
                 resource_template="/rest/basket/{id}", login_path="/rest/user/login",
                 review_template="/rest/products/{pid}/reviews", review_pid=1, target="",
-                allow_destructive=True, oob=None):
+                allow_destructive=False, oob=None):
     """End-to-end: build the transport (sessions), recon the surface, resolve the session-coupled
     IDOR + write-side-BAC candidates, and assess everything. Deterministic; the LLM is not in this
     path."""
@@ -359,4 +362,7 @@ def assess(candidates, transport, target: str = ""):
         for i in sorted(done):
             rec = pending[i]
             findings.append(_finding(rec["vuln_class"], rec["location"], target, target, done[i]))
+    for c in candidates:        # don't leave per-run deferral state on a (possibly reused) oracle dict
+        if isinstance(c.oracle, dict):
+            c.oracle.pop("oob_defer", None)
     return _dedup_bac_dirs(findings)

@@ -148,8 +148,15 @@ class OOBServer:
         self._httpd.oob = self
         threading.Thread(target=self._httpd.serve_forever, daemon=True).start()
         if self.dns_domain:
-            self._dns = _DNSCapture(self, self.dns_port, self.bind_host, self.dns_answer_ip)
-            self._dns.start()
+            # The DNS arm is best-effort: a bind failure (port 53 needs privilege, or the port is
+            # taken) must NOT take down the already-running HTTP collaborator. The DNS SSRF arm just
+            # stays unavailable (dns_enabled() still True, but no captures -> those probes won't fire).
+            try:
+                dns = _DNSCapture(self, self.dns_port, self.bind_host, self.dns_answer_ip)
+                dns.start()
+                self._dns = dns
+            except OSError:
+                self._dns = None
 
     def stop(self):
         if self._httpd is not None:

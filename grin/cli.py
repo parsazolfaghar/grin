@@ -964,7 +964,8 @@ def cmd_assess(*, url: str, creds=None, cookie: bool = False, protected: str = N
                                           extra_cookies=extra_cookies or None, oob=oob,
                                           allow_post=allow_post, allow_destructive=allow_destructive)
         else:
-            findings = run_general(url, credentials or None, oob=oob)
+            findings = run_general(url, credentials or None, oob=oob,
+                                   allow_destructive=allow_destructive)
     finally:
         if oob is not None:
             oob.stop()

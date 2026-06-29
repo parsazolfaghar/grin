@@ -52,6 +52,18 @@ def test_crawl_halts_on_deauth():
     assert status == "deauth" and cands == []
 
 
+def test_crawl_deauth_also_clears_post_out():
+    # a POST content sink is collected on the first page, then a deauth halt fires -> post_out must
+    # be emptied too (never verify ANY candidate against a dead session)
+    pages = {"/index.php": '<form method="post" action="/guestbook"><textarea name="message"></textarea>'
+                          '<input type="submit" name="Sign"></form><a href="/inner">i</a> Logout',
+             "/inner": '<input type="password" name="password"> please log in'}
+    post_out = []
+    cands, status = crawl_injection_points("http://t/index.php", _site(pages),
+                                           allow_destructive=True, post_out=post_out)
+    assert status == "deauth" and cands == [] and post_out == []
+
+
 def test_crawl_password_form_with_logout_is_not_deauth():
     # a legit authed page (e.g. brute-force) has a password input AND the logout menu -> NOT deauth
     pages = {"/index.php": '<a href="/brute/">brute</a> Logout',
