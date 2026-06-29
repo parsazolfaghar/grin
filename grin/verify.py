@@ -411,7 +411,7 @@ def verify_open_redirect(candidate: Candidate, transport: Transport) -> Verdict:
         transport.request("GET", _with_param(candidate.url, field, cb))
     except Exception:
         return Verdict(INCONCLUSIVE, "open-redirect", loc, "probe request raised an exception")
-    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    deadline = time.time() + float(o.get("ssrf_timeout", 3))
     while time.time() < deadline:
         if oob.hit_sources(token) & oob.grin_ips():
             return Verdict(CONFIRMED, "open-redirect", loc,
@@ -449,7 +449,7 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
             send(value)
         except Exception:
             continue
-    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    deadline = time.time() + float(o.get("ssrf_timeout", 3))
     while time.time() < deadline:
         external = oob.hit_sources(token) - oob.grin_ips()
         if external:
@@ -601,7 +601,7 @@ def verify_ssrf(candidate: Candidate, transport: Transport) -> Verdict:
             agent(_with_param(candidate.url, field, cb))
     except Exception:
         return Verdict(INCONCLUSIVE, "ssrf", loc, "probe request raised an exception")
-    deadline = time.time() + float(o.get("ssrf_timeout", 5))
+    deadline = time.time() + float(o.get("ssrf_timeout", 3))
     while time.time() < deadline:
         external = oob.hit_sources(token) - oob.grin_ips()
         if external:
