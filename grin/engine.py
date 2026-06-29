@@ -165,6 +165,10 @@ def run_cookie_general(base_url, credentials, protected_url, *, start_path="/",
             candidates.append(Candidate(cls, pf["location"], pf["action"], method="POST",
                                         inject_field=pf["field"],
                                         oracle={"form": True, "form_url": pf["form_url"]}))
+            if cls == "command-injection" and oob is not None:   # also the blind (no-output) path
+                candidates.append(Candidate("blind-command-injection", pf["location"], pf["action"],
+                                            method="POST", inject_field=pf["field"],
+                                            oracle={"form": True, "form_url": pf["form_url"], "oob": oob}))
     for loc, url, field in points:
         candidates.append(Candidate("sqli-error", loc, url, inject_field=field))
         candidates.append(Candidate("reflected-xss", loc, url, inject_field=field))

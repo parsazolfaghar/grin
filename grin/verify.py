@@ -459,6 +459,8 @@ def verify_blind_cmd_injection(candidate: Candidate, transport: Transport) -> Ve
         lambda u, method="GET", json=None: transport.request(method, u, json=json))
 
     def send(value):
+        if candidate.oracle.get("form"):
+            return _form_post_send(agent, candidate.oracle["form_url"], candidate.url, field, value)
         if candidate.method.upper() == "POST":
             return agent(candidate.url, method="POST", json={field: value})
         return agent(_with_param(candidate.url, field, value))
