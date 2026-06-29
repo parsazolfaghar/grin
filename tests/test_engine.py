@@ -125,6 +125,40 @@ def test_build_transport_role_supports_authenticated_writes():
     assert seen["auth"] == "Bearer TA"
 
 
+def test_run_general_discovers_and_confirms_idor_via_openapi():
+    # a VAmPI-shaped app: login by username->JWT, OpenAPI describes /books/v1 + detail, books are
+    # owner-attributed and any authed user can read any book (BOLA). No hardcoded template is used.
+    import base64
+    import json as _J
+
+    def mkjwt(claims):
+        b = lambda d: base64.urlsafe_b64encode(_J.dumps(d).encode()).rstrip(b"=").decode()  # noqa: E731
+        return ".".join([b({"alg": "HS256"}), b(claims), "sig"])
+
+    books = {"vbook": {"book_title": "vbook", "secret": "VS", "user": "vic"},
+             "abook": {"book_title": "abook", "secret": "AS", "user": "atk"}}
+    spec = {"paths": {"/books/v1": {"get": {}}, "/books/v1/{book_title}": {"get": {}}}}
+
+    def request(method, url, json=None, headers=None):
+        authed = "Authorization" in (headers or {})
+        if url.endswith("/users/v1/login") and method == "POST" and "username" in (json or {}):
+            return (200, _J.dumps({"auth_token": mkjwt({"sub": json["username"]})}))
+        if url.endswith("/rest/user/login"):
+            return (404, "")
+        if url.endswith("/openapi.json"):
+            return (200, _J.dumps(spec))
+        if url.endswith("/books/v1"):
+            return (200, _J.dumps({"Books": [dict(b) for b in books.values()]})) if authed else (401, "")
+        for title, body in books.items():
+            if url.endswith("/books/v1/" + title):
+                return (200, _J.dumps(body)) if authed else (401, "")
+        return (404, "")
+    creds = [{"username": "atk", "password": "p"}, {"username": "vic", "password": "p"}]
+    findings = run_general("http://t", creds, request=request)
+    idor = [f for f in findings if f.location == "/books/v1/{book_title}"]
+    assert idor and idor[0].vuln_class == "idor"
+
+
 def test_build_transport_discovers_non_juice_login_shape():
     # a VAmPI-shaped API (username field, token at auth_token) the Juice-Shop default would miss
     from grin.engine import build_transport

@@ -124,6 +124,7 @@ def run_general(base_url, credentials=None, *, request=None,
     request = request or _urllib_request()
     base = base_url.rstrip("/")
     creds = list(credentials or [])
+    cid = lambda c: c.get("login") or c.get("email") or c.get("username")   # noqa: E731
     transport, victim_id, attacker_id = build_transport(request, base_url, credentials, login_path)
     candidates = recon(base_url, transport.by_role["anon"], login_path=login_path)
     have_two = "attacker" in transport.by_role and "victim" in transport.by_role
@@ -134,17 +135,24 @@ def run_general(base_url, credentials=None, *, request=None,
         if attacker_id is not None:
             oracle["attacker_own_url"] = base + resource_template.replace("{id}", str(attacker_id))
         candidates.append(Candidate("idor", resource_template, url, oracle=oracle))
+    if have_two:
+        # Generalize beyond the login-derived id: discover victim-owned resources from the target's
+        # OpenAPI surface (ownership-proven, conservative). The hardened oracle is the precision gate.
+        from grin.resource_discovery import discover_idor_candidates
+        for loc, vurl, aurl in discover_idor_candidates(
+                base_url, transport.by_role, cid(creds[1]), cid(creds[0])):
+            candidates.append(Candidate("idor", loc, vurl, oracle={"attacker_own_url": aurl}))
     if have_two and len(creds) >= 2:
         # write-side BAC: forge a review attributed to the victim's identity. The harness owns the
-        # identities (the login emails); location is the report key, the oracle carries live URLs.
+        # identities (the login ids); location is the report key, the oracle carries live URLs.
         review_url = base + review_template.replace("{pid}", str(review_pid))
         candidates.append(Candidate(
             "forged-review", "/rest/products/reviews", review_url,
             oracle={
                 "write_url": review_url, "read_url": review_url, "write_method": "PUT",
                 "body_template": {}, "forged_field": "author", "marker_field": "message",
-                "forged_value": creds[1]["email"], "control_value": creds[0]["email"],
-                "attacker_identity": [creds[0]["email"]],
+                "forged_value": cid(creds[1]), "control_value": cid(creds[0]),
+                "attacker_identity": [cid(creds[0])],
             }))
     return assess(candidates, transport, target=target or base_url)
 
