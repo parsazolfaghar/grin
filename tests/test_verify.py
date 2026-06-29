@@ -69,3 +69,82 @@ def test_verify_dispatcher_unknown_class_is_inconclusive():
     c = Candidate(vuln_class="does-not-exist", location="x", url="http://t")
     v = verify(c, _transport(lambda m, u, j: (200, "")))
     assert v.status == INCONCLUSIVE
+
+
+# --- verify_idor (reuses the two-session seam) ---
+
+def test_verify_idor_confirmed_when_attacker_sees_victim_resource():
+    body = '{"id":7,"UserId":23}'
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": lambda u: (200, body), "victim": lambda u: (200, body)})
+    c = Candidate(vuln_class="idor", location="/rest/basket/7", url="http://t/rest/basket/7")
+    assert verify(c, t).status == CONFIRMED
+
+
+def test_verify_idor_rejected_when_attacker_denied():
+    t = Transport(request=lambda *a, **k: (200, ""),
+                  by_role={"attacker": lambda u: (401, ""), "victim": lambda u: (200, '{"id":7}')})
+    c = Candidate(vuln_class="idor", location="x", url="http://t/x")
+    assert verify(c, t).status == REJECTED
+
+
+def test_verify_idor_inconclusive_without_sessions():
+    c = Candidate(vuln_class="idor", location="x", url="http://t/x")
+    assert verify(c, Transport(request=lambda *a, **k: (200, ""))).status == INCONCLUSIVE
+
+
+# --- verify_sqli (POST login auth bypass) ---
+
+def _login_request(vulnerable):
+    def request(method, url, json=None, headers=None):
+        email = (json or {}).get("email", "")
+        if vulnerable and ("OR 1=1" in email or "'--" in email):
+            return (200, '{"authentication":{"token":"T"}}')
+        return (401, "Invalid email or password.")
+    return request
+
+
+def _sqli_candidate():
+    return Candidate(vuln_class="sql-injection", location="/rest/user/login",
+                     url="http://t/rest/user/login", method="POST", inject_field="email")
+
+
+def test_verify_sqli_confirmed_on_auth_bypass():
+    assert verify(_sqli_candidate(), Transport(request=_login_request(True))).status == CONFIRMED
+
+
+def test_verify_sqli_rejected_when_login_rejects():
+    assert verify(_sqli_candidate(), Transport(request=_login_request(False))).status == REJECTED
+
+
+def test_verify_sqli_inconclusive_when_unreachable():
+    assert verify(_sqli_candidate(),
+                  Transport(request=lambda *a, **k: (0, ""))).status == INCONCLUSIVE
+
+
+# --- verify_bac (unauth sensitive access, baseline-diff) ---
+
+def _bac_candidate(path):
+    return Candidate(vuln_class="broken-access-control", location=path,
+                     url="http://t" + path, oracle={"baseline_url": "http://t/"})
+
+
+def test_verify_bac_confirmed_sensitive_unauth():
+    def anon(u):
+        return (200, "CONFIDENTIAL legal text") if "ftp" in u else (200, "SPA-SHELL")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    assert verify(_bac_candidate("/ftp/legal.md"), t).status == CONFIRMED
+
+
+def test_verify_bac_rejected_when_protected():
+    def anon(u):
+        return (401, "") if "admin" in u else (200, "SPA-SHELL")
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    assert verify(_bac_candidate("/admin"), t).status == REJECTED
+
+
+def test_verify_bac_rejected_when_spa_shell():
+    def anon(u):
+        return (200, "SPA-SHELL")     # identical to baseline -> the catch-all shell, not real content
+    t = Transport(request=lambda *a, **k: (200, ""), by_role={"anon": anon})
+    assert verify(_bac_candidate("/admin"), t).status == REJECTED

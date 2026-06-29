@@ -85,8 +85,94 @@ def verify_ssti(candidate: Candidate, transport: Transport) -> Verdict:
     return Verdict(REJECTED, "ssti", loc, "payload not evaluated by a jinja-style template engine")
 
 
+# --- IDOR --------------------------------------------------------------------------------------
+def verify_idor(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the attacker receives the victim's exact resource (a 200 byte-identical to the
+    victim's own view). Needs attacker + victim sessions from the harness."""
+    loc = candidate.location
+    attacker = transport.by_role.get("attacker")
+    victim = transport.by_role.get("victim")
+    if not (attacker and victim):
+        return Verdict(INCONCLUSIVE, "idor", loc, "needs attacker + victim sessions")
+    try:
+        sa, ba = attacker(candidate.url)
+        sv, bv = victim(candidate.url)
+    except Exception:
+        return Verdict(INCONCLUSIVE, "idor", loc, "request raised an exception")
+    if sv != 200 or not (bv or "").strip():
+        return Verdict(INCONCLUSIVE, "idor", loc, "could not establish the victim baseline")
+    if sa == 200 and ba == bv:
+        return Verdict(CONFIRMED, "idor", loc, "attacker received the victim's exact resource")
+    return Verdict(REJECTED, "idor", loc, "attacker did not receive the victim's resource")
+
+
+# --- SQLi (auth bypass) ------------------------------------------------------------------------
+def verify_sqli(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: the login returns an authenticated session token when the inject field is a SQL
+    payload and the password is wrong."""
+    import json as _json
+    from grin.tools.sqli_probe import SQLI_PAYLOADS
+    loc = candidate.location
+    field_name = candidate.inject_field or "email"
+    password = candidate.oracle.get("password", "wrong-pw-xyz")
+    token_path = candidate.oracle.get("token_path", ("authentication", "token"))
+    reached = False
+    for payload in SQLI_PAYLOADS:
+        try:
+            status, body = transport.request("POST", candidate.url,
+                                             json={field_name: payload, "password": password})
+        except Exception:
+            continue
+        if not status:
+            continue
+        reached = True
+        try:
+            data = _json.loads(body)
+            tok = data
+            for key in token_path:
+                tok = tok[key]
+            if str(tok).strip():
+                return Verdict(CONFIRMED, "sql-injection", loc,
+                               f"login bypassed with payload {payload!r}")
+        except Exception:
+            continue
+    if not reached:
+        return Verdict(INCONCLUSIVE, "sql-injection", loc, "login endpoint unreachable")
+    return Verdict(REJECTED, "sql-injection", loc, "no injection payload bypassed the login")
+
+
+# --- BAC (unauthenticated sensitive access) ----------------------------------------------------
+def verify_bac(candidate: Candidate, transport: Transport) -> Verdict:
+    """Oracle: a sensitive path returns real content to an anonymous request, and that content is
+    NOT the SPA catch-all shell (baseline diff). 401/403 = properly restricted = REJECTED."""
+    from grin.tools.bac_probe import _is_sensitive
+    loc = candidate.location
+    anon = transport.by_role.get("anon")
+    if anon is None:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "needs an anonymous session")
+    baseline_url = candidate.oracle.get("baseline_url")
+    try:
+        status, body = anon(candidate.url)
+        _bs, bbody = anon(baseline_url) if baseline_url else (0, "")
+    except Exception:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc, "request raised an exception")
+    body, bbody = body or "", bbody or ""
+    if status == 200 and body.strip() and _is_sensitive(candidate.location) and body != bbody:
+        return Verdict(CONFIRMED, "broken-access-control", loc,
+                       "sensitive content served without authentication")
+    if status in (401, 403):
+        return Verdict(REJECTED, "broken-access-control", loc, "access is properly restricted")
+    if not status or status >= 500:
+        return Verdict(INCONCLUSIVE, "broken-access-control", loc,
+                       f"could not test cleanly (status {status})")
+    return Verdict(REJECTED, "broken-access-control", loc, "no sensitive content exposed")
+
+
 _REGISTRY: dict = {
     "ssti": verify_ssti,
+    "idor": verify_idor,
+    "sql-injection": verify_sqli,
+    "broken-access-control": verify_bac,
 }
 
 
