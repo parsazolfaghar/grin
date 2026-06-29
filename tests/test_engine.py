@@ -61,3 +61,45 @@ def test_recon_survives_unreachable_page():
     cands = recon("http://t", fetch)
     # still yields BAC + SQLi candidates from the static lists even if the page won't load
     assert {"broken-access-control", "sql-injection"} <= {c.vuln_class for c in cands}
+
+
+from grin.engine import run_general
+
+
+def test_run_general_finds_bac_sqli_idor_on_a_fake_vulnerable_app():
+    def request(method, url, json=None, headers=None):
+        if url.endswith("/rest/user/login"):
+            email = (json or {}).get("email", "")
+            if "OR 1=1" in email or "'--" in email:
+                return (200, '{"authentication":{"token":"BYPASS"}}')       # SQLi auth bypass
+            if "aaa" in email:
+                return (200, '{"authentication":{"token":"TA","bid":6}}')
+            return (200, '{"authentication":{"token":"TB","bid":7}}')
+        if "/ftp/legal.md" in url:
+            return (200, "CONFIDENTIAL legal text")                          # BAC: unauth content
+        if url.rstrip("/").endswith(":3000") or url.endswith("://t:3000/"):
+            return (200, "SPA-SHELL")
+        if url.endswith("/"):
+            return (200, "SPA-SHELL")                                       # root baseline
+        if "/rest/basket/7" in url:
+            return (200, '{"id":7,"data":"victim-basket"}')                 # IDOR: victim's object
+        return (404, "")
+    creds = [{"email": "aaa@x", "password": "p"}, {"email": "bbb@x", "password": "p"}]
+    findings = run_general("http://t:3000", creds, request=request)
+    classes = {f.vuln_class for f in findings}
+    assert "broken-access-control" in classes      # /ftp/legal.md
+    assert "sql-injection" in classes              # login bypass
+    assert "idor" in classes                       # victim basket reachable by attacker
+
+
+def test_run_general_no_creds_skips_idor_but_still_finds_unauth():
+    def request(method, url, json=None, headers=None):
+        if "/ftp/legal.md" in url:
+            return (200, "CONFIDENTIAL")
+        if url.endswith("/"):
+            return (200, "SHELL")
+        return (404, "")
+    findings = run_general("http://t:3000", None, request=request)
+    classes = {f.vuln_class for f in findings}
+    assert "broken-access-control" in classes
+    assert "idor" not in classes                   # no creds -> no IDOR candidate
